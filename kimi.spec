@@ -1,14 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 tools = collect_submodules("kimi_cli.tools")
+data_files = collect_data_files(
+    "kimi_cli",
+    includes=["**/*.yaml", "**/*.md"],
+    excludes=["**/*.py", "**/*.pyc"],
+)
 
 a = Analysis(
     ["src/kimi_cli/__init__.py"],
     pathex=[],
     binaries=[],
-    datas=[("src/kimi_cli/agents", "agents")],
+    datas=data_files,
     hiddenimports=tools,
     hookspath=[],
     hooksconfig={},
