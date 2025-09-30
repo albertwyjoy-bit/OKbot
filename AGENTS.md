@@ -1,0 +1,1 @@
+This project is a piece of art. If you are instructed to do anything in this project, you should always follow the best practices of software engineering, Python language, and relevant tools and libraries. Always write clean, concise, readable, and maintainable code.
