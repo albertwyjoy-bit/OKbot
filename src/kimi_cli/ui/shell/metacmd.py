@@ -163,4 +163,5 @@ def help(app: "ShellApp", args: list[str]):
 def release_notes(app: "ShellApp", args: list[str]):
     """Show release notes"""
     text = format_release_notes(CHANGELOG)
-    console.print(Panel.fit(text, border_style="wheat4", title="Release Notes"))
+    with console.pager(styles=True):
+        console.print(Panel.fit(text, border_style="wheat4", title="Release Notes"))

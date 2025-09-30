@@ -1,23 +1,10 @@
-from importlib import resources
+from pathlib import Path
 from typing import NamedTuple
 
 
 class ReleaseEntry(NamedTuple):
     description: str
     entries: list[str]
-
-
-def _read_changelog_from_package(pkg: str) -> dict[str, ReleaseEntry]:
-    """Try to read CHANGELOG.md that is packaged alongside the kimi_cli module.
-
-    This works if CHANGELOG.md is placed under the kimi_cli package directory
-    (e.g., via a symlink at build-time) and included by the build backend.
-    """
-    package_root = resources.files(pkg)
-    changelog_path = package_root / "CHANGELOG.md"
-    assert changelog_path.is_file(), "CHANGELOG.md not found"
-    md = changelog_path.read_text(encoding="utf-8")
-    return parse_changelog(md)
 
 
 def parse_changelog(md_text: str) -> dict[str, ReleaseEntry]:
@@ -99,26 +86,16 @@ def parse_changelog(md_text: str) -> dict[str, ReleaseEntry]:
 
 
 def format_release_notes(changelog: dict[str, ReleaseEntry]) -> str:
-    # Prefer Unreleased, then latest semver-ish key
-    order: list[str] = []
-    if "Unreleased" in changelog:
-        order.append("Unreleased")
-    # Add the rest in reverse lexical order (simple heuristic)
-    rest = [k for k in changelog if k != "Unreleased"]
-    rest.sort(reverse=True)
-    order.extend(rest)
-
     parts: list[str] = []
-    for ver in order:
-        entry = changelog[ver]
+    for ver, entry in changelog.items():
         s = f"[bold]{ver}[/bold]"
         if entry.description:
             s += f": {entry.description}"
         if entry.entries:
             for it in entry.entries:
-                s += "\n[markdown.item.bullet] • [/]" + it
+                s += "\n[markdown.item.bullet]• [/]" + it
         parts.append(s + "\n")
     return "\n".join(parts).strip()
 
 
-CHANGELOG = _read_changelog_from_package("kimi_cli")
+CHANGELOG = parse_changelog((Path(__file__).parent.parent / "CHANGELOG.md").read_text())

@@ -17,7 +17,7 @@ Only write entries that are worth mentioning to users.
 - Add `--print` option as a shortcut for `--ui print`
 - Add `--acp` option as a shortcut for `--ui acp`
 
-## [0.20.0] - 2025-09-30
+## [0.20] - 2025-09-30
 
 ### Added
 
@@ -114,7 +114,7 @@ Only write entries that are worth mentioning to users.
 
 ### Added
 
-- Add /release-notes command
+- Add `/release-notes` command
 - Add retry for LLM API errors
 - Add loop control configuration, e.g. `{"loop_control": {"max_steps_per_run": 50, "max_retry_per_step": 3}}`
 
@@ -125,6 +125,38 @@ Only write entries that are worth mentioning to users.
 
 ## [0.10.1] - 2025-09-18
 
-We now have release notes!
-
 - Make slash commands look slightly better
+- Improve `glob` tool
+
+## [0.10.0] - 2025-09-17
+
+### Added
+
+- Add `read_file` tool
+- Add `write_file` tool
+- Add `glob` tool
+- Add `task` tool
+
+### Changed
+
+- Improve tool call visualization
+- Improve session management
+- Restore context usage when `--continue` a session
+
+## [0.9.0] - 2025-09-15
+
+- Remove `--session` and `--continue` options
+
+## [0.8.1] - 2025-09-14
+
+- Fix config model dumping
+
+## [0.8.0] - 2025-09-14
+
+- Add `shell` tool and basic system prompt
+- Add tool call visualization
+- Add context usage count
+- Support interrupting the agent loop
+- Support project-level `AGENTS.md`
+- Support custom agent defined with YAML
+- Support oneshot task via `kimi -c`
