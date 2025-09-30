@@ -9,6 +9,14 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+
+## [Unreleased]
+
+### Added
+
+- Add `--print` option as a shortcut for `--ui print`
+- Add `--acp` option as a shortcut for `--ui acp`
+
 ## [0.20.0] - 2025-09-30
 
 ### Added

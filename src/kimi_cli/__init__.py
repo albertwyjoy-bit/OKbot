@@ -107,6 +107,18 @@ UIMode = Literal["shell", "print", "acp"]
     help="UI mode to use. Default: shell.",
 )
 @click.option(
+    "--print",
+    "ui",
+    flag_value="print",
+    help="Run in print mode. Shortcut for `--ui print`.",
+)
+@click.option(
+    "--acp",
+    "ui",
+    flag_value="acp",
+    help="Start ACP server. Shortcut for `--ui acp`.",
+)
+@click.option(
     "--input-format",
     type=click.Choice(["text", "stream-json"]),
     default="text",
