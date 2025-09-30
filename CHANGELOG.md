@@ -9,6 +9,12 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.20.0] - 2025-09-30
+
+### Added
+
+- Add `--ui acp` option to start Agent Client Protocol (ACP) server
+
 ## [0.19] - 2025-09-29
 
 ### Added
