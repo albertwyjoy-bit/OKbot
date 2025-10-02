@@ -1,7 +1,7 @@
 Execute a shell command. Use this tool to explore the filesystem, edit files, run scripts, get system information, etc.
 
 **Output:**
-The stdout and stderr will be returned as a string, combined. The output may be truncated or compressed if it is too long. If the command failed, the exit code will be given in a system tag.
+The stdout and stderr will be combined and returned as a string. The output may be truncated if it is too long. If the command failed, the exit code will be provided in a system tag.
 
 **Guidelines for safety and security:**
 - Each shell tool call will be executed in a fresh shell environment. The shell variables, current working directory changes, and the shell history is not preserved between calls.

@@ -5,6 +5,8 @@ from typing import override
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
 from pydantic import BaseModel, Field
 
+from kimi_cli.tools.utils import load_desc
+
 MAX_TIMEOUT = 5 * 60
 MAX_OUTPUT_LENGTH = 50_000
 
@@ -24,7 +26,7 @@ class Params(BaseModel):
 
 class Bash(CallableTool2[Params]):
     name: str = "Bash"
-    description: str = (Path(__file__).parent / "bash.md").read_text()
+    description: str = load_desc(Path(__file__).parent / "bash.md", {})
     params: type[Params] = Params
 
     @override

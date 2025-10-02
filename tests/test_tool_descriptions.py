@@ -49,7 +49,7 @@ def test_bash_description(bash_tool: Bash):
 Execute a shell command. Use this tool to explore the filesystem, edit files, run scripts, get system information, etc.
 
 **Output:**
-The stdout and stderr will be returned as a string, combined. The output may be truncated or compressed if it is too long. If the command failed, the exit code will be given in a system tag.
+The stdout and stderr will be combined and returned as a string. The output may be truncated if it is too long. If the command failed, the exit code will be provided in a system tag.
 
 **Guidelines for safety and security:**
 - Each shell tool call will be executed in a fresh shell environment. The shell variables, current working directory changes, and the shell history is not preserved between calls.
@@ -96,7 +96,7 @@ Read content from a file.
 - Any lines longer than 2000 characters will be truncated, ending with "...".
 - The system will notify you when there is any limitation hit when reading the file.
 - This tool is a tool that you typically want to use in parallel. Always read multiple files in one response when possible.
-- This tool can only read text files. To list directories, you must use the Glob tool or `ls` command via the Bash tool. To read other file types, use appropriate tools via Bash.
+- This tool can only read text files. To list directories, you must use the Glob tool or `ls` command via the Bash tool. To read other file types, use appropriate commands via the Bash tool.
 - If the file doesn't exist or path is invalid, an error will be returned.
 - If you want to search for a certain content/pattern, prefer Grep tool over ReadFile.
 """
