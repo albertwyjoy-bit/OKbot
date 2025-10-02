@@ -34,7 +34,7 @@ from kimi_cli.metadata import Session, continue_session, new_session
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul import Soul
 from kimi_cli.ui.acp import ACPServer
-from kimi_cli.ui.print import InputFormat, PrintApp
+from kimi_cli.ui.print import InputFormat, OutputFormat, PrintApp
 from kimi_cli.ui.shell import ShellApp
 from kimi_cli.utils.provider import augment_provider_with_env_vars, create_llm
 
@@ -97,7 +97,7 @@ UIMode = Literal["shell", "print", "acp"]
     "command",
     type=str,
     default=None,
-    help="User query to the agent. Default: prompt and read from stdin.",
+    help="User query to the agent. Default: prompt interactively.",
 )
 @click.option(
     "--ui",
@@ -124,8 +124,14 @@ UIMode = Literal["shell", "print", "acp"]
     default="text",
     help=(
         "Input format to use. Default: text. This only matters when piping input from stdin, "
-        "and must be used with `--ui print`."
+        "and must be used with `--print`."
     ),
+)
+@click.option(
+    "--output-format",
+    type=click.Choice(["text", "stream-json"]),
+    default="text",
+    help="Output format to use. Default: text. This only matters when using `--print`.",
 )
 def kimi(
     verbose: bool,
@@ -137,6 +143,7 @@ def kimi(
     command: str | None,
     ui: UIMode,
     input_format: InputFormat,
+    output_format: OutputFormat,
 ):
     """Kimi, your next CLI agent."""
     echo = click.echo if verbose else lambda *args, **kwargs: None
@@ -213,6 +220,7 @@ def kimi(
         verbose=verbose,
         ui=ui,
         input_format=input_format,
+        output_format=output_format,
     )
     if not succeeded:
         sys.exit(1)
@@ -230,6 +238,7 @@ def kimi_run(
     verbose: bool = True,
     ui: UIMode = "shell",
     input_format: InputFormat = "text",
+    output_format: OutputFormat = "text",
 ) -> bool:
     """Run Kimi CLI."""
     echo = click.echo if verbose else lambda *args, **kwargs: None
@@ -292,7 +301,7 @@ def kimi_run(
                 },
             )
         elif ui == "print":
-            app = PrintApp(soul, input_format)
+            app = PrintApp(soul, input_format, output_format)
         elif ui == "acp":
             app = ACPServer(soul)
         else:
