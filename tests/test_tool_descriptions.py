@@ -10,6 +10,7 @@ from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.todo import SetTodoList
+from kimi_cli.tools.web.search import MoonshotSearch
 
 
 def test_send_dmail_description(send_dmail_tool: SendDMail):
@@ -166,4 +167,11 @@ Replaces specific strings within a specified file.
 - Can specify a single edit or a list of edits in one call.
 - You should prefer this tool over WriteFile tool and Bash `sed` command.
 """
+    )
+
+
+def test_moonshot_search_description(moonshot_search_tool: MoonshotSearch):
+    """Test the description of MoonshotSearch tool."""
+    assert moonshot_search_tool.base.description == snapshot(
+        "WebSearch tool allows you to search on the internet to get latest information, including news, documents, release notes, blog posts, papers, etc.\n"
     )

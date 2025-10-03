@@ -20,15 +20,14 @@ from kimi_cli.agent import (
 from kimi_cli.config import (
     DEFAULT_KIMI_BASE_URL,
     DEFAULT_KIMI_MODEL,
+    Config,
     ConfigError,
     LLMModel,
     LLMProvider,
-    LoopControl,
     load_config,
 )
 from kimi_cli.context import Context
 from kimi_cli.denwarenji import DenwaRenji
-from kimi_cli.llm import LLM
 from kimi_cli.logging import logger
 from kimi_cli.metadata import Session, continue_session, new_session
 from kimi_cli.share import get_share_dir
@@ -163,6 +162,55 @@ def kimi(
         raise click.ClickException(f"Failed to load config: {e}") from e
     echo(f"✓ Loaded config: {config}")
 
+    if continue_:
+        session = continue_session(work_dir)
+        if session is None:
+            raise click.BadOptionUsage(
+                "--continue", "No previous session found for the working directory"
+            )
+        echo(f"✓ Continuing previous session: {session.id}")
+    else:
+        session = new_session(work_dir)
+        echo(f"✓ Created new session: {session.id}")
+    echo(f"✓ Session history file: {session.history_file}")
+
+    if input_format == "stream-json" and ui != "print":
+        raise click.BadOptionUsage(
+            "--input-format", "Stream JSON input is only supported for print UI"
+        )
+
+    succeeded = kimi_run(
+        config=config,
+        model_name=model_name,
+        work_dir=work_dir,
+        session=session,
+        command=command,
+        agent_file=agent_file,
+        verbose=verbose,
+        ui=ui,
+        input_format=input_format,
+        output_format=output_format,
+    )
+    if not succeeded:
+        sys.exit(1)
+
+
+def kimi_run(
+    *,
+    config: Config,
+    model_name: str | None,
+    work_dir: Path,
+    session: Session,
+    command: str | None = None,
+    agent_file: Path = DEFAULT_AGENT_FILE,
+    verbose: bool = True,
+    ui: UIMode = "shell",
+    input_format: InputFormat = "text",
+    output_format: OutputFormat = "text",
+) -> bool:
+    """Run Kimi CLI."""
+    echo = click.echo if verbose else lambda *args, **kwargs: None
+
     model: LLMModel | None = None
     provider: LLMProvider | None = None
 
@@ -192,63 +240,13 @@ def kimi(
     stream = ui != "print"  # use non-streaming mode only for print UI
     llm = create_llm(provider, model, stream=stream)
 
-    if continue_:
-        session = continue_session(work_dir)
-        if session is None:
-            raise click.BadOptionUsage(
-                "--continue", "No previous session found for the working directory"
-            )
-        echo(f"✓ Continuing previous session: {session.id}")
-    else:
-        session = new_session(work_dir)
-        echo(f"✓ Created new session: {session.id}")
-    echo(f"✓ Session history file: {session.history_file}")
-
-    if input_format == "stream-json" and ui != "print":
-        raise click.BadOptionUsage(
-            "--input-format", "Stream JSON input is only supported for print UI"
-        )
-
-    succeeded = kimi_run(
-        llm=llm,
-        work_dir=work_dir,
-        session=session,
-        continue_=continue_,
-        command=command,
-        agent_file=agent_file,
-        loop_control=config.loop_control,
-        verbose=verbose,
-        ui=ui,
-        input_format=input_format,
-        output_format=output_format,
-    )
-    if not succeeded:
-        sys.exit(1)
-
-
-def kimi_run(
-    *,
-    llm: LLM,
-    work_dir: Path,
-    session: Session,
-    continue_: bool = False,
-    command: str | None = None,
-    agent_file: Path = DEFAULT_AGENT_FILE,
-    loop_control: LoopControl | None = None,
-    verbose: bool = True,
-    ui: UIMode = "shell",
-    input_format: InputFormat = "text",
-    output_format: OutputFormat = "text",
-) -> bool:
-    """Run Kimi CLI."""
-    echo = click.echo if verbose else lambda *args, **kwargs: None
-
     ls = subprocess.run(["ls", "-la"], capture_output=True, text=True)
     agents_md = load_agents_md(work_dir) or ""
     if agents_md:
         echo(f"✓ Loaded agents.md: {textwrap.shorten(agents_md, width=100)}")
 
     agent_globals = AgentGlobals(
+        config=config,
         llm=llm,
         builtin_args=BuiltinSystemPromptArgs(
             ENSOUL_WORK_DIR=work_dir,
@@ -280,7 +278,7 @@ def kimi_run(
         agent,
         agent_globals,
         context=context,
-        loop_control=loop_control or LoopControl(),
+        loop_control=config.loop_control,
     )
 
     original_cwd = Path.cwd()

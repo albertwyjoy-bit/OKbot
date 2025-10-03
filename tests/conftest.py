@@ -16,6 +16,7 @@ from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.todo import SetTodoList
+from kimi_cli.tools.web import MoonshotSearch
 
 
 @pytest.fixture
@@ -87,3 +88,9 @@ def write_file_tool(builtin_args: BuiltinSystemPromptArgs) -> WriteFile:
 def str_replace_file_tool(builtin_args: BuiltinSystemPromptArgs) -> StrReplaceFile:
     """Create a StrReplaceFile tool instance."""
     return StrReplaceFile(builtin_args)
+
+
+@pytest.fixture
+def moonshot_search_tool() -> MoonshotSearch:
+    """Create a MoonshotSearch tool instance."""
+    return MoonshotSearch(api_key="sk-abc")

@@ -7,8 +7,10 @@ from typing import Any, NamedTuple
 import yaml
 from kosong.base.chat_provider import ChatProvider
 from kosong.tooling import CallableTool, SimpleToolset, Toolset
+from kosong.utils.typing import JsonType
 from pydantic import BaseModel, Field
 
+from kimi_cli.config import Config
 from kimi_cli.denwarenji import DenwaRenji
 from kimi_cli.llm import LLM
 from kimi_cli.logging import logger
@@ -40,6 +42,7 @@ class BuiltinSystemPromptArgs(NamedTuple):
 class AgentGlobals(NamedTuple):
     """Agent globals."""
 
+    config: Config
     llm: LLM
     builtin_args: BuiltinSystemPromptArgs
     denwa_renji: DenwaRenji
@@ -90,7 +93,7 @@ def load_agent(
         Session: globals_.session,
         DenwaRenji: globals_.denwa_renji,
     }
-    toolset, bad_tools = _load_tools(agent_spec, tool_deps)
+    toolset, bad_tools = _load_tools(agent_spec, tool_deps, globals_.config.tool_configs)
     if bad_tools:
         raise ValueError(f"Invalid tools: {bad_tools}")
 
@@ -114,12 +117,15 @@ def _load_system_prompt(agent_spec: AgentSpec, builtin_args: BuiltinSystemPrompt
 
 
 def _load_tools(
-    agent_spec: AgentSpec, dependencies: dict[type[Any], Any] | None = None
+    agent_spec: AgentSpec,
+    dependencies: dict[type[Any], Any],
+    configs: dict[str, dict[str, JsonType]],
 ) -> tuple[Toolset, list[str]]:
     toolset = SimpleToolset()
     bad_tools = []
     for tool_path in agent_spec.tools:
-        tool = _load_tool(tool_path, dependencies or {})
+        kwargs = configs.get(tool_path, {})
+        tool = _load_tool(tool_path, dependencies, **kwargs)
         if tool:
             toolset += tool
         else:
@@ -130,7 +136,7 @@ def _load_tools(
     return toolset, bad_tools
 
 
-def _load_tool(tool_path: str, dependencies: dict[type[Any], Any]) -> CallableTool | None:
+def _load_tool(tool_path: str, dependencies: dict[type[Any], Any], **kwargs) -> CallableTool | None:
     logger.debug("Loading tool: {tool_path}", tool_path=tool_path)
     module_name, class_name = tool_path.rsplit(":", 1)
     try:
@@ -149,7 +155,7 @@ def _load_tool(tool_path: str, dependencies: dict[type[Any], Any]) -> CallableTo
         if param.annotation not in dependencies:
             raise ValueError(f"Tool dependency not found: {param.annotation}")
         args.append(dependencies[param.annotation])
-    return cls(*args)
+    return cls(*args, **kwargs)
 
 
 def load_agents_md(work_dir: Path) -> str | None:

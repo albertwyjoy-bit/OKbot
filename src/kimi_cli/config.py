@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Literal, Self
 
+from kosong.utils.typing import JsonType
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_serializer, model_validator
 
 from kimi_cli.logging import logger
@@ -52,6 +53,9 @@ class Config(BaseModel):
         default_factory=dict, description="List of LLM providers"
     )
     loop_control: LoopControl = Field(default_factory=LoopControl, description="Agent loop control")
+    tool_configs: dict[str, dict[str, JsonType]] = Field(
+        default_factory=dict, description="Tool configurations"
+    )
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:

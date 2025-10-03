@@ -10,6 +10,7 @@ from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.todo import SetTodoList
+from kimi_cli.tools.web.search import MoonshotSearch
 
 
 def test_send_dmail_params_schema(send_dmail_tool: SendDMail):
@@ -278,6 +279,34 @@ def test_str_replace_file_params_schema(str_replace_file_tool: StrReplaceFile):
                 },
             },
             "required": ["path", "edit"],
+            "type": "object",
+        }
+    )
+
+
+def test_moonshot_search_params_schema(moonshot_search_tool: MoonshotSearch):
+    """Test the schema of MoonshotSearch tool parameters."""
+    assert moonshot_search_tool.base.parameters == snapshot(
+        {
+            "properties": {
+                "query": {
+                    "description": "The query text to search for.",
+                    "type": "string",
+                },
+                "limit": {
+                    "default": 5,
+                    "description": "The number of results to return. Typically you do not need to set this value. When the results do not contain what you need, you probably want to give a more concrete query.",
+                    "maximum": 20,
+                    "minimum": 1,
+                    "type": "integer",
+                },
+                "include_content": {
+                    "default": False,
+                    "description": "Whether to include the content of the web pages in the results. It can consume a large amount of tokens when this is set to True. You should avoid enabling this when `limit` is set to a large value.",
+                    "type": "boolean",
+                },
+            },
+            "required": ["query"],
             "type": "object",
         }
     )
