@@ -12,7 +12,7 @@ from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
-from kimi_cli.tools.web.search import MoonshotSearch
+from kimi_cli.tools.web.search import SearchWeb
 
 
 def test_send_dmail_params_schema(send_dmail_tool: SendDMail):
@@ -306,9 +306,9 @@ def test_patch_file_params_schema(patch_file_tool: PatchFile):
     )
 
 
-def test_moonshot_search_params_schema(moonshot_search_tool: MoonshotSearch):
+def test_search_web_params_schema(search_web_tool: SearchWeb):
     """Test the schema of MoonshotSearch tool parameters."""
-    assert moonshot_search_tool.base.parameters == snapshot(
+    assert search_web_tool.base.parameters == snapshot(
         {
             "properties": {
                 "query": {

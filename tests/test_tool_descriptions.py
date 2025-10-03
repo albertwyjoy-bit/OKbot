@@ -12,7 +12,7 @@ from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
-from kimi_cli.tools.web.search import MoonshotSearch
+from kimi_cli.tools.web.search import SearchWeb
 
 
 def test_send_dmail_description(send_dmail_tool: SendDMail):
@@ -204,9 +204,9 @@ PatchFile allows you to apply a unified diff patch to a file.
     )
 
 
-def test_moonshot_search_description(moonshot_search_tool: MoonshotSearch):
+def test_search_web_description(search_web_tool: SearchWeb):
     """Test the description of MoonshotSearch tool."""
-    assert moonshot_search_tool.base.description == snapshot(
+    assert search_web_tool.base.description == snapshot(
         "WebSearch tool allows you to search on the internet to get latest information, including news, documents, release notes, blog posts, papers, etc.\n"
     )
 
