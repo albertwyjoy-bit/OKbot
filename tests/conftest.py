@@ -12,6 +12,7 @@ from kimi_cli.tools.bash import Bash
 from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep import Grep
+from kimi_cli.tools.file.patch import PatchFile
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
@@ -57,7 +58,7 @@ def set_todo_list_tool() -> SetTodoList:
 
 @pytest.fixture
 def bash_tool() -> Bash:
-    """Create a Shell tool instance."""
+    """Create a Bash tool instance."""
     return Bash()
 
 
@@ -89,6 +90,12 @@ def write_file_tool(builtin_args: BuiltinSystemPromptArgs) -> WriteFile:
 def str_replace_file_tool(builtin_args: BuiltinSystemPromptArgs) -> StrReplaceFile:
     """Create a StrReplaceFile tool instance."""
     return StrReplaceFile(builtin_args)
+
+
+@pytest.fixture
+def patch_file_tool(builtin_args: BuiltinSystemPromptArgs) -> PatchFile:
+    """Create a PatchFile tool instance."""
+    return PatchFile(builtin_args)
 
 
 @pytest.fixture

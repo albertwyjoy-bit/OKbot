@@ -11,6 +11,7 @@ dependencies = [
     "click>=8.2.1",
     "kosong>=0.13.0",
     "loguru>=0.7.3",
+    "patch-ng>=1.18.1",
     "prompt-toolkit>=3.0.52",
     "pyyaml>=6.0.3",
     "rich>=14.1.0",
