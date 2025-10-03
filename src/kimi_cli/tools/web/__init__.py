@@ -1,4 +1,4 @@
 from .fetch import FetchURL
-from .search import MoonshotSearch
+from .search import SearchWeb
 
-__all__ = ("MoonshotSearch", "FetchURL")
+__all__ = ("SearchWeb", "FetchURL")

@@ -5,6 +5,7 @@ import aiohttp
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
 from pydantic import BaseModel, Field, ValidationError
 
+from kimi_cli.config import Config
 from kimi_cli.tools.utils import load_desc
 
 SEARCH_BASE_URL = "https://search.saas.moonshot.cn/v1/search"
@@ -33,14 +34,16 @@ class Params(BaseModel):
     )
 
 
-class MoonshotSearch(CallableTool2[Params]):
-    name: str = "WebSearch"
+class SearchWeb(CallableTool2[Params]):
+    name: str = "SearchWeb"
     description: str = load_desc(Path(__file__).parent / "search.md", {})
     params: type[Params] = Params
 
-    def __init__(self, *, api_key: str, **kwargs):
+    def __init__(self, config: Config, **kwargs):
         super().__init__(**kwargs)
-        self._api_key = api_key
+        if config.services.moonshot_search is None:
+            raise ValueError("Moonshot search service is not configured")
+        self._api_key = config.services.moonshot_search.api_key.get_secret_value()
 
     @override
     async def __call__(self, params: Params) -> ToolReturnType:

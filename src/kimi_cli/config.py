@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 from typing import Literal, Self
 
-from kosong.utils.typing import JsonType
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_serializer, model_validator
 
 from kimi_cli.logging import logger
@@ -44,6 +43,24 @@ class LoopControl(BaseModel):
     """Maximum number of retries in one step"""
 
 
+class MoonshotSearchConfig(BaseModel):
+    """Moonshot Search configuration."""
+
+    api_key: SecretStr
+    """API key for search.saas.moonshot.cn."""
+
+    @field_serializer("api_key", when_used="json")
+    def dump_secret(self, v: SecretStr):
+        return v.get_secret_value()
+
+
+class Services(BaseModel):
+    """Services configuration."""
+
+    moonshot_search: MoonshotSearchConfig | None = None
+    """Moonshot Search configuration."""
+
+
 class Config(BaseModel):
     """Main configuration structure."""
 
@@ -53,9 +70,7 @@ class Config(BaseModel):
         default_factory=dict, description="List of LLM providers"
     )
     loop_control: LoopControl = Field(default_factory=LoopControl, description="Agent loop control")
-    tool_configs: dict[str, dict[str, JsonType]] = Field(
-        default_factory=dict, description="Tool configurations"
-    )
+    services: Services = Field(default_factory=Services, description="Services configuration")
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
@@ -113,7 +128,7 @@ def load_config() -> Config:
         config = get_default_config()
         logger.debug("No config file found, creating default config: {config}", config=config)
         with open(config_file, "w", encoding="utf-8") as f:
-            f.write(config.model_dump_json(indent=2))
+            f.write(config.model_dump_json(indent=2, exclude_none=True))
         return config
 
     try:
