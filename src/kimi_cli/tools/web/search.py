@@ -53,7 +53,7 @@ class MoonshotSearch(CallableTool2[Params]):
                     "text_query": params.query,
                     "limit": params.limit,
                     "enable_page_crawling": params.include_content,
-                    "timeout_seconds": 20,
+                    "timeout_seconds": 30,
                 },
             ) as response,
         ):
@@ -89,14 +89,14 @@ class MoonshotSearch(CallableTool2[Params]):
 
 
 class SearchResult(BaseModel):
-    content: str
-    date: str
-    icon: str
-    mime: str
     site_name: str
-    snippet: str
     title: str
     url: str
+    snippet: str
+    content: str = ""
+    date: str = ""
+    icon: str = ""
+    mime: str = ""
 
 
 class Response(BaseModel):
