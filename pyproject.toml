@@ -23,12 +23,12 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "inline-snapshot[black]>=0.29.1",
+    "inline-snapshot[black]>=0.29.2",
     "pyinstaller>=6.16.0",
-    "pyright>=1.1.405",
+    "pyright>=1.1.406",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
-    "ruff>=0.13.2",
+    "ruff>=0.13.3",
 ]
 
 [build-system]
