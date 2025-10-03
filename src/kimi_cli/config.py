@@ -112,6 +112,11 @@ def get_default_config() -> Config:
                 api_key=SecretStr(""),
             ),
         },
+        services=Services(
+            moonshot_search=MoonshotSearchConfig(
+                api_key=SecretStr(""),
+            ),
+        ),
     )
 
 
