@@ -1,3 +1,4 @@
-from .search import MoonshotSearch  # noqa: E402
+from .fetch import FetchURL
+from .search import MoonshotSearch
 
-__all__ = ("MoonshotSearch",)
+__all__ = ("MoonshotSearch", "FetchURL")

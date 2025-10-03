@@ -16,6 +16,7 @@ dependencies = [
     "rich>=14.1.0",
     "ripgrepy>=2.2.0",
     "streamingjson>=0.0.5",
+    "trafilatura>=1.12.2",
     "tenacity>=9.1.2",
 ]
 
