@@ -272,8 +272,8 @@ def kimi_run(
             raise click.BadParameter("Command cannot be empty")
 
     context = Context(session.history_file)
-    if continue_:
-        asyncio.run(context.restore())
+    restored = asyncio.run(context.restore())
+    if restored:
         echo(f"✓ Restored history from {session.history_file}")
 
     soul = Soul(

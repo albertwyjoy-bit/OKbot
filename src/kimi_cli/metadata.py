@@ -78,11 +78,18 @@ def new_session(work_dir: Path, _history_file: Path | None = None) -> Session:
         work_dir_meta.last_session_id = session_id
     else:
         logger.warning("Using provided history file: {history_file}", history_file=_history_file)
-        assert _history_file.parent.exists()
+        _history_file.parent.mkdir(parents=True, exist_ok=True)
         if _history_file.exists():
             assert _history_file.is_file()
         history_file = _history_file
-    history_file.touch()
+
+    if history_file.exists():
+        # truncate if exists
+        logger.warning(
+            "History file already exists, truncating: {history_file}", history_file=history_file
+        )
+        history_file.unlink()
+        history_file.touch()
 
     _save_metadata(metadata)
     return Session(id=session_id, work_dir=work_dir_meta, history_file=history_file)

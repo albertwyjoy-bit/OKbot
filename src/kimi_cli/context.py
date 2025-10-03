@@ -19,14 +19,17 @@ class Context:
         self._next_checkpoint_id: int = 0
         """The ID of the next checkpoint, starting from 0, incremented after each checkpoint."""
 
-    async def restore(self):
+    async def restore(self) -> bool:
         logger.debug("Restoring context from file: {file_backend}", file_backend=self._file_backend)
         if self._history:
             logger.error("The context storage is already modified")
             raise RuntimeError("The context storage is already modified")
         if not self._file_backend.exists():
             logger.debug("No context file found, skipping restoration")
-            return
+            return False
+        if self._file_backend.stat().st_size == 0:
+            logger.debug("Empty context file, skipping restoration")
+            return False
 
         async with aiofiles.open(self._file_backend, encoding="utf-8") as f:
             async for line in f:
@@ -41,6 +44,8 @@ class Context:
                     continue
                 message = Message.model_validate(line_json)
                 self._history.append(message)
+
+        return True
 
     @property
     def history(self) -> Sequence[Message]:
