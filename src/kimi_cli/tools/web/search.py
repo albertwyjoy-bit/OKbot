@@ -8,8 +8,6 @@ from pydantic import BaseModel, Field, ValidationError
 from kimi_cli.config import Config
 from kimi_cli.tools.utils import load_desc
 
-SEARCH_BASE_URL = "https://search.saas.moonshot.cn/v1/search"
-
 
 class Params(BaseModel):
     query: str = Field(description="The query text to search for.")
@@ -43,6 +41,7 @@ class SearchWeb(CallableTool2[Params]):
         super().__init__(**kwargs)
         if config.services.moonshot_search is None:
             raise ValueError("Moonshot search service is not configured")
+        self._base_url = config.services.moonshot_search.base_url
         self._api_key = config.services.moonshot_search.api_key.get_secret_value()
 
     @override
@@ -50,7 +49,7 @@ class SearchWeb(CallableTool2[Params]):
         async with (
             aiohttp.ClientSession() as session,
             session.post(
-                SEARCH_BASE_URL,
+                self._base_url,
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 json={
                     "text_query": params.query,

@@ -57,6 +57,7 @@ def test_default_config_dump():
   },
   "services": {
     "moonshot_search": {
+      "base_url": "https://search.saas.moonshot.cn/v1/search",
       "api_key": ""
     }
   }

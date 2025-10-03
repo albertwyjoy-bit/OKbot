@@ -46,8 +46,10 @@ class LoopControl(BaseModel):
 class MoonshotSearchConfig(BaseModel):
     """Moonshot Search configuration."""
 
+    base_url: str = "https://search.saas.moonshot.cn/v1/search"
+    """Base URL for Moonshot Search service."""
     api_key: SecretStr
-    """API key for search.saas.moonshot.cn."""
+    """API key for Moonshot Search service."""
 
     @field_serializer("api_key", when_used="json")
     def dump_secret(self, v: SecretStr):
