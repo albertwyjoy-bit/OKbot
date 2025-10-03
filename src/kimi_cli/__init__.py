@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import textwrap
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -249,6 +250,7 @@ def kimi_run(
         config=config,
         llm=llm,
         builtin_args=BuiltinSystemPromptArgs(
+            ENSOUL_NOW=datetime.now().astimezone().isoformat(),
             ENSOUL_WORK_DIR=work_dir,
             ENSOUL_WORK_DIR_LS=ls.stdout,
             ENSOUL_AGENTS_MD=agents_md,

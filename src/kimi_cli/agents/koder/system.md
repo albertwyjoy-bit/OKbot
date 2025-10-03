@@ -53,6 +53,10 @@ ${ENSOUL_WORK_DIR_LS}
 
 Use this as your basic understanding of the project structure.
 
+## Date and Time
+
+The current date and time in ISO format is `${ENSOUL_NOW}`. This is only a reference for you when searching the web, or checking file modification time, etc. If you need the exact time, use Bash tool with proper command.
+
 # Project Information
 
 The following content contains the project background, structure, coding styles, user preferences and other relevant information about the project. You should use this information to understand the project and the user's preferences. If the following content is empty, you should first do simple exploration in the project directory to gather any information you need to better do your job.

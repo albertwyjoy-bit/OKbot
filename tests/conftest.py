@@ -2,6 +2,7 @@
 
 import tempfile
 from collections.abc import Generator
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,7 @@ def temp_work_dir() -> Generator[Path]:
 def builtin_args(temp_work_dir: Path) -> BuiltinSystemPromptArgs:
     """Create builtin arguments with temporary work directory."""
     return BuiltinSystemPromptArgs(
+        ENSOUL_NOW=datetime.now().astimezone().isoformat(),
         ENSOUL_WORK_DIR=temp_work_dir,
         ENSOUL_WORK_DIR_LS="Test ls content",
         ENSOUL_AGENTS_MD="Test agents content",

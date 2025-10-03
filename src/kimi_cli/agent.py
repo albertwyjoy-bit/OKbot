@@ -31,6 +31,8 @@ class AgentSpec(BaseModel):
 class BuiltinSystemPromptArgs(NamedTuple):
     """Builtin system prompt arguments."""
 
+    ENSOUL_NOW: str
+    """The current datetime."""
     ENSOUL_WORK_DIR: Path
     """The current working directory."""
     ENSOUL_WORK_DIR_LS: str
