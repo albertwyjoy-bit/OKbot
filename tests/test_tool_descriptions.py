@@ -10,6 +10,7 @@ from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.todo import SetTodoList
+from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import MoonshotSearch
 
 
@@ -190,4 +191,11 @@ def test_moonshot_search_description(moonshot_search_tool: MoonshotSearch):
     """Test the description of MoonshotSearch tool."""
     assert moonshot_search_tool.base.description == snapshot(
         "WebSearch tool allows you to search on the internet to get latest information, including news, documents, release notes, blog posts, papers, etc.\n"
+    )
+
+
+def test_fetch_url_description(fetch_url_tool: FetchURL):
+    """Test the description of FetchURL tool."""
+    assert fetch_url_tool.base.description == snapshot(
+        "Fetch a web page from a URL and extract main text content from it.\n"
     )

@@ -10,6 +10,7 @@ from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.todo import SetTodoList
+from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import MoonshotSearch
 
 
@@ -307,6 +308,22 @@ def test_moonshot_search_params_schema(moonshot_search_tool: MoonshotSearch):
                 },
             },
             "required": ["query"],
+            "type": "object",
+        }
+    )
+
+
+def test_fetch_url_params_schema(fetch_url_tool: FetchURL):
+    """Test the schema of FetchURL tool parameters."""
+    assert fetch_url_tool.base.parameters == snapshot(
+        {
+            "properties": {
+                "url": {
+                    "description": "The URL to fetch content from.",
+                    "type": "string",
+                }
+            },
+            "required": ["url"],
             "type": "object",
         }
     )

@@ -3,8 +3,7 @@
 import pytest
 from kosong.tooling import ToolError, ToolOk
 
-from kimi_cli.tools.web import FetchURL
-from kimi_cli.tools.web.fetch import Params
+from kimi_cli.tools.web.fetch import FetchURL, Params
 
 
 @pytest.mark.asyncio
