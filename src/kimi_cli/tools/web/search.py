@@ -2,10 +2,11 @@ from pathlib import Path
 from typing import override
 
 import aiohttp
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
+from kosong.tooling import CallableTool2, ToolReturnType
 from pydantic import BaseModel, Field, ValidationError
 
 from kimi_cli.config import Config
+from kimi_cli.tools.result_builder import ToolResultBuilder
 from kimi_cli.tools.utils import load_desc
 
 
@@ -46,6 +47,8 @@ class SearchWeb(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnType:
+        builder = ToolResultBuilder(max_line_length=None)
+
         async with (
             aiohttp.ClientSession() as session,
             session.post(
@@ -60,8 +63,8 @@ class SearchWeb(CallableTool2[Params]):
             ) as response,
         ):
             if response.status != 200:
-                return ToolError(
-                    message=(
+                return builder.error(
+                    (
                         f"Failed to search. Status: {response.status}. "
                         "This may indicates that the search service is currently unavailable."
                     ),
@@ -71,23 +74,22 @@ class SearchWeb(CallableTool2[Params]):
             try:
                 results = Response(**await response.json()).search_results
             except ValidationError as e:
-                return ToolError(
-                    message=(
+                return builder.error(
+                    (
                         f"Failed to parse search results. Error: {e}. "
                         "This may indicates that the search service is currently unavailable."
                     ),
                     brief="Failed to parse search results",
                 )
 
-        output = ""
         for i, result in enumerate(results):
             if i > 0:
-                output += "---\n\n"
-            output += f"{result.title}\n{result.url}\nSummary: {result.snippet}\n\n"
+                builder.write("---\n\n")
+            builder.write(f"{result.title}\n{result.url}\nSummary: {result.snippet}\n\n")
             if result.content:
-                output += f"{result.content}\n\n"
+                builder.write(f"{result.content}\n\n")
 
-        return ToolOk(output=output)
+        return builder.ok()
 
 
 class SearchResult(BaseModel):

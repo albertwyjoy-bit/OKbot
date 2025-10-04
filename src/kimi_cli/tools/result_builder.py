@@ -93,7 +93,7 @@ class ToolResultBuilder:
         final_message = message
         if final_message and not final_message.endswith("."):
             final_message += "."
-        truncation_msg = "Output is truncated because it was too long."
+        truncation_msg = "Output is truncated to fit in the message."
         if self._truncation_happened:
             if final_message:
                 final_message += f" {truncation_msg}"
@@ -102,13 +102,13 @@ class ToolResultBuilder:
 
         return ToolOk(output=output, message=final_message, brief=brief)
 
-    def error(self, message: str, brief: str) -> ToolError:
+    def error(self, message: str, *, brief: str) -> ToolError:
         """Create a ToolError result with the current output."""
         output = "".join(self._buffer)
 
         final_message = message
         if self._truncation_happened:
-            truncation_msg = "Output is truncated because it was too long."
+            truncation_msg = "Output is truncated to fit in the message."
             if final_message:
                 final_message += f" {truncation_msg}"
             else:

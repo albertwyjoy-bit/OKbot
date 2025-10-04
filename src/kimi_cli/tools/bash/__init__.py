@@ -2,13 +2,13 @@ import asyncio
 from pathlib import Path
 from typing import override
 
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
+from kosong.tooling import CallableTool2, ToolReturnType
 from pydantic import BaseModel, Field
 
+from kimi_cli.tools.result_builder import ToolResultBuilder
 from kimi_cli.tools.utils import load_desc
 
 MAX_TIMEOUT = 5 * 60
-MAX_OUTPUT_LENGTH = 50_000
 
 
 class Params(BaseModel):
@@ -31,42 +31,31 @@ class Bash(CallableTool2[Params]):
 
     @override
     async def __call__(self, params) -> ToolReturnType:
-        output = []
+        builder = ToolResultBuilder()
 
         def stdout_cb(line: bytes):
             line_str = line.decode()
-            output.append(line_str)
+            builder.write(line_str)
 
         def stderr_cb(line: bytes):
             line_str = line.decode()
-            output.append(line_str)
+            builder.write(line_str)
 
         try:
             exitcode = await _stream_subprocess(
                 params.command, stdout_cb, stderr_cb, params.timeout
             )
-            # TODO: truncate/compress the output if it is too long
-            output_str = "".join(output)
-            message = (
-                "Command executed successfully."
-                if exitcode == 0
-                else f"Command failed with exit code: {exitcode}."
-            )
-            if len(output_str) > MAX_OUTPUT_LENGTH:
-                output_str = output_str[:MAX_OUTPUT_LENGTH] + "..."
-                message += f" Output truncated to {MAX_OUTPUT_LENGTH} characters."
+
             if exitcode == 0:
-                return ToolOk(output=output_str, message=message)
-            return ToolError(
-                output=output_str,
-                message=message,
-                brief=f"Failed with exit code: {exitcode}",
-            )
+                return builder.ok("Command executed successfully.")
+            else:
+                return builder.error(
+                    f"Command failed with exit code: {exitcode}.",
+                    brief=f"Failed with exit code: {exitcode}",
+                )
         except TimeoutError:
-            output_str = "".join(output)
-            return ToolError(
-                output=output_str,
-                message=f"Command killed by timeout ({params.timeout}s)",
+            return builder.error(
+                f"Command killed by timeout ({params.timeout}s)",
                 brief=f"Killed by timeout ({params.timeout}s)",
             )
 

@@ -75,7 +75,7 @@ def test_error_result():
     builder = ToolResultBuilder(max_chars=20)
 
     builder.write("Some output")
-    result = builder.error("Something went wrong", "Error occurred")
+    result = builder.error("Something went wrong", brief="Error occurred")
 
     assert result.output == "Some output"
     assert result.message == "Something went wrong"
@@ -87,7 +87,7 @@ def test_error_with_truncation():
     builder = ToolResultBuilder(max_chars=10)
 
     builder.write("Very long output that exceeds limit")
-    result = builder.error("Command failed", "Failed")
+    result = builder.error("Command failed", brief="Failed")
 
     assert "[...truncated]" in result.output
     assert "Command failed" in result.message
