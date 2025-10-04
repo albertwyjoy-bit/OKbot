@@ -28,7 +28,7 @@ Your previous response was too brief. Please provide a more comprehensive summar
 
 SUBAGENTS = {
     "koder": (
-        get_agents_dir() / "koder" / "agent.yaml",
+        get_agents_dir() / "koder" / "sub.yaml",
         "Good at general software engineering tasks.",
     ),
 }

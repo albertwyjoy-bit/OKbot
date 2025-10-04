@@ -6,7 +6,6 @@ agent:
   #   KODER_ROLE: |
   #     You are Kimi Koder. You are an interactive CLI agent specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
   tools:
-    - "kimi_cli.tools.task:Task"
     - "kimi_cli.tools.dmail:SendDMail"
     - "kimi_cli.tools.todo:SetTodoList"
     - "kimi_cli.tools.bash:Bash"
