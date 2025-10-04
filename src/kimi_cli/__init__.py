@@ -121,17 +121,18 @@ UIMode = Literal["shell", "print", "acp"]
 @click.option(
     "--input-format",
     type=click.Choice(["text", "stream-json"]),
-    default="text",
+    default=None,
     help=(
-        "Input format to use. Default: text. This only matters when piping input from stdin, "
-        "and must be used with `--print`."
+        "Input format to use. This must be used with `--print` "
+        "and the input must be piped in via stdin. "
+        "Default: text."
     ),
 )
 @click.option(
     "--output-format",
     type=click.Choice(["text", "stream-json"]),
-    default="text",
-    help="Output format to use. Default: text. This only matters when using `--print`.",
+    default=None,
+    help="Output format to use. This must be used with `--print`. Default: text.",
 )
 def kimi(
     verbose: bool,
@@ -142,8 +143,8 @@ def kimi(
     continue_: bool,
     command: str | None,
     ui: UIMode,
-    input_format: InputFormat,
-    output_format: OutputFormat,
+    input_format: InputFormat | None,
+    output_format: OutputFormat | None,
 ):
     """Kimi, your next CLI agent."""
     echo = click.echo if verbose else lambda *args, **kwargs: None
@@ -175,9 +176,15 @@ def kimi(
         echo(f"✓ Created new session: {session.id}")
     echo(f"✓ Session history file: {session.history_file}")
 
-    if input_format == "stream-json" and ui != "print":
+    if input_format is not None and ui != "print":
         raise click.BadOptionUsage(
-            "--input-format", "Stream JSON input is only supported for print UI"
+            "--input-format",
+            "Input format is only supported for print UI",
+        )
+    if output_format is not None and ui != "print":
+        raise click.BadOptionUsage(
+            "--output-format",
+            "Output format is only supported for print UI",
         )
 
     succeeded = kimi_run(
@@ -206,8 +213,8 @@ def kimi_run(
     agent_file: Path = DEFAULT_AGENT_FILE,
     verbose: bool = True,
     ui: UIMode = "shell",
-    input_format: InputFormat = "text",
-    output_format: OutputFormat = "text",
+    input_format: InputFormat | None = None,
+    output_format: OutputFormat | None = None,
 ) -> bool:
     """Run Kimi CLI."""
     echo = click.echo if verbose else lambda *args, **kwargs: None
@@ -288,7 +295,7 @@ def kimi_run(
 
     try:
         if ui == "shell":
-            if command is None and not sys.stdin.isatty() and input_format == "text":
+            if command is None and not sys.stdin.isatty():
                 command = sys.stdin.read().strip()
                 echo(f"✓ Read command from stdin: {command}")
 
@@ -301,7 +308,7 @@ def kimi_run(
                 },
             )
         elif ui == "print":
-            app = PrintApp(soul, input_format, output_format)
+            app = PrintApp(soul, input_format or "text", output_format or "text")
         elif ui == "acp":
             app = ACPServer(soul)
         else:
