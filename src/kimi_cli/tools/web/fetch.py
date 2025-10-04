@@ -3,12 +3,11 @@ from typing import override
 
 import aiohttp
 import trafilatura
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
+from kosong.tooling import CallableTool2, ToolReturnType
 from pydantic import BaseModel, Field
 
+from kimi_cli.tools.result_builder import ToolResultBuilder
 from kimi_cli.tools.utils import load_desc
-
-MAX_OUTPUT_LENGTH = 50_000
 
 
 class Params(BaseModel):
@@ -22,6 +21,8 @@ class FetchURL(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnType:
+        builder = ToolResultBuilder(max_line_length=None)
+
         try:
             async with (
                 aiohttp.ClientSession() as session,
@@ -36,8 +37,8 @@ class FetchURL(CallableTool2[Params]):
                 ) as response,
             ):
                 if response.status >= 400:
-                    return ToolError(
-                        message=(
+                    return builder.error(
+                        (
                             f"Failed to fetch URL. Status: {response.status}. "
                             f"This may indicate the page is not accessible or the server is down."
                         ),
@@ -46,8 +47,8 @@ class FetchURL(CallableTool2[Params]):
 
                 html = await response.text()
         except aiohttp.ClientError as e:
-            return ToolError(
-                message=(
+            return builder.error(
+                (
                     f"Failed to fetch URL due to network error: {str(e)}. "
                     "This may indicate the URL is invalid or the server is unreachable."
                 ),
@@ -55,9 +56,8 @@ class FetchURL(CallableTool2[Params]):
             )
 
         if not html:
-            return ToolOk(
-                output="",
-                message="The response body is empty.",
+            return builder.ok(
+                "The response body is empty.",
                 brief="Empty response body",
             )
 
@@ -71,8 +71,8 @@ class FetchURL(CallableTool2[Params]):
         )
 
         if not extracted_text:
-            return ToolError(
-                message=(
+            return builder.error(
+                (
                     "Failed to extract meaningful content from the page. "
                     "This may indicate the page content is not suitable for text extraction, "
                     "or the page requires JavaScript to render its content."
@@ -80,15 +80,8 @@ class FetchURL(CallableTool2[Params]):
                 brief="No content extracted",
             )
 
-        message = "The returned content is the main text content extracted from the page."
-        if len(extracted_text) > MAX_OUTPUT_LENGTH:
-            extracted_text = extracted_text[:MAX_OUTPUT_LENGTH] + "..."
-            message += f" Output truncated to {MAX_OUTPUT_LENGTH} characters."
-
-        return ToolOk(
-            output=extracted_text,
-            message=message,
-        )
+        builder.write(extracted_text)
+        return builder.ok("The returned content is the main text content extracted from the page.")
 
 
 if __name__ == "__main__":
