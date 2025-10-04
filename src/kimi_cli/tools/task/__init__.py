@@ -47,8 +47,8 @@ class Params(BaseModel):
     prompt: str = Field(
         description=(
             "The task for the subagent to perform. "
-            "This prompt should be accurate and specific to the task. "
-            "Neccesary background should be provided in a concise manner."
+            "You must provide a detailed prompt with all necessary background information "
+            "because the subagent cannot see anything in your context."
         )
     )
 
