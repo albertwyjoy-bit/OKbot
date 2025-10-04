@@ -14,8 +14,20 @@ Only write entries that are worth mentioning to users.
 
 ### Added
 
-- Add `--print` option as a shortcut for `--ui print`
-- Add `--acp` option as a shortcut for `--ui acp`
+- Add `--print` option as a shortcut for `--ui print`, `--acp` option as a shortcut for `--ui acp`
+- Support `--output-format stream-json` to print output in JSON format
+- Add `SearchWeb` tool with `services.moonshot_search` configuration. You need to configure it with `"services": {"moonshot_search": {"api_key": "your-search-api-key"}}` in your config file.
+- Add `FetchURL` tool
+- Add `Think` tool
+- Add `PatchFile` tool, not enabled in Kimi Koder agent
+- Enable `SendDMail` and `Task` tool in Kimi Koder agent with better tool prompts
+- Add `ENSOUL_NOW` builtin system prompt argument
+
+### Changed
+
+- Better-looking `/release-notes`
+- Improve tool descriptions
+- Improve tool output truncation
 
 ## [0.20] - 2025-09-30
 
