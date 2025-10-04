@@ -1,30 +1,24 @@
-Delegates self-contained tasks to specialized subagents for context isolation and focused problem-solving.
+Spawn a subagent to perform a specific task.
 
-**When to use:**
-- **Context isolation**: Offload lengthy debugging, compilation fixes, or multi-step problem-solving that would pollute your main context
-- **Complex analysis**: Tasks requiring deep exploration, investigation, or iterative problem-solving, of which only the final result rather than the entire process matters to you
+**Context Isolation**
 
-**When NOT to use:**
-- Simple single-tool operations (use direct tools instead)
-- Tasks that may require your entire context as background information
-- Actions that need immediate feedback or course-correction
+Context isolation is one of the key benefits of using subagents. By delegating tasks to subagents, you can keep your main context clean and focused on the main goal requested by the user.
 
-**Key Benefits:**
-- **Context Preservation**: Subagents work in isolated contexts - their detailed problem-solving process won't clutter your main conversation
-- **Focused Results**: You receive only the final solution/summary, not the entire trial-and-error process
-- **Parallel Processing**: Delegate multiple independent tasks simultaneously
+Here are some scenerios you may want this tool for context isolation:
 
-**Critical Guidelines:**
-- **Autonomous Operation**: Once delegated, subagents work independently. No further communication until completion.
-- **Detailed Prompts Required**: Include ALL context, specific steps, and exact output format. The prompt IS the contract.
-- **Result Processing**: Subagent returns final report to you only. You are responsible for interpreting and presenting relevant information to user.
+- You wrote some code and it did not work as expected. In this case you can spawn a subagent to fix the code, asking the subagent to return how it is fixed. This can potentially benefit because the detailed process of fixing the code may not be relevant to your main goal, and may clutter your context.
+- When you need some latest knowledge of a specific library, framework or technology to proceed with your task, you can spawn a subagent to search on the internet for the needed information and return to you the gathered relevant information, for example code examples, API references, etc. This can avoid ton of irrelevant search results in your own context.
+
+**Parallel Multi-Tasking**
+
+Parallel multi-tasking is another key benefit of this tool. When the user request involves multiple subtasks that are independent of each other, you can use Task tool multiple times in a single response to let subagents work in parallel for you.
+
+Examples:
+
+- User requests to code, refactor or fix multiple modules/files in a project, and they can be independently tested. In this case you can spawn multiple subagents each working on a different module/file.
+- When you need to analyze a huge codebase (> hundreds of thousands of lines), you can spawn multiple subagents each exploring on a different part of the codebase and gather the summarized results.
+- When you need to search the web for multiple queries, you can spawn multiple subagents for better efficiency.
 
 **Available Subagents:**
-- `explorer`: Project analysis and codebase exploration
-- `coder`: Multi-step coding, debugging, refactoring, and error resolution
 
-**Example Use Cases:**
-- Fix compilation errors without cluttering context with build logs
-- Debug complex issues through systematic investigation
-- Refactor legacy code with iterative improvements
-- Analyze project structure and dependencies
+${SUBAGENTS_MD}

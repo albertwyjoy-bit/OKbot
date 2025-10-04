@@ -5,26 +5,38 @@ from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
 from pydantic import BaseModel, Field
 
 from kimi_cli.agent import Agent, AgentGlobals, get_agents_dir, load_agent
-from kimi_cli.config import LoopControl
 from kimi_cli.context import Context
 from kimi_cli.event import EventQueue, RunEnd, StepInterrupted
 from kimi_cli.soul import MaxStepsReached, Soul
+from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.message import message_extract_text
 from kimi_cli.utils.path import next_available_rotation
 
 # Maximum continuation attempts for task summary
-_MAX_CONTINUE = 1
+MAX_CONTINUE_ATTEMPTS = 1
 
 
-_CONTINUE_PROMPT = """
+CONTINUE_PROMPT = """
 Your previous response was too brief. Please provide a more comprehensive summary that includes:
+
 1. Specific technical details and implementations
 2. Complete code examples if relevant
 3. Detailed findings and analysis
 4. All important information that should be aware of by the caller
-
-Please expand with comprehensive details.
 """.strip()
+
+
+SUBAGENTS = {
+    "koder": (
+        get_agents_dir() / "koder" / "agent.yaml",
+        "Good at general software engineering tasks.",
+    ),
+}
+
+
+SUBAGENTS_MD = "\n".join(
+    f"- `{name}`: {description}" for name, (_, description) in SUBAGENTS.items()
+)
 
 
 class Params(BaseModel):
@@ -43,7 +55,12 @@ class Params(BaseModel):
 
 class Task(CallableTool2[Params]):
     name: str = "Task"
-    description: str = (Path(__file__).parent / "task.md").read_text()
+    description: str = load_desc(
+        Path(__file__).parent / "task.md",
+        {
+            "SUBAGENTS_MD": SUBAGENTS_MD,
+        },
+    )
     params: type[Params] = Params
 
     def __init__(self, agent_globals: AgentGlobals, **kwargs):
@@ -53,10 +70,7 @@ class Task(CallableTool2[Params]):
         self._subagents: dict[str, Agent] = {}
 
         # load all subagents
-        for subagent_name, agent_file in {
-            "explorer": get_agents_dir() / "explorer" / "agent.yaml",
-            "coder": get_agents_dir() / "koder" / "sub.yaml",
-        }.items():
+        for subagent_name, (agent_file, _) in SUBAGENTS.items():
             self._subagents[subagent_name] = load_agent(agent_file, agent_globals)
 
     async def _get_subagent_history_file(self) -> Path:
@@ -95,7 +109,7 @@ class Task(CallableTool2[Params]):
             agent,
             agent_globals=self._agent_globals,
             context=context,
-            loop_control=LoopControl(),  # use default loop control
+            loop_control=self._agent_globals.config.loop_control,
         )
 
         async def _visualize(event_queue: EventQueue):
@@ -126,9 +140,9 @@ class Task(CallableTool2[Params]):
         final_response = message_extract_text(context.history[-1])
 
         # Check if response is too brief, if so, run again with continuation prompt
-        n_attempts_remaining = _MAX_CONTINUE
+        n_attempts_remaining = MAX_CONTINUE_ATTEMPTS
         if len(final_response) < 200 and n_attempts_remaining > 0:
-            await soul.run(_CONTINUE_PROMPT, _visualize)
+            await soul.run(CONTINUE_PROMPT, _visualize)
 
             if len(context.history) == 0 or context.history[-1].role != "assistant":
                 return ToolError(message=_error_msg, brief="Failed to run subagent")
