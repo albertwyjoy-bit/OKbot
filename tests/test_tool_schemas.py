@@ -11,6 +11,7 @@ from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.task import Task
+from kimi_cli.tools.think import Think
 from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
@@ -53,6 +54,22 @@ def test_send_dmail_params_schema(send_dmail_tool: SendDMail):
                 },
             },
             "required": ["message", "checkpoint_id"],
+            "type": "object",
+        }
+    )
+
+
+def test_think_params_schema(think_tool: Think):
+    """Test the schema of Think tool parameters."""
+    assert think_tool.base.parameters == snapshot(
+        {
+            "properties": {
+                "thought": {
+                    "description": "A thought to think about.",
+                    "type": "string",
+                }
+            },
+            "required": ["thought"],
             "type": "object",
         }
     )

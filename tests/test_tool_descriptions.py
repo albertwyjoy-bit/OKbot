@@ -11,6 +11,7 @@ from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.task import Task
+from kimi_cli.tools.think import Think
 from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
@@ -68,6 +69,13 @@ Here are some typical scenarios you may want to send a DMail:
   - If you did not get what you need, you may send a DMail to tell your past self to try another query.
 - You wrote some code and it did not work as expected. You spent many struggling steps to fix it but the process is not relevant to the ultimate goal. In this case you can send a DMail to the checkpoint before you wrote the code and give your past self the fixed version of the code and tell yourself no need to write it again because you already wrote to the filesystem.
 """
+    )
+
+
+def test_think_description(think_tool: Think):
+    """Test the description of Think tool."""
+    assert think_tool.base.description == snapshot(
+        "Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.\n"
     )
 
 

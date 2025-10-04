@@ -16,6 +16,16 @@ def extract_subtitle(lexer: streamingjson.Lexer, tool_name: str) -> str | None:
         return None
     subtitle: str = ""
     match tool_name:
+        case "Task":
+            if not isinstance(curr_args, dict) or not curr_args.get("description"):
+                return None
+            subtitle = str(curr_args["description"])
+        case "SendDMail":
+            return "El Psy Kongroo"
+        case "Think":
+            if not isinstance(curr_args, dict) or not curr_args.get("thought"):
+                return None
+            subtitle = str(curr_args["thought"])
         case "SetTodoList":
             if not isinstance(curr_args, dict) or not curr_args.get("todos"):
                 return None
@@ -33,10 +43,6 @@ def extract_subtitle(lexer: streamingjson.Lexer, tool_name: str) -> str | None:
             if not isinstance(curr_args, dict) or not curr_args.get("command"):
                 return None
             subtitle = str(curr_args["command"])
-        case "Task":
-            if not isinstance(curr_args, dict) or not curr_args.get("description"):
-                return None
-            subtitle = str(curr_args["description"])
         case "ReadFile":
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
@@ -57,8 +63,6 @@ def extract_subtitle(lexer: streamingjson.Lexer, tool_name: str) -> str | None:
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
             subtitle = _normalize_path(str(curr_args["path"]))
-        case "SendDMail":
-            return "El Psy Kongroo"
         case _:
             subtitle = "".join(lexer.json_content)
     if tool_name not in ["SetTodoList"]:
