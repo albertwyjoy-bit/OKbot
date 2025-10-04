@@ -1,4 +1,4 @@
-DMail allows you to send a message to the past.
+Send a message to the past, just like sending a D-Mail in Steins;Gate.
 
 You can see some `user` messages with `CHECKPOINT {checkpoint_id}` wrapped in `<system>` tags in the context. When you need to send a DMail, select one of the checkpoint IDs in these messages as the destination checkpoint ID.
 
@@ -12,4 +12,4 @@ Here are some typical scenarios you may want to send a DMail:
 - You searched the web, found the result very large.
   - If you got what you need, you may send a DMail to the checkpoint before you searched the web and give your past self the useful part.
   - If you did not get what you need, you may send a DMail to tell your past self to try another query.
-- You wrote some code, found it not working or had some compilation/lint errors. You spent many struggling steps to fix it but the process is not relevant to the ultimate goal. In this case you can send a DMail to the checkpoint before you wrote the code and give your past self the fixed version of the code and tell yourself no need to write it again because you already wrote to the filesystem.
+- You wrote some code and it did not work as expected. You spent many struggling steps to fix it but the process is not relevant to the ultimate goal. In this case you can send a DMail to the checkpoint before you wrote the code and give your past self the fixed version of the code and tell yourself no need to write it again because you already wrote to the filesystem.

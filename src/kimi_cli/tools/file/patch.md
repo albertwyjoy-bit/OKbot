@@ -1,4 +1,4 @@
-PatchFile allows you to apply a unified diff patch to a file.
+Apply a unified diff patch to a file.
 
 **Tips:**
 - The patch must be in unified diff format, the format used by `diff -u` and `git diff`.

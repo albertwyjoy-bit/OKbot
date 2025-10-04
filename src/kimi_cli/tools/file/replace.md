@@ -1,4 +1,4 @@
-Replaces specific strings within a specified file.
+Replace specific strings within a specified file.
 
 **Tips:**
 - Only use this tool on text files.
