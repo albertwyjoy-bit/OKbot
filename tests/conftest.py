@@ -6,11 +6,14 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from kosong.chat_provider import MockChatProvider
 from pydantic import SecretStr
 
-from kimi_cli.agent import BuiltinSystemPromptArgs
+from kimi_cli.agent import AgentGlobals, BuiltinSystemPromptArgs
 from kimi_cli.config import Config, MoonshotSearchConfig, get_default_config
 from kimi_cli.denwarenji import DenwaRenji
+from kimi_cli.llm import LLM
+from kimi_cli.metadata import Session, WorkDirMeta
 from kimi_cli.tools.bash import Bash
 from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
@@ -19,6 +22,7 @@ from kimi_cli.tools.file.patch import PatchFile
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
+from kimi_cli.tools.task import Task
 from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
@@ -33,8 +37,21 @@ def config() -> Config:
 
 
 @pytest.fixture
+def llm() -> LLM:
+    """Create a LLM instance."""
+    return LLM(chat_provider=MockChatProvider([]), max_context_size=100_000)
+
+
+@pytest.fixture
 def temp_work_dir() -> Generator[Path]:
     """Create a temporary working directory for tests."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir)
+
+
+@pytest.fixture
+def temp_share_dir() -> Generator[Path]:
+    """Create a temporary shared directory for tests."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
 
@@ -54,6 +71,40 @@ def builtin_args(temp_work_dir: Path) -> BuiltinSystemPromptArgs:
 def denwa_renji() -> DenwaRenji:
     """Create a DenwaRenji instance."""
     return DenwaRenji()
+
+
+@pytest.fixture
+def session(temp_work_dir: Path, temp_share_dir: Path) -> Session:
+    """Create a Session instance."""
+    return Session(
+        id="test",
+        work_dir=WorkDirMeta(path=str(temp_work_dir)),
+        history_file=temp_share_dir / "history.jsonl",
+    )
+
+
+@pytest.fixture
+def agent_globals(
+    config: Config,
+    llm: LLM,
+    builtin_args: BuiltinSystemPromptArgs,
+    denwa_renji: DenwaRenji,
+    session: Session,
+) -> AgentGlobals:
+    """Create a AgentGlobals instance."""
+    return AgentGlobals(
+        config=config,
+        llm=llm,
+        builtin_args=builtin_args,
+        denwa_renji=denwa_renji,
+        session=session,
+    )
+
+
+@pytest.fixture
+def task_tool(agent_globals: AgentGlobals) -> Task:
+    """Create a Task tool instance."""
+    return Task(agent_globals)
 
 
 @pytest.fixture

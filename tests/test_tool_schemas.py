@@ -10,9 +10,34 @@ from kimi_cli.tools.file.patch import PatchFile
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
+from kimi_cli.tools.task import Task
 from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
+
+
+def test_task_params_schema(task_tool: Task):
+    """Test the schema of Task tool parameters."""
+    assert task_tool.base.parameters == snapshot(
+        {
+            "properties": {
+                "description": {
+                    "description": "A short (3-5 word) description of the task",
+                    "type": "string",
+                },
+                "subagent_name": {
+                    "description": "The name of the specialized subagent to use for this task",
+                    "type": "string",
+                },
+                "prompt": {
+                    "description": "The task for the subagent to perform. This prompt should be accurate and specific to the task. Neccesary background should be provided in a concise manner.",
+                    "type": "string",
+                },
+            },
+            "required": ["description", "subagent_name", "prompt"],
+            "type": "object",
+        }
+    )
 
 
 def test_send_dmail_params_schema(send_dmail_tool: SendDMail):
