@@ -9,6 +9,14 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.23] - 2025-10-09
+
+### Added
+
+- Add `extend` field to agent file to support agent file extension
+- Add `exclude_tools` field to agent file to support excluding tools
+- Add `subagents` field to agent file to support defining subagents
+
 ## [0.22] - 2025-10-09
 
 ## Changed
