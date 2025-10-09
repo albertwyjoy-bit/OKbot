@@ -6,7 +6,8 @@ from typing import Any, NamedTuple
 
 import yaml
 from kosong.base.chat_provider import ChatProvider
-from kosong.tooling import CallableTool, SimpleToolset, Toolset
+from kosong.tooling import SimpleToolset, Toolset
+from kosong.tooling.simple import ToolType
 from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
@@ -136,7 +137,7 @@ def _load_tools(
     return toolset, bad_tools
 
 
-def _load_tool(tool_path: str, dependencies: dict[type[Any], Any]) -> CallableTool | None:
+def _load_tool(tool_path: str, dependencies: dict[type[Any], Any]) -> ToolType | None:
     logger.debug("Loading tool: {tool_path}", tool_path=tool_path)
     module_name, class_name = tool_path.rsplit(":", 1)
     try:
