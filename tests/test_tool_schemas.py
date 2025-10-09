@@ -31,7 +31,7 @@ def test_task_params_schema(task_tool: Task):
                     "type": "string",
                 },
                 "prompt": {
-                    "description": "The task for the subagent to perform. This prompt should be accurate and specific to the task. Neccesary background should be provided in a concise manner.",
+                    "description": "The task for the subagent to perform. You must provide a detailed prompt with all necessary background information because the subagent cannot see anything in your context.",
                     "type": "string",
                 },
             },
