@@ -10,7 +10,7 @@ Only write entries that are worth mentioning to users.
 -->
 
 
-## [Unreleased]
+## [0.21] - 2025-10-09
 
 ### Added
 
