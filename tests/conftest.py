@@ -2,14 +2,19 @@
 
 import tempfile
 from collections.abc import Generator
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 from kosong.chat_provider import MockChatProvider
 from pydantic import SecretStr
 
-from kimi_cli.agent import AgentGlobals, BuiltinSystemPromptArgs
+from kimi_cli.agent import (
+    DEFAULT_AGENT_FILE,
+    AgentGlobals,
+    AgentSpec,
+    BuiltinSystemPromptArgs,
+    _load_agent_spec,
+)
 from kimi_cli.config import Config, MoonshotSearchConfig, get_default_config
 from kimi_cli.denwarenji import DenwaRenji
 from kimi_cli.llm import LLM
@@ -61,7 +66,7 @@ def temp_share_dir() -> Generator[Path]:
 def builtin_args(temp_work_dir: Path) -> BuiltinSystemPromptArgs:
     """Create builtin arguments with temporary work directory."""
     return BuiltinSystemPromptArgs(
-        ENSOUL_NOW=datetime.now().astimezone().isoformat(),
+        ENSOUL_NOW="1970-01-01T00:00:00+00:00",
         ENSOUL_WORK_DIR=temp_work_dir,
         ENSOUL_WORK_DIR_LS="Test ls content",
         ENSOUL_AGENTS_MD="Test agents content",
@@ -85,6 +90,12 @@ def session(temp_work_dir: Path, temp_share_dir: Path) -> Session:
 
 
 @pytest.fixture
+def agent_spec() -> AgentSpec:
+    """Create a AgentSpec instance."""
+    return _load_agent_spec(DEFAULT_AGENT_FILE)
+
+
+@pytest.fixture
 def agent_globals(
     config: Config,
     llm: LLM,
@@ -103,9 +114,9 @@ def agent_globals(
 
 
 @pytest.fixture
-def task_tool(agent_globals: AgentGlobals) -> Task:
+def task_tool(agent_spec: AgentSpec, agent_globals: AgentGlobals) -> Task:
     """Create a Task tool instance."""
-    return Task(agent_globals)
+    return Task(agent_spec, agent_globals)
 
 
 @pytest.fixture
