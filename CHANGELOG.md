@@ -9,6 +9,12 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.22] - 2025-10-09
+
+## Changed
+
+- Improve `SearchWeb` and `FetchURL` tool call visualization
+- Improve search result output format
 
 ## [0.21] - 2025-10-09
 
