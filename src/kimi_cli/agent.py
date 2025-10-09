@@ -20,12 +20,16 @@ from kimi_cli.metadata import Session
 class AgentSpec(BaseModel):
     """Agent specification."""
 
-    name: str = Field(..., description="Agent name")
-    system_prompt_path: Path = Field(..., description="System prompt path")
+    extend: str | None = Field(default=None, description="Agent file to extend")
+    name: str | None = Field(default=None, description="Agent name")  # required
+    system_prompt_path: Path | None = Field(
+        default=None, description="System prompt path"
+    )  # required
     system_prompt_args: dict[str, str] = Field(
         default_factory=dict, description="System prompt arguments"
     )
-    tools: list[str] = Field(default_factory=list, description="Tools")
+    tools: list[str] | None = Field(default=None, description="Tools")  # required
+    exclude_tools: list[str] | None = Field(default=None, description="Tools to exclude")
 
 
 class BuiltinSystemPromptArgs(NamedTuple):
@@ -63,6 +67,9 @@ def get_agents_dir() -> Path:
     return Path(__file__).parent / "agents"
 
 
+DEFAULT_AGENT_FILE = get_agents_dir() / "koder" / "agent.yaml"
+
+
 def load_agent(
     agent_file: Path,
     globals_: AgentGlobals,
@@ -73,19 +80,18 @@ def load_agent(
     Raises:
         ValueError: If the agent spec is not valid.
     """
+    agent_spec = _load_agent_spec(agent_file)
+    assert agent_spec.extend is None, "agent extension should be recursively resolved"
+    if agent_spec.name is None:
+        raise ValueError("Agent name is required")
+    if agent_spec.system_prompt_path is None:
+        raise ValueError("System prompt path is required")
+    if agent_spec.tools is None:
+        raise ValueError("Tools are required")
 
-    assert agent_file.is_file(), "expect agent file to exist"
-    with open(agent_file, encoding="utf-8") as f:
-        data: dict[str, Any] = yaml.safe_load(f)
-
-    version = data.get("version", 1)
-    if version != 1:
-        raise ValueError(f"Unsupported agent spec version: {version}")
-
-    agent_spec = AgentSpec(**data.get("agent", {}))
-    agent_spec.system_prompt_path = agent_file.parent.joinpath(agent_spec.system_prompt_path)
-
-    system_prompt = _load_system_prompt(agent_spec, globals_.builtin_args)
+    system_prompt = _load_system_prompt(
+        agent_spec.system_prompt_path, agent_spec.system_prompt_args, globals_.builtin_args
+    )
 
     tool_deps = {
         AgentGlobals: globals_,
@@ -96,7 +102,11 @@ def load_agent(
         Session: globals_.session,
         DenwaRenji: globals_.denwa_renji,
     }
-    toolset, bad_tools = _load_tools(agent_spec, tool_deps)
+    tools = agent_spec.tools
+    if agent_spec.exclude_tools:
+        logger.debug("Excluding tools: {tools}", tools=agent_spec.exclude_tools)
+        tools = [tool for tool in tools if tool not in agent_spec.exclude_tools]
+    toolset, bad_tools = _load_tools(tools, tool_deps)
     if bad_tools:
         raise ValueError(f"Invalid tools: {bad_tools}")
 
@@ -107,25 +117,57 @@ def load_agent(
     )
 
 
-def _load_system_prompt(agent_spec: AgentSpec, builtin_args: BuiltinSystemPromptArgs) -> str:
-    system_prompt = agent_spec.system_prompt_path.read_text().strip()
+def _load_agent_spec(agent_file: Path) -> AgentSpec:
+    assert agent_file.is_file(), "expect agent file to exist"
+    with open(agent_file, encoding="utf-8") as f:
+        data: dict[str, Any] = yaml.safe_load(f)
+
+    version = data.get("version", 1)
+    if version != 1:
+        raise ValueError(f"Unsupported agent spec version: {version}")
+
+    agent_spec = AgentSpec(**data.get("agent", {}))
+    if agent_spec.system_prompt_path is not None:
+        agent_spec.system_prompt_path = agent_file.parent / agent_spec.system_prompt_path
+    if agent_spec.extend:
+        if agent_spec.extend == "default":
+            base_agent_file = DEFAULT_AGENT_FILE
+        else:
+            base_agent_file = agent_file.parent / agent_spec.extend
+        base_agent_spec = _load_agent_spec(base_agent_file)
+        if agent_spec.name is not None:
+            base_agent_spec.name = agent_spec.name
+        if agent_spec.system_prompt_path is not None:
+            base_agent_spec.system_prompt_path = agent_spec.system_prompt_path
+        for k, v in agent_spec.system_prompt_args.items():
+            base_agent_spec.system_prompt_args[k] = v
+        if agent_spec.tools is not None:
+            base_agent_spec.tools = agent_spec.tools
+        if agent_spec.exclude_tools is not None:
+            base_agent_spec.exclude_tools = agent_spec.exclude_tools
+        agent_spec = base_agent_spec
+    return agent_spec
+
+
+def _load_system_prompt(
+    path: Path, args: dict[str, str], builtin_args: BuiltinSystemPromptArgs
+) -> str:
+    system_prompt = path.read_text().strip()
     logger.debug(
         "Substituting system prompt with builtin args: {builtin_args}, spec args: {spec_args}",
         builtin_args=builtin_args,
-        spec_args=agent_spec.system_prompt_args,
+        spec_args=args,
     )
-    return string.Template(system_prompt).substitute(
-        builtin_args._asdict(), **agent_spec.system_prompt_args
-    )
+    return string.Template(system_prompt).substitute(builtin_args._asdict(), **args)
 
 
 def _load_tools(
-    agent_spec: AgentSpec,
+    tool_paths: list[str],
     dependencies: dict[type[Any], Any],
 ) -> tuple[Toolset, list[str]]:
     toolset = SimpleToolset()
     bad_tools = []
-    for tool_path in agent_spec.tools:
+    for tool_path in tool_paths:
         tool = _load_tool(tool_path, dependencies)
         if tool:
             toolset += tool

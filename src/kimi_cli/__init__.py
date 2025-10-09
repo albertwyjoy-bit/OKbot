@@ -12,9 +12,9 @@ import click
 from pydantic import SecretStr
 
 from kimi_cli.agent import (
+    DEFAULT_AGENT_FILE,
     AgentGlobals,
     BuiltinSystemPromptArgs,
-    get_agents_dir,
     load_agent,
     load_agents_md,
 )
@@ -39,8 +39,6 @@ from kimi_cli.ui.shell import ShellApp
 from kimi_cli.utils.provider import augment_provider_with_env_vars, create_llm
 
 __version__ = importlib.metadata.version("ensoul")
-
-DEFAULT_AGENT_FILE = get_agents_dir() / "koder" / "agent.yaml"
 
 UIMode = Literal["shell", "print", "acp"]
 
