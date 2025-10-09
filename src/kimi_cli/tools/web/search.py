@@ -85,7 +85,10 @@ class SearchWeb(CallableTool2[Params]):
         for i, result in enumerate(results):
             if i > 0:
                 builder.write("---\n\n")
-            builder.write(f"{result.title}\n{result.url}\nSummary: {result.snippet}\n\n")
+            builder.write(
+                f"Title: {result.title}\nDate: {result.date}\n"
+                f"URL: {result.url}\nSummary: {result.snippet}\n\n"
+            )
             if result.content:
                 builder.write(f"{result.content}\n\n")
 
