@@ -4,10 +4,58 @@ from inline_snapshot import snapshot
 def test_pyinstaller_datas():
     from kimi_cli.utils.pyinstaller import datas
 
-    assert datas == snapshot(
+    assert sorted(datas) == snapshot(
         [
             (
+                "/Users/moonshot/OpenProjects/ensoul/.venv/lib/python3.13/site-packages/dateparser/data/dateparser_tz_cache.pkl",
+                "dateparser/data",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/CHANGELOG.md",
+                "kimi_cli",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/README.md",
+                "kimi_cli/agents/koder",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/agent.yaml",
+                "kimi_cli/agents/koder",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/sub.yaml",
+                "kimi_cli/agents/koder",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/system.md",
+                "kimi_cli/agents/koder",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/bash/bash.md",
+                "kimi_cli/tools/bash",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/dmail/dmail.md",
+                "kimi_cli/tools/dmail",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/glob.md",
+                "kimi_cli/tools/file",
+            ),
+            (
                 "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/grep.md",
+                "kimi_cli/tools/file",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/patch.md",
+                "kimi_cli/tools/file",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/read.md",
+                "kimi_cli/tools/file",
+            ),
+            (
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/replace.md",
                 "kimi_cli/tools/file",
             ),
             (
@@ -19,36 +67,8 @@ def test_pyinstaller_datas():
                 "kimi_cli/tools/task",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/system.md",
-                "kimi_cli/agents/koder",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/patch.md",
-                "kimi_cli/tools/file",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/bash/bash.md",
-                "kimi_cli/tools/bash",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/dmail/dmail.md",
-                "kimi_cli/tools/dmail",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/read.md",
-                "kimi_cli/tools/file",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/web/search.md",
-                "kimi_cli/tools/web",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/CHANGELOG.md",
-                "kimi_cli",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/glob.md",
-                "kimi_cli/tools/file",
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/think/think.md",
+                "kimi_cli/tools/think",
             ),
             (
                 "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/todo/set_todo_list.md",
@@ -59,28 +79,8 @@ def test_pyinstaller_datas():
                 "kimi_cli/tools/web",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/README.md",
-                "kimi_cli/agents/koder",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/think/think.md",
-                "kimi_cli/tools/think",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/agent.yaml",
-                "kimi_cli/agents/koder",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/sub.yaml",
-                "kimi_cli/agents/koder",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/replace.md",
-                "kimi_cli/tools/file",
-            ),
-            (
-                "/Users/moonshot/OpenProjects/ensoul/.venv/lib/python3.13/site-packages/dateparser/data/dateparser_tz_cache.pkl",
-                "dateparser/data",
+                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/web/search.md",
+                "kimi_cli/tools/web",
             ),
         ]
     )
@@ -89,7 +89,7 @@ def test_pyinstaller_datas():
 def test_pyinstaller_hiddenimports():
     from kimi_cli.utils.pyinstaller import hiddenimports
 
-    assert hiddenimports == snapshot(
+    assert sorted(hiddenimports) == snapshot(
         [
             "kimi_cli.tools",
             "kimi_cli.tools.bash",
