@@ -4,7 +4,7 @@ from typing import override
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
 from pydantic import BaseModel, Field
 
-from kimi_cli.agent import Agent, AgentGlobals, get_agents_dir, load_agent
+from kimi_cli.agent import Agent, AgentGlobals, AgentSpec, load_agent
 from kimi_cli.context import Context
 from kimi_cli.event import EventQueue, RunEnd, StepInterrupted
 from kimi_cli.soul import MaxStepsReached, Soul
@@ -26,19 +26,6 @@ Your previous response was too brief. Please provide a more comprehensive summar
 """.strip()
 
 
-SUBAGENTS = {
-    "koder": (
-        get_agents_dir() / "koder" / "sub.yaml",
-        "Good at general software engineering tasks.",
-    ),
-}
-
-
-SUBAGENTS_MD = "\n".join(
-    f"- `{name}`: {description}" for name, (_, description) in SUBAGENTS.items()
-)
-
-
 class Params(BaseModel):
     description: str = Field(description="A short (3-5 word) description of the task")
     subagent_name: str = Field(
@@ -55,23 +42,31 @@ class Params(BaseModel):
 
 class Task(CallableTool2[Params]):
     name: str = "Task"
-    description: str = load_desc(
-        Path(__file__).parent / "task.md",
-        {
-            "SUBAGENTS_MD": SUBAGENTS_MD,
-        },
-    )
     params: type[Params] = Params
 
-    def __init__(self, agent_globals: AgentGlobals, **kwargs):
-        super().__init__(**kwargs)
-        self._agent_globals = agent_globals
-        self._session = agent_globals.session
-        self._subagents: dict[str, Agent] = {}
+    def __init__(self, agent_spec: AgentSpec, agent_globals: AgentGlobals, **kwargs):
+        subagents: dict[str, Agent] = {}
+        descs = []
 
         # load all subagents
-        for subagent_name, (agent_file, _) in SUBAGENTS.items():
-            self._subagents[subagent_name] = load_agent(agent_file, agent_globals)
+        assert agent_spec.subagents is not None, "Task tool expects subagents"
+        for name, spec in agent_spec.subagents.items():
+            subagents[name] = load_agent(spec.path, agent_globals)
+            descs.append(f"- `{name}`: {spec.description}")
+
+        super().__init__(
+            description=load_desc(
+                Path(__file__).parent / "task.md",
+                {
+                    "SUBAGENTS_MD": "\n".join(descs),
+                },
+            ),
+            **kwargs,
+        )
+
+        self._agent_globals = agent_globals
+        self._session = agent_globals.session
+        self._subagents = subagents
 
     async def _get_subagent_history_file(self) -> Path:
         """Generate a unique history file path for subagent."""

@@ -30,6 +30,14 @@ class AgentSpec(BaseModel):
     )
     tools: list[str] | None = Field(default=None, description="Tools")  # required
     exclude_tools: list[str] | None = Field(default=None, description="Tools to exclude")
+    subagents: dict[str, "SubagentSpec"] | None = Field(default=None, description="Subagents")
+
+
+class SubagentSpec(BaseModel):
+    """Subagent specification."""
+
+    path: Path = Field(description="Subagent file path")
+    description: str = Field(description="Subagent description")
 
 
 class BuiltinSystemPromptArgs(NamedTuple):
@@ -94,6 +102,7 @@ def load_agent(
     )
 
     tool_deps = {
+        AgentSpec: agent_spec,
         AgentGlobals: globals_,
         Config: globals_.config,
         LLM: globals_.llm,
@@ -129,6 +138,9 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
     agent_spec = AgentSpec(**data.get("agent", {}))
     if agent_spec.system_prompt_path is not None:
         agent_spec.system_prompt_path = agent_file.parent / agent_spec.system_prompt_path
+    if agent_spec.subagents is not None:
+        for v in agent_spec.subagents.values():
+            v.path = agent_file.parent / v.path
     if agent_spec.extend:
         if agent_spec.extend == "default":
             base_agent_file = DEFAULT_AGENT_FILE
@@ -145,6 +157,8 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
             base_agent_spec.tools = agent_spec.tools
         if agent_spec.exclude_tools is not None:
             base_agent_spec.exclude_tools = agent_spec.exclude_tools
+        if agent_spec.subagents is not None:
+            base_agent_spec.subagents = agent_spec.subagents
         agent_spec = base_agent_spec
     return agent_spec
 

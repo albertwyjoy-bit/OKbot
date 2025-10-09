@@ -8,3 +8,4 @@ agent:
     - "kimi_cli.tools.task:Task"
     - "kimi_cli.tools.dmail:SendDMail"
     - "kimi_cli.tools.todo:SetTodoList"
+  subagents: # make sure no subagents are provided
