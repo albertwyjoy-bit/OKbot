@@ -63,6 +63,14 @@ def extract_subtitle(lexer: streamingjson.Lexer, tool_name: str) -> str | None:
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
             subtitle = _normalize_path(str(curr_args["path"]))
+        case "SearchWeb":
+            if not isinstance(curr_args, dict) or not curr_args.get("query"):
+                return None
+            subtitle = str(curr_args["query"])
+        case "FetchURL":
+            if not isinstance(curr_args, dict) or not curr_args.get("url"):
+                return None
+            subtitle = str(curr_args["url"])
         case _:
             subtitle = "".join(lexer.json_content)
     if tool_name not in ["SetTodoList"]:
