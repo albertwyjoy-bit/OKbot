@@ -9,6 +9,12 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [Unreleased]
+
+### Fixed
+
+- Fix ACP `cancel` method
+
 ## [0.23] - 2025-10-09
 
 ### Added
