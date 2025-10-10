@@ -80,6 +80,10 @@ class ACPAgentImpl:
             authMethods=[],
         )
 
+    async def authenticate(self, params: acp.AuthenticateRequest) -> None:
+        """Handle authenticate request."""
+        logger.info("Authenticate with method: {method}", method=params.methodId)
+
     async def newSession(self, params: acp.NewSessionRequest) -> acp.NewSessionResponse:
         """Handle new session request."""
         self.session_id = f"sess_{uuid.uuid4().hex[:16]}"
@@ -91,15 +95,31 @@ class ACPAgentImpl:
         self.session_id = params.sessionId
         logger.info("Loaded session: {id}", id=self.session_id)
 
-    async def authenticate(self, params: acp.AuthenticateRequest) -> None:
-        """Handle authenticate request."""
-        logger.info("Authenticate with method: {method}", method=params.methodId)
+    async def setSessionModel(self, params: acp.SetSessionModelRequest) -> None:
+        """Handle set session model request."""
+        logger.warning("Set session model: {model}", model=params.modelId)
+
+    async def setSessionMode(
+        self, params: acp.SetSessionModeRequest
+    ) -> acp.SetSessionModeResponse | None:
+        """Handle set session mode request."""
+        logger.warning("Set session mode: {mode}", mode=params.modeId)
+        return None
+
+    async def extMethod(self, method: str, params: dict) -> dict:
+        """Handle extension method."""
+        logger.warning("Unsupported extension method: {method}", method=method)
+        return {}
+
+    async def extNotification(self, method: str, params: dict) -> None:
+        """Handle extension notification."""
+        logger.warning("Unsupported extension notification: {method}", method=method)
 
     async def prompt(self, params: acp.PromptRequest) -> acp.PromptResponse:
         """Handle prompt request with streaming support."""
         # Extract text from prompt content blocks
         prompt_text = "\n".join(
-            block.text for block in params.prompt if isinstance(block, acp.schema.ContentBlock1)
+            block.text for block in params.prompt if isinstance(block, acp.schema.TextContentBlock)
         )
 
         if not prompt_text:
@@ -126,8 +146,6 @@ class ACPAgentImpl:
         finally:
             self.running_task = None
 
-    # FIXME: `acp` library has a bug that `cancel` is handled after `prompt` is done,
-    # so basically `cancel` will not work.
     async def cancel(self, params: acp.CancelNotification) -> None:
         """Handle cancel notification."""
         logger.info("Cancel for session: {id}", id=params.sessionId)
@@ -138,22 +156,6 @@ class ACPAgentImpl:
             self.running_task.cancel()
         else:
             logger.warning("No running task to cancel")
-
-    async def setSessionMode(
-        self, params: acp.SetSessionModeRequest
-    ) -> acp.SetSessionModeResponse | None:
-        """Handle set session mode request."""
-        logger.info("Set session mode: {mode}", mode=params.modeId)
-        return None
-
-    async def extMethod(self, method: str, params: dict) -> dict:
-        """Handle extension method."""
-        logger.warning("Unsupported extension method: {method}", method=method)
-        return {}
-
-    async def extNotification(self, method: str, params: dict) -> None:
-        """Handle extension notification."""
-        logger.warning("Unsupported extension notification: {method}", method=method)
 
     async def _stream_events(self, event_queue: EventQueue):
         # expect a RunBegin
@@ -189,8 +191,8 @@ class ACPAgentImpl:
         await self.connection.sessionUpdate(
             acp.SessionNotification(
                 sessionId=self.session_id,
-                update=acp.schema.SessionUpdate2(
-                    content=acp.schema.ContentBlock1(type="text", text=text),
+                update=acp.schema.AgentMessageChunk(
+                    content=acp.schema.TextContentBlock(type="text", text=text),
                     sessionUpdate="agent_message_chunk",
                 ),
             )
@@ -206,19 +208,18 @@ class ACPAgentImpl:
         self._tool_calls[tool_call.id] = state
         self._last_tool_call = state
 
-        # Use SessionUpdate4 for tool calls
         await self.connection.sessionUpdate(
             acp.SessionNotification(
                 sessionId=self.session_id,
-                update=acp.schema.SessionUpdate4(
+                update=acp.schema.ToolCallStart(
                     sessionUpdate="tool_call",
                     toolCallId=tool_call.id,
                     title=state.get_title(),
                     status="in_progress",
                     content=[
-                        acp.schema.ToolCallContent1(
+                        acp.schema.ContentToolCallContent(
                             type="content",
-                            content=acp.schema.ContentBlock1(type="text", text=state.args),
+                            content=acp.schema.TextContentBlock(type="text", text=state.args),
                         )
                     ],
                 ),
@@ -235,15 +236,17 @@ class ACPAgentImpl:
         self._last_tool_call.append_args_part(part.arguments_part)
 
         # Update the tool call with new content and title
-        update = acp.schema.SessionUpdate5(
+        update = acp.schema.ToolCallProgress(
             sessionUpdate="tool_call_update",
             toolCallId=self._last_tool_call.tool_call.id,
             title=self._last_tool_call.get_title(),
             status="in_progress",
             content=[
-                acp.schema.ToolCallContent1(
+                acp.schema.ContentToolCallContent(
                     type="content",
-                    content=acp.schema.ContentBlock1(type="text", text=self._last_tool_call.args),
+                    content=acp.schema.TextContentBlock(
+                        type="text", text=self._last_tool_call.args
+                    ),
                 )
             ],
         )
@@ -261,7 +264,7 @@ class ACPAgentImpl:
         tool_result = result.result
         is_error = isinstance(tool_result, ToolError)
 
-        update = acp.schema.SessionUpdate5(
+        update = acp.schema.ToolCallProgress(
             sessionUpdate="tool_call_update",
             toolCallId=result.tool_call_id,
             status="failed" if is_error else "completed",
@@ -280,17 +283,23 @@ class ACPAgentImpl:
 
 def _tool_result_to_acp_content(
     tool_result: ToolOk | ToolError,
-) -> list[acp.schema.ToolCallContent1 | acp.schema.ToolCallContent2 | acp.schema.ToolCallContent3]:
-    def _to_acp_content(part: ContentPart) -> acp.schema.ToolCallContent1:
+) -> list[
+    acp.schema.ContentToolCallContent
+    | acp.schema.FileEditToolCallContent
+    | acp.schema.TerminalToolCallContent
+]:
+    def _to_acp_content(part: ContentPart) -> acp.schema.ContentToolCallContent:
         if isinstance(part, TextPart):
-            return acp.schema.ToolCallContent1(
-                type="content", content=acp.schema.ContentBlock1(type="text", text=part.text)
+            return acp.schema.ContentToolCallContent(
+                type="content", content=acp.schema.TextContentBlock(type="text", text=part.text)
             )
         else:
             logger.warning("Unsupported content part in tool result: {part}", part=part)
-            return acp.schema.ToolCallContent1(
+            return acp.schema.ContentToolCallContent(
                 type="content",
-                content=acp.schema.ContentBlock1(type="text", text=f"[{part.__class__.__name__}]"),
+                content=acp.schema.TextContentBlock(
+                    type="text", text=f"[{part.__class__.__name__}]"
+                ),
             )
 
     content = []
