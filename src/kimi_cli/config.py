@@ -10,13 +10,12 @@ from kimi_cli.logging import logger
 class LLMProvider(BaseModel):
     """LLM provider configuration."""
 
-    type: Literal[
-        "kimi",
-        "openai_legacy",
-        "_chaos",
-    ] = Field(..., description="Provider type")
-    base_url: str = Field(..., description="API base URL")
-    api_key: SecretStr = Field(..., description="API key")
+    type: Literal["kimi", "openai_legacy", "_chaos"]
+    """Provider type"""
+    base_url: str
+    """API base URL"""
+    api_key: SecretStr
+    """API key"""
 
     @field_serializer("api_key", when_used="json")
     def dump_secret(self, v: SecretStr):
@@ -26,11 +25,12 @@ class LLMProvider(BaseModel):
 class LLMModel(BaseModel):
     """LLM model configuration."""
 
-    provider: str = Field(..., description="Provider name")
-    model: str = Field(..., description="Model name")
-    max_context_size: int = Field(
-        default=200_000, description="Maximum context size (unit: tokens)"
-    )
+    provider: str
+    """Provider name"""
+    model: str
+    """Model name"""
+    max_context_size: int = 200_000
+    """Maximum context size (unit: tokens)"""
     # TODO: derive a default `max_context_size` according to model name
 
 
@@ -66,7 +66,7 @@ class Services(BaseModel):
 class Config(BaseModel):
     """Main configuration structure."""
 
-    default_model: str | None = Field(None, description="Default model to use")
+    default_model: str | None = Field(default=None, description="Default model to use")
     models: dict[str, LLMModel] = Field(default_factory=dict, description="List of LLM models")
     providers: dict[str, LLMProvider] = Field(
         default_factory=dict, description="List of LLM providers"
