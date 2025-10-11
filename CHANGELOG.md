@@ -9,6 +9,15 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.25] - 2025-10-11
+
+### Changed
+
+- Rename package name `ensoul` to `kimi-cli`
+- Rename `ENSOUL_*` builtin system prompt arguments to `KIMI_*`
+- Further decouple `App` with `Soul`
+- Split `Soul` protocol and `KimiSoul` implementation for better modularity
+
 ## [0.24] - 2025-10-10
 
 ### Fixed
