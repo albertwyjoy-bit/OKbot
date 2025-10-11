@@ -9,6 +9,12 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.26] - 2025-10-11
+
+### Fixed
+
+- Fix possible encoding error in `--output-format stream-json` mode
+
 ## [0.25] - 2025-10-11
 
 ### Changed
