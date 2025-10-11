@@ -34,7 +34,7 @@ Only write entries that are worth mentioning to users.
 
 ## [0.22] - 2025-10-09
 
-## Changed
+### Changed
 
 - Improve `SearchWeb` and `FetchURL` tool call visualization
 - Improve search result output format
