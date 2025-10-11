@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.agent import Agent, AgentGlobals, AgentSpec, load_agent
 from kimi_cli.context import Context
 from kimi_cli.event import EventQueue
-from kimi_cli.soul import MaxStepsReached, Soul
+from kimi_cli.soul import KimiSoul, MaxStepsReached
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.message import message_extract_text
 from kimi_cli.utils.path import next_available_rotation
@@ -100,7 +100,7 @@ class Task(CallableTool2[Params]):
         """Run subagent with optional continuation for task summary."""
         subagent_history_file = await self._get_subagent_history_file()
         context = Context(file_backend=subagent_history_file)
-        soul = Soul(
+        soul = KimiSoul(
             agent,
             agent_globals=self._agent_globals,
             context=context,

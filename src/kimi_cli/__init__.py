@@ -32,7 +32,7 @@ from kimi_cli.denwarenji import DenwaRenji
 from kimi_cli.logging import logger
 from kimi_cli.metadata import Session, continue_session, new_session
 from kimi_cli.share import get_share_dir
-from kimi_cli.soul import Soul
+from kimi_cli.soul import KimiSoul
 from kimi_cli.ui.acp import ACPServer
 from kimi_cli.ui.print import InputFormat, OutputFormat, PrintApp
 from kimi_cli.ui.shell import ShellApp
@@ -281,7 +281,7 @@ def kimi_run(
     if restored:
         echo(f"✓ Restored history from {session.history_file}")
 
-    soul = Soul(
+    soul = KimiSoul(
         agent,
         agent_globals,
         context=context,

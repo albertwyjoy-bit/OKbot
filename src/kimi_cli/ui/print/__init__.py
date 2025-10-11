@@ -9,7 +9,7 @@ from kosong.chat_provider import ChatProviderError
 
 from kimi_cli.event import EventQueue, StepInterrupted
 from kimi_cli.logging import logger
-from kimi_cli.soul import MaxStepsReached, Soul
+from kimi_cli.soul import KimiSoul, MaxStepsReached
 from kimi_cli.utils.message import message_extract_text
 
 InputFormat = Literal["text", "stream-json"]
@@ -17,7 +17,16 @@ OutputFormat = Literal["text", "stream-json"]
 
 
 class PrintApp:
-    def __init__(self, soul: Soul, input_format: InputFormat, output_format: OutputFormat):
+    """
+    An app implementation that prints the agent behavior to the console.
+
+    Args:
+        soul (KimiSoul): The soul to run. Only `KimiSoul` is supported.
+        input_format (InputFormat): The input format to use.
+        output_format (OutputFormat): The output format to use.
+    """
+
+    def __init__(self, soul: KimiSoul, input_format: InputFormat, output_format: OutputFormat):
         self.soul = soul
         self.input_format = input_format
         self.output_format = output_format

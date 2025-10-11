@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable, Coroutine
+from typing import Protocol, runtime_checkable
 
 import kosong
 import tenacity
@@ -28,14 +28,57 @@ from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.dmail import DMail
 from kimi_cli.utils.message import system, tool_result_to_messages
 
-type VisualizeFn = Callable[[EventQueue], Coroutine[None, None, None]]
-"""
-An async function that consumes events from the event queue and visualizes the agent behavior.
-The function should never raise any exception.
-"""
+
+class MaxStepsReached(Exception):
+    """Raised when the maximum number of steps is reached."""
+
+    n_steps: int
+    """The number of steps that have been taken."""
+
+    def __init__(self, n_steps: int):
+        self.n_steps = n_steps
 
 
-class Soul:
+@runtime_checkable
+class Soul(Protocol):
+    @property
+    def name(self) -> str:
+        """The name of the soul."""
+        ...
+
+    @property
+    def model(self) -> str:
+        """The LLM model used by the soul."""
+        ...
+
+    @property
+    def context_usage(self) -> float:
+        """The usage of the context, in percentage."""
+        ...
+
+    async def run(self, user_input: str, event_queue: EventQueue):
+        """
+        Run the agent with the given user input.
+
+        Args:
+            user_input (str): The user input to the agent.
+            event_queue (EventQueue): The event queue to send events to the visualization loop.
+
+        Raises:
+            ChatProviderError: When the LLM provider returns an error.
+            MaxStepsReached: When the maximum number of steps is reached.
+            asyncio.CancelledError: When the run is cancelled by user.
+        """
+        ...
+
+
+def __static_type_check(
+    kimi_soul: "KimiSoul",
+):
+    _: Soul = kimi_soul
+
+
+class KimiSoul:
     """The soul of Kimi CLI."""
 
     def __init__(
@@ -86,18 +129,6 @@ class Soul:
         await self._context.checkpoint(self._checkpoint_with_user_message)
 
     async def run(self, user_input: str, event_queue: EventQueue):
-        """
-        Run the agent with the given user input.
-
-        Args:
-            user_input (str): The user input to the agent.
-            event_queue (EventQueue): The event queue to send events to the visualization loop.
-
-        Raises:
-            ChatProviderError: When the LLM provider returns an error.
-            MaxStepsReached: When the maximum number of steps is reached.
-            asyncio.CancelledError: When the run is cancelled by user.
-        """
         await self._checkpoint()  # this creates the checkpoint 0 on first run
         await self._context.append_message(Message(role="user", content=user_input))
         logger.debug("Appended user message to context")
@@ -221,16 +252,6 @@ class Soul:
         for tool_result in tool_results:
             logger.debug("Appending tool result to context: {tool_result}", tool_result=tool_result)
             await self._context.append_message(tool_result_to_messages(tool_result))
-
-
-class MaxStepsReached(Exception):
-    """Raised when the maximum number of steps is reached."""
-
-    n_steps: int
-    """The number of steps that have been taken."""
-
-    def __init__(self, n_steps: int):
-        self.n_steps = n_steps
 
 
 class BackToTheFuture(Exception):
