@@ -13,8 +13,6 @@ from rich.panel import Panel
 from kimi_cli.event import (
     ContextUsageUpdate,
     EventQueue,
-    RunBegin,
-    RunEnd,
     StepBegin,
     StepInterrupted,
 )
@@ -39,7 +37,7 @@ class ShellApp(BaseApp):
         if command is not None:
             # run single command and exit
             logger.info("Running agent with command: {command}", command=command)
-            return self._soul_run(command)
+            return self._run(command)
 
         session = PromptSession(
             message=FormattedText([("bold", f"{getpass.getuser()}✨ ")]),
@@ -95,14 +93,13 @@ class ShellApp(BaseApp):
                 continue
 
             logger.info("Running agent with user input: {user_input}", user_input=user_input)
-            self._soul_run(user_input)
+            self._run(user_input)
 
         return True
 
-    def _soul_run(self, user_input: str) -> bool:
-        """Run the soul with the given user input and return whether the run is successful."""
+    def _run(self, user_input: str) -> bool:
         try:
-            asyncio.run(self.soul.run(user_input, self._visualize))
+            asyncio.run(self._soul_run(user_input))
             return True
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
@@ -116,61 +113,77 @@ class ShellApp(BaseApp):
         except BaseException as e:
             logger.exception("Unknown error:")
             console.print(f"[bold red]Unknown error: {e}[/bold red]")
+            raise  # re-raise unknown error
         return False
+
+    async def _soul_run(self, user_input: str):
+        """Run the soul with the given user input and return whether the run is successful."""
+        event_queue = EventQueue()
+        logger.debug(
+            "Starting visualization loop with visualize function: {visualize}",
+            visualize=self._visualize,
+        )
+        vis_task = asyncio.create_task(self._visualize(event_queue))
+
+        try:
+            await self.soul.run(user_input, event_queue)
+        finally:
+            event_queue.shutdown()
+            # shutting down the event queue should break the visualization loop
+            try:
+                await asyncio.wait_for(vis_task, timeout=0.5)
+            except TimeoutError:
+                logger.warning("Visualization loop timed out")
 
     async def _visualize(self, event_queue: EventQueue):
         """
         A loop to consume agent events and visualize the agent behavior.
         This loop never raise any exception.
         """
-        # expect a RunBegin
-        assert isinstance(await event_queue.get(), RunBegin)
-        # expect a StepBegin
-        assert isinstance(await event_queue.get(), StepBegin)
+        try:
+            # expect a StepBegin
+            assert isinstance(await event_queue.get(), StepBegin)
 
-        while True:
-            # spin the moon at the beginning of each step
-            with console.status("", spinner="moon"):
-                event = await event_queue.get()
-
-            with StepLiveView(self.soul.context_usage) as step:
-                # visualization loop for one step
-                while True:
-                    match event:
-                        case TextPart(text=text):
-                            step.append_text(text)
-                        case ContentPart():
-                            # TODO: support more content parts
-                            step.append_text(f"[{event.__class__.__name__}]")
-                        case ToolCall():
-                            step.append_tool_call(event)
-                        case ToolCallPart():
-                            step.append_tool_call_part(event)
-                        case ToolResult():
-                            step.append_tool_result(event)
-                        case ContextUsageUpdate(usage_percentage=usage):
-                            step.update_context_usage(usage)
-                        case _:
-                            break  # break the step loop
+            while True:
+                # spin the moon at the beginning of each step
+                with console.status("", spinner="moon"):
                     event = await event_queue.get()
 
-                # cleanup the step live view
+                with StepLiveView(self.soul.context_usage) as step:
+                    # visualization loop for one step
+                    while True:
+                        match event:
+                            case TextPart(text=text):
+                                step.append_text(text)
+                            case ContentPart():
+                                # TODO: support more content parts
+                                step.append_text(f"[{event.__class__.__name__}]")
+                            case ToolCall():
+                                step.append_tool_call(event)
+                            case ToolCallPart():
+                                step.append_tool_call_part(event)
+                            case ToolResult():
+                                step.append_tool_result(event)
+                            case ContextUsageUpdate(usage_percentage=usage):
+                                step.update_context_usage(usage)
+                            case _:
+                                break  # break the step loop
+                        event = await event_queue.get()
+
+                    # cleanup the step live view
+                    if isinstance(event, StepInterrupted):
+                        step.interrupt()
+                    else:
+                        step.finish()
+
                 if isinstance(event, StepInterrupted):
-                    step.interrupt()
-                else:
-                    step.finish()
+                    # for StepInterrupted, the visualization loop should end immediately
+                    break
 
-            if isinstance(event, StepInterrupted):
-                # for StepInterrupted, the visualization loop should end immediately
-                break
-
-            assert isinstance(event, StepBegin | RunEnd), "expect a StepBegin or RunEnd"
-            if isinstance(event, StepBegin):
+                assert isinstance(event, StepBegin), "expect a StepBegin"
                 # start a new step
-                continue
-            else:
-                # end the run
-                break
+        except asyncio.QueueShutDown:
+            logger.debug("Visualization loop shutting down")
 
     def _run_meta_command(self, command_str: str):
         parts = command_str.split(" ")

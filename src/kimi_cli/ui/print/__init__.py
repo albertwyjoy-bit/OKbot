@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 import sys
 from typing import Literal, override
 
@@ -8,7 +7,7 @@ import aiofiles
 from kosong.base.message import Message
 from kosong.chat_provider import ChatProviderError
 
-from kimi_cli.event import EventQueue, RunEnd, StepInterrupted
+from kimi_cli.event import EventQueue, StepInterrupted
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.ui import BaseApp
@@ -46,14 +45,7 @@ class PrintApp(BaseApp):
                     logger.info("Running agent with command: {command}", command=command)
                     if self.output_format == "text":
                         print(command)
-                    asyncio.run(
-                        self.soul.run(
-                            command,
-                            self._visualize_text
-                            if self.output_format == "text"
-                            else self._visualize_stream_json,
-                        )
-                    )
+                    asyncio.run(self._soul_run(command))
                 else:
                     logger.info("Empty command, skipping")
 
@@ -70,7 +62,32 @@ class PrintApp(BaseApp):
         except BaseException as e:
             logger.exception("Unknown error:")
             print(f"Unknown error: {e}")
+            raise
         return False
+
+    # TODO: unify with `_soul_run` in `ShellApp` and `ACPAgentImpl`
+    async def _soul_run(self, user_input: str):
+        event_queue = EventQueue()
+        logger.debug("Starting visualization loop")
+
+        if self.output_format == "text":
+            vis_task = asyncio.create_task(self._visualize_text(event_queue))
+        else:
+            assert self.output_format == "stream-json"
+            if not self.soul._context._file_backend.exists():
+                self.soul._context._file_backend.touch()
+            start_position = self.soul._context._file_backend.stat().st_size
+            vis_task = asyncio.create_task(self._visualize_stream_json(event_queue, start_position))
+
+        try:
+            await self.soul.run(user_input, event_queue)
+        finally:
+            event_queue.shutdown()
+            # shutting down the event queue should break the visualization loop
+            try:
+                await asyncio.wait_for(vis_task, timeout=0.5)
+            except TimeoutError:
+                logger.warning("Visualization loop timed out")
 
     def _read_next_command(self) -> str | None:
         while True:
@@ -98,26 +115,32 @@ class PrintApp(BaseApp):
                 logger.warning("Ignoring invalid user message: {json_line}", json_line=json_line)
 
     async def _visualize_text(self, event_queue: EventQueue):
-        while True:
-            event = await event_queue.get()
-            print(event)
-            if isinstance(event, StepInterrupted | RunEnd):
-                break
-
-    async def _visualize_stream_json(self, event_queue: EventQueue):
-        async with aiofiles.open(self.soul._context._file_backend) as f:
-            await f.seek(0, os.SEEK_END)
+        try:
             while True:
-                should_end = False
-                while event_queue._queue.qsize() > 0:
-                    event = event_queue._queue.get_nowait()
-                    if isinstance(event, StepInterrupted | RunEnd):
-                        should_end = True
+                event = await event_queue.get()
+                print(event)
+                if isinstance(event, StepInterrupted):
+                    break
+        except asyncio.QueueShutDown:
+            logger.debug("Visualization loop shutting down")
 
-                line = await f.readline()
-                if not line:
-                    if should_end:
-                        break
-                    await asyncio.sleep(0.1)
-                    continue
-                print(line, end="")
+    async def _visualize_stream_json(self, event_queue: EventQueue, start_position: int):
+        try:
+            async with aiofiles.open(self.soul._context._file_backend) as f:
+                await f.seek(start_position)
+                while True:
+                    should_end = False
+                    while event_queue._queue.qsize() > 0:
+                        event = event_queue._queue.get_nowait()
+                        if isinstance(event, StepInterrupted):
+                            should_end = True
+
+                    line = await f.readline()
+                    if not line:
+                        if should_end:
+                            break
+                        await asyncio.sleep(0.1)
+                        continue
+                    print(line, end="")
+        except asyncio.QueueShutDown:
+            logger.debug("Visualization loop shutting down")

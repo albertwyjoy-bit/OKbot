@@ -7,14 +7,6 @@ from kosong.tooling import ToolResult
 from kimi_cli.logging import logger
 
 
-class RunBegin(NamedTuple):
-    pass
-
-
-class RunEnd(NamedTuple):
-    pass
-
-
 class StepBegin(NamedTuple):
     n: int
 
@@ -27,7 +19,7 @@ class ContextUsageUpdate(NamedTuple):
     usage_percentage: float
 
 
-type ControlFlowEvent = RunBegin | RunEnd | StepBegin | StepInterrupted | ContextUsageUpdate
+type ControlFlowEvent = StepBegin | StepInterrupted | ContextUsageUpdate
 type Event = ControlFlowEvent | ContentPart | ToolCall | ToolCallPart | ToolResult
 
 
@@ -45,3 +37,6 @@ class EventQueue:
         if not isinstance(event, ContentPart | ToolCallPart):
             logger.debug("Consuming event: {event}", event=event)
         return event
+
+    def shutdown(self):
+        self._queue.shutdown()

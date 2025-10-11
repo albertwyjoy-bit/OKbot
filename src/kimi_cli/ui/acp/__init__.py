@@ -16,8 +16,6 @@ from kosong.tooling import ToolError, ToolOk, ToolResult
 from kimi_cli.event import (
     ContextUsageUpdate,
     EventQueue,
-    RunBegin,
-    RunEnd,
     StepBegin,
     StepInterrupted,
 )
@@ -128,7 +126,7 @@ class ACPAgentImpl:
         logger.info("Processing prompt: {text}", text=prompt_text[:100])
 
         try:
-            self.running_task = asyncio.create_task(self.soul.run(prompt_text, self._stream_events))
+            self.running_task = asyncio.create_task(self._soul_run(prompt_text))
             await self.running_task
             return acp.PromptResponse(stopReason="end_turn")
         except MaxStepsReached as e:
@@ -157,31 +155,46 @@ class ACPAgentImpl:
         else:
             logger.warning("No running task to cancel")
 
+    async def _soul_run(self, user_input: str):
+        event_queue = EventQueue()
+        logger.debug("Starting event stream loop")
+        stream_task = asyncio.create_task(self._stream_events(event_queue))
+        try:
+            await self.soul.run(user_input, event_queue)
+        finally:
+            event_queue.shutdown()
+            # shutting down the event queue should break the event stream loop
+            try:
+                await asyncio.wait_for(stream_task, timeout=0.5)
+            except TimeoutError:
+                logger.warning("Event stream loop timed out")
+
     async def _stream_events(self, event_queue: EventQueue):
-        # expect a RunBegin
-        assert isinstance(await event_queue.get(), RunBegin)
-        # expect a StepBegin
-        assert isinstance(await event_queue.get(), StepBegin)
+        try:
+            # expect a StepBegin
+            assert isinstance(await event_queue.get(), StepBegin)
 
-        while True:
-            event = await event_queue.get()
+            while True:
+                event = await event_queue.get()
 
-            if isinstance(event, TextPart):
-                await self._send_text(event.text)
-            elif isinstance(event, ContentPart):
-                logger.warning("Unsupported content part: {part}", part=event)
-                await self._send_text(f"[{event.__class__.__name__}]")
-            elif isinstance(event, ToolCall):
-                await self._send_tool_call(event)
-            elif isinstance(event, ToolCallPart):
-                await self._send_tool_call_part(event)
-            elif isinstance(event, ToolResult):
-                await self._send_tool_result(event)
-            elif isinstance(event, ContextUsageUpdate):
-                # TODO: send context usage if possible
-                pass
-            elif isinstance(event, StepInterrupted | RunEnd):
-                break
+                if isinstance(event, TextPart):
+                    await self._send_text(event.text)
+                elif isinstance(event, ContentPart):
+                    logger.warning("Unsupported content part: {part}", part=event)
+                    await self._send_text(f"[{event.__class__.__name__}]")
+                elif isinstance(event, ToolCall):
+                    await self._send_tool_call(event)
+                elif isinstance(event, ToolCallPart):
+                    await self._send_tool_call_part(event)
+                elif isinstance(event, ToolResult):
+                    await self._send_tool_result(event)
+                elif isinstance(event, ContextUsageUpdate):
+                    # TODO: send context usage if possible
+                    pass
+                elif isinstance(event, StepInterrupted):
+                    break
+        except asyncio.QueueShutDown:
+            logger.debug("Event stream loop shutting down")
 
     async def _send_text(self, text: str):
         """Send text chunk to client."""

@@ -20,8 +20,6 @@ from kimi_cli.context import Context
 from kimi_cli.event import (
     ContextUsageUpdate,
     EventQueue,
-    RunBegin,
-    RunEnd,
     StepBegin,
     StepInterrupted,
 )
@@ -87,44 +85,23 @@ class Soul:
     async def _checkpoint(self):
         await self._context.checkpoint(self._checkpoint_with_user_message)
 
-    async def run(self, user_input: str, visualize: VisualizeFn):
+    async def run(self, user_input: str, event_queue: EventQueue):
         """
         Run the agent with the given user input.
 
         Args:
             user_input (str): The user input to the agent.
-            visualize (VisualizeFn): The function to visualize the agent behavior.
+            event_queue (EventQueue): The event queue to send events to the visualization loop.
 
         Raises:
             ChatProviderError: When the LLM provider returns an error.
             MaxStepsReached: When the maximum number of steps is reached.
             asyncio.CancelledError: When the run is cancelled by user.
         """
-        event_queue = EventQueue()
-        logger.debug(
-            "Starting visualization loop with visualize function: {visualize}", visualize=visualize
-        )
-        vis_task = asyncio.create_task(visualize(event_queue))
-
-        event_queue.put_nowait(RunBegin())
         await self._checkpoint()  # this creates the checkpoint 0 on first run
         await self._context.append_message(Message(role="user", content=user_input))
         logger.debug("Appended user message to context")
-
-        try:
-            await self._agent_loop(event_queue)
-        except asyncio.CancelledError:
-            # the run is cancelled, propagate the cancellation
-            # TODO: maybe need to manipulate the context to add some notes
-            raise
-        # other exceptions will also raise
-        finally:
-            event_queue.put_nowait(RunEnd())
-            # RunEnd should break the visualization loop
-            try:
-                await asyncio.wait_for(vis_task, timeout=0.5)
-            except TimeoutError:
-                logger.warning("Visualization loop timed out")
+        await self._agent_loop(event_queue)
 
     async def _agent_loop(
         self,

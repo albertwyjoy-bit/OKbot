@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from kimi_cli.agent import Agent, AgentGlobals, AgentSpec, load_agent
 from kimi_cli.context import Context
-from kimi_cli.event import EventQueue, RunEnd, StepInterrupted
+from kimi_cli.event import EventQueue
 from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.message import message_extract_text
@@ -106,15 +106,10 @@ class Task(CallableTool2[Params]):
             context=context,
             loop_control=self._agent_globals.config.loop_control,
         )
-
-        async def _visualize(event_queue: EventQueue):
-            while True:
-                event = await event_queue.get()
-                if isinstance(event, StepInterrupted | RunEnd):
-                    break
+        event_queue = _MockEventQueue()
 
         try:
-            await soul.run(prompt, _visualize)
+            await soul.run(prompt, event_queue)
         except MaxStepsReached as e:
             return ToolError(
                 message=(
@@ -137,10 +132,17 @@ class Task(CallableTool2[Params]):
         # Check if response is too brief, if so, run again with continuation prompt
         n_attempts_remaining = MAX_CONTINUE_ATTEMPTS
         if len(final_response) < 200 and n_attempts_remaining > 0:
-            await soul.run(CONTINUE_PROMPT, _visualize)
+            await soul.run(CONTINUE_PROMPT, event_queue)
 
             if len(context.history) == 0 or context.history[-1].role != "assistant":
                 return ToolError(message=_error_msg, brief="Failed to run subagent")
             final_response = message_extract_text(context.history[-1])
 
         return ToolOk(output=final_response)
+
+
+class _MockEventQueue(EventQueue):
+    @override
+    def put_nowait(self, *args, **kwargs):
+        # do nothing
+        pass
