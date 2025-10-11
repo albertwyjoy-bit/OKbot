@@ -43,13 +43,13 @@ class SubagentSpec(BaseModel):
 class BuiltinSystemPromptArgs(NamedTuple):
     """Builtin system prompt arguments."""
 
-    ENSOUL_NOW: str
+    KIMI_NOW: str
     """The current datetime."""
-    ENSOUL_WORK_DIR: Path
+    KIMI_WORK_DIR: Path
     """The current working directory."""
-    ENSOUL_WORK_DIR_LS: str
+    KIMI_WORK_DIR_LS: str
     """The `ls -la` output of current working directory."""
-    ENSOUL_AGENTS_MD: str
+    KIMI_AGENTS_MD: str
     """The content of AGENTS.md."""
 
 

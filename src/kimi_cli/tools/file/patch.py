@@ -21,7 +21,7 @@ class PatchFile(CallableTool2[Params]):
 
     def __init__(self, builtin_args: BuiltinSystemPromptArgs, **kwargs):
         super().__init__(**kwargs)
-        self._work_dir = builtin_args.ENSOUL_WORK_DIR
+        self._work_dir = builtin_args.KIMI_WORK_DIR
 
     def _validate_path(self, path: Path) -> ToolError | None:
         """Validate that the path is safe to patch."""

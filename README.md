@@ -1,1 +1,1 @@
-# Ensoul
+# Kimi CLI

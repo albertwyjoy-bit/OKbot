@@ -66,10 +66,10 @@ def temp_share_dir() -> Generator[Path]:
 def builtin_args(temp_work_dir: Path) -> BuiltinSystemPromptArgs:
     """Create builtin arguments with temporary work directory."""
     return BuiltinSystemPromptArgs(
-        ENSOUL_NOW="1970-01-01T00:00:00+00:00",
-        ENSOUL_WORK_DIR=temp_work_dir,
-        ENSOUL_WORK_DIR_LS="Test ls content",
-        ENSOUL_AGENTS_MD="Test agents content",
+        KIMI_NOW="1970-01-01T00:00:00+00:00",
+        KIMI_WORK_DIR=temp_work_dir,
+        KIMI_WORK_DIR_LS="Test ls content",
+        KIMI_AGENTS_MD="Test agents content",
     )
 
 

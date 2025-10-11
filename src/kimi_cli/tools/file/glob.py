@@ -40,7 +40,7 @@ class Glob(CallableTool2[Params]):
 
     def __init__(self, builtin_args: BuiltinSystemPromptArgs, **kwargs):
         super().__init__(**kwargs)
-        self._work_dir = builtin_args.ENSOUL_WORK_DIR
+        self._work_dir = builtin_args.KIMI_WORK_DIR
 
     async def _validate_pattern(self, pattern: str) -> ToolError | None:
         """Validate that the pattern is safe to use."""

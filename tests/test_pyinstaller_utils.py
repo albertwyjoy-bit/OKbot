@@ -1,85 +1,90 @@
+from pathlib import Path
+
 from inline_snapshot import snapshot
 
 
 def test_pyinstaller_datas():
     from kimi_cli.utils.pyinstaller import datas
 
+    project_root = Path(__file__).parent.parent
+    datas = [(str(Path(path).relative_to(project_root)), dst) for path, dst in datas]
+
     assert sorted(datas) == snapshot(
         [
             (
-                "/Users/moonshot/OpenProjects/ensoul/.venv/lib/python3.13/site-packages/dateparser/data/dateparser_tz_cache.pkl",
+                ".venv/lib/python3.13/site-packages/dateparser/data/dateparser_tz_cache.pkl",
                 "dateparser/data",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/CHANGELOG.md",
+                "src/kimi_cli/CHANGELOG.md",
                 "kimi_cli",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/README.md",
+                "src/kimi_cli/agents/koder/README.md",
                 "kimi_cli/agents/koder",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/agent.yaml",
+                "src/kimi_cli/agents/koder/agent.yaml",
                 "kimi_cli/agents/koder",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/sub.yaml",
+                "src/kimi_cli/agents/koder/sub.yaml",
                 "kimi_cli/agents/koder",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/agents/koder/system.md",
+                "src/kimi_cli/agents/koder/system.md",
                 "kimi_cli/agents/koder",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/bash/bash.md",
+                "src/kimi_cli/tools/bash/bash.md",
                 "kimi_cli/tools/bash",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/dmail/dmail.md",
+                "src/kimi_cli/tools/dmail/dmail.md",
                 "kimi_cli/tools/dmail",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/glob.md",
+                "src/kimi_cli/tools/file/glob.md",
                 "kimi_cli/tools/file",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/grep.md",
+                "src/kimi_cli/tools/file/grep.md",
                 "kimi_cli/tools/file",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/patch.md",
+                "src/kimi_cli/tools/file/patch.md",
                 "kimi_cli/tools/file",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/read.md",
+                "src/kimi_cli/tools/file/read.md",
                 "kimi_cli/tools/file",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/replace.md",
+                "src/kimi_cli/tools/file/replace.md",
                 "kimi_cli/tools/file",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/file/write.md",
+                "src/kimi_cli/tools/file/write.md",
                 "kimi_cli/tools/file",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/task/task.md",
+                "src/kimi_cli/tools/task/task.md",
                 "kimi_cli/tools/task",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/think/think.md",
+                "src/kimi_cli/tools/think/think.md",
                 "kimi_cli/tools/think",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/todo/set_todo_list.md",
+                "src/kimi_cli/tools/todo/set_todo_list.md",
                 "kimi_cli/tools/todo",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/web/fetch.md",
+                "src/kimi_cli/tools/web/fetch.md",
                 "kimi_cli/tools/web",
             ),
             (
-                "/Users/moonshot/OpenProjects/ensoul/src/kimi_cli/tools/web/search.md",
+                "src/kimi_cli/tools/web/search.md",
                 "kimi_cli/tools/web",
             ),
         ]

@@ -128,7 +128,7 @@ def test_load_system_prompt(system_prompt_file: Path, builtin_args: BuiltinSyste
 
     assert "Test system prompt with " in prompt
     assert "1970-01-01" in prompt  # Should contain the actual timestamp
-    assert builtin_args.ENSOUL_NOW in prompt
+    assert builtin_args.KIMI_NOW in prompt
     assert "test_value" in prompt
 
 
@@ -406,6 +406,6 @@ def system_prompt_file() -> Generator[Path, Any, Any]:
         tmpdir = Path(tmpdir)
 
         system_md = tmpdir / "system.md"
-        system_md.write_text("Test system prompt with ${ENSOUL_NOW} and ${CUSTOM_ARG}")
+        system_md.write_text("Test system prompt with ${KIMI_NOW} and ${CUSTOM_ARG}")
 
         yield system_md

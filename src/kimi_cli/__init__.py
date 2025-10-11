@@ -38,7 +38,7 @@ from kimi_cli.ui.print import InputFormat, OutputFormat, PrintApp
 from kimi_cli.ui.shell import ShellApp
 from kimi_cli.utils.provider import augment_provider_with_env_vars, create_llm
 
-__version__ = importlib.metadata.version("ensoul")
+__version__ = importlib.metadata.version("kimi-cli")
 
 UIMode = Literal["shell", "print", "acp"]
 
@@ -255,10 +255,10 @@ def kimi_run(
         config=config,
         llm=llm,
         builtin_args=BuiltinSystemPromptArgs(
-            ENSOUL_NOW=datetime.now().astimezone().isoformat(),
-            ENSOUL_WORK_DIR=work_dir,
-            ENSOUL_WORK_DIR_LS=ls.stdout,
-            ENSOUL_AGENTS_MD=agents_md,
+            KIMI_NOW=datetime.now().astimezone().isoformat(),
+            KIMI_WORK_DIR=work_dir,
+            KIMI_WORK_DIR_LS=ls.stdout,
+            KIMI_AGENTS_MD=agents_md,
         ),
         denwa_renji=DenwaRenji(),
         session=session,

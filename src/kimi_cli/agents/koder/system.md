@@ -45,19 +45,19 @@ The operating environment is not in a sandbox. Any action especially mutation yo
 
 ## Working Directory
 
-The current working directory is `${ENSOUL_WORK_DIR}`. This should be considered as the project root if you are instructed to perform tasks on the project. Every file system operation will be relative to the working directory if you do not explicitly specify the absolute path. Tools may require absolute paths for some parameters, if so, you should strictly follow the requirements.
+The current working directory is `${KIMI_WORK_DIR}`. This should be considered as the project root if you are instructed to perform tasks on the project. Every file system operation will be relative to the working directory if you do not explicitly specify the absolute path. Tools may require absolute paths for some parameters, if so, you should strictly follow the requirements.
 
 The `ls -la` output of current working directory is:
 
 ```
-${ENSOUL_WORK_DIR_LS}
+${KIMI_WORK_DIR_LS}
 ```
 
 Use this as your basic understanding of the project structure.
 
 ## Date and Time
 
-The current date and time in ISO format is `${ENSOUL_NOW}`. This is only a reference for you when searching the web, or checking file modification time, etc. If you need the exact time, use Bash tool with proper command.
+The current date and time in ISO format is `${KIMI_NOW}`. This is only a reference for you when searching the web, or checking file modification time, etc. If you need the exact time, use Bash tool with proper command.
 
 # Project Information
 
@@ -67,6 +67,6 @@ The following content contains the project background, structure, coding styles,
 
 ---
 
-${ENSOUL_AGENTS_MD}
+${KIMI_AGENTS_MD}
 
 ---
