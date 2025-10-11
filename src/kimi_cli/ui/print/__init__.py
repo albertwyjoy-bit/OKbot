@@ -7,6 +7,7 @@ import aiofiles
 from kosong.base.message import Message
 from kosong.chat_provider import ChatProviderError
 
+from kimi_cli.asyncio import loop
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached
 from kimi_cli.soul.event import EventQueue, StepInterrupted
@@ -53,7 +54,7 @@ class PrintApp:
                     logger.info("Running agent with command: {command}", command=command)
                     if self.output_format == "text":
                         print(command)
-                    asyncio.run(self._soul_run(command))
+                    loop.run_until_complete(self._soul_run(command))
                 else:
                     logger.info("Empty command, skipping")
 

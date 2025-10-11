@@ -12,6 +12,7 @@ from kosong.base.message import (
 from kosong.chat_provider import ChatProviderError
 from kosong.tooling import ToolError, ToolOk, ToolResult
 
+from kimi_cli.asyncio import loop
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.soul.event import (
@@ -334,7 +335,7 @@ class ACPServer:
         """Run the ACP server."""
         logger.info("Starting ACP server on stdio")
         try:
-            asyncio.run(self._run_async())
+            loop.run_until_complete(self._run_async())
         except KeyboardInterrupt:
             logger.info("ACP server shutting down")
         return True

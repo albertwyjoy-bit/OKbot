@@ -4,17 +4,20 @@ import string
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import fastmcp
 import yaml
 from kosong.base.chat_provider import ChatProvider
 from kosong.tooling import SimpleToolset, Toolset
 from kosong.tooling.simple import ToolType
 from pydantic import BaseModel, Field
 
+from kimi_cli.asyncio import loop
 from kimi_cli.config import Config
 from kimi_cli.llm import LLM
 from kimi_cli.logging import logger
 from kimi_cli.metadata import Session
 from kimi_cli.soul.denwarenji import DenwaRenji
+from kimi_cli.tools.mcp import MCPTool
 
 
 class AgentSpec(BaseModel):
@@ -81,6 +84,7 @@ DEFAULT_AGENT_FILE = get_agents_dir() / "koder" / "agent.yaml"
 def load_agent(
     agent_file: Path,
     globals_: AgentGlobals,
+    mcp_configs: list[dict[str, Any]],
 ) -> Agent:
     """
     Load agent from specification file.
@@ -115,9 +119,13 @@ def load_agent(
     if agent_spec.exclude_tools:
         logger.debug("Excluding tools: {tools}", tools=agent_spec.exclude_tools)
         tools = [tool for tool in tools if tool not in agent_spec.exclude_tools]
-    toolset, bad_tools = _load_tools(tools, tool_deps)
+    toolset = SimpleToolset()
+    bad_tools = _load_tools(toolset, tools, tool_deps)
     if bad_tools:
         raise ValueError(f"Invalid tools: {bad_tools}")
+
+    if mcp_configs:
+        loop.run_until_complete(_load_mcp_tools(toolset, mcp_configs))
 
     return Agent(
         name=agent_spec.name,
@@ -176,10 +184,10 @@ def _load_system_prompt(
 
 
 def _load_tools(
+    toolset: SimpleToolset,
     tool_paths: list[str],
     dependencies: dict[type[Any], Any],
-) -> tuple[Toolset, list[str]]:
-    toolset = SimpleToolset()
+) -> list[str]:
     bad_tools = []
     for tool_path in tool_paths:
         tool = _load_tool(tool_path, dependencies)
@@ -190,7 +198,7 @@ def _load_tools(
     logger.debug("Loaded tools: {tools}", tools=toolset.tools)
     if bad_tools:
         logger.error("Bad tools: {bad_tools}", bad_tools=bad_tools)
-    return toolset, bad_tools
+    return bad_tools
 
 
 def _load_tool(tool_path: str, dependencies: dict[type[Any], Any]) -> ToolType | None:
@@ -213,6 +221,23 @@ def _load_tool(tool_path: str, dependencies: dict[type[Any], Any]) -> ToolType |
             raise ValueError(f"Tool dependency not found: {param.annotation}")
         args.append(dependencies[param.annotation])
     return cls(*args)
+
+
+async def _load_mcp_tools(
+    toolset: SimpleToolset,
+    mcp_configs: list[dict[str, Any]],
+):
+    """
+    Raises:
+        ValueError: If the MCP config is not valid.
+        RuntimeError: If the MCP server cannot be connected.
+    """
+    for mcp_config in mcp_configs:
+        client = fastmcp.Client(mcp_config)
+        async with client:
+            for tool in await client.list_tools():
+                toolset += MCPTool(tool, client)
+    return toolset
 
 
 def load_agents_md(work_dir: Path) -> str | None:

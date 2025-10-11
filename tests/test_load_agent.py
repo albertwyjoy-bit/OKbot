@@ -29,7 +29,7 @@ from kimi_cli.soul.denwarenji import DenwaRenji
 
 def test_load_agent_basic(agent_file: Path, agent_globals: AgentGlobals):
     """Test loading a basic agent configuration."""
-    agent = load_agent(agent_file, agent_globals)
+    agent = load_agent(agent_file, agent_globals, [])
 
     assert isinstance(agent, Agent)
     assert agent.name == "Test Agent"
@@ -40,24 +40,24 @@ def test_load_agent_basic(agent_file: Path, agent_globals: AgentGlobals):
 def test_load_agent_missing_name(agent_file_no_name: Path, agent_globals: AgentGlobals):
     """Test loading agent with missing name raises ValueError."""
     with pytest.raises(ValueError, match="Agent name is required"):
-        load_agent(agent_file_no_name, agent_globals)
+        load_agent(agent_file_no_name, agent_globals, [])
 
 
 def test_load_agent_missing_system_prompt(agent_file_no_prompt: Path, agent_globals: AgentGlobals):
     """Test loading agent with missing system prompt path raises ValueError."""
     with pytest.raises(ValueError, match="System prompt path is required"):
-        load_agent(agent_file_no_prompt, agent_globals)
+        load_agent(agent_file_no_prompt, agent_globals, [])
 
 
 def test_load_agent_missing_tools(agent_file_no_tools: Path, agent_globals: AgentGlobals):
     """Test loading agent with missing tools raises ValueError."""
     with pytest.raises(ValueError, match="Tools are required"):
-        load_agent(agent_file_no_tools, agent_globals)
+        load_agent(agent_file_no_tools, agent_globals, [])
 
 
 def test_load_agent_with_exclude_tools(agent_file_with_tools: Path, agent_globals: AgentGlobals):
     """Test loading agent with excluded tools."""
-    agent = load_agent(agent_file_with_tools, agent_globals)
+    agent = load_agent(agent_file_with_tools, agent_globals, [])
 
     # Should have loaded some tools but excluded the specified ones
     assert agent.toolset is not None
@@ -134,8 +134,12 @@ def test_load_system_prompt(system_prompt_file: Path, builtin_args: BuiltinSyste
 
 def test_load_tools_valid(agent_globals: AgentGlobals):
     """Test loading valid tools."""
+    from kosong.tooling import SimpleToolset
+
     tool_paths = ["kimi_cli.tools.think:Think", "kimi_cli.tools.bash:Bash"]
-    toolset, bad_tools = _load_tools(
+    toolset = SimpleToolset()
+    bad_tools = _load_tools(
+        toolset,
         tool_paths,
         {
             AgentGlobals: agent_globals,
@@ -154,8 +158,12 @@ def test_load_tools_valid(agent_globals: AgentGlobals):
 
 def test_load_tools_invalid(agent_globals: AgentGlobals):
     """Test loading with invalid tool paths."""
+    from kosong.tooling import SimpleToolset
+
     tool_paths = ["kimi_cli.tools.nonexistent:Tool", "kimi_cli.tools.think:Think"]
-    toolset, bad_tools = _load_tools(
+    toolset = SimpleToolset()
+    bad_tools = _load_tools(
+        toolset,
         tool_paths,
         {
             AgentGlobals: agent_globals,
@@ -202,7 +210,7 @@ def test_load_agents_md_lowercase(temp_work_dir: Path):
 def test_load_agent_invalid_tools(agent_file_invalid_tools: Path, agent_globals: AgentGlobals):
     """Test loading agent with invalid tools raises ValueError."""
     with pytest.raises(ValueError, match="Invalid tools"):
-        load_agent(agent_file_invalid_tools, agent_globals)
+        load_agent(agent_file_invalid_tools, agent_globals, [])
 
 
 def test_load_agent_spec_unsupported_version():

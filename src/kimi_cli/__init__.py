@@ -1,12 +1,12 @@
-import asyncio
 import importlib.metadata
+import json
 import os
 import subprocess
 import sys
 import textwrap
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import click
 from pydantic import SecretStr
@@ -18,6 +18,7 @@ from kimi_cli.agent import (
     load_agent,
     load_agents_md,
 )
+from kimi_cli.asyncio import loop
 from kimi_cli.config import (
     DEFAULT_KIMI_BASE_URL,
     DEFAULT_KIMI_MODEL,
@@ -120,7 +121,7 @@ UIMode = Literal["shell", "print", "acp"]
     type=click.Choice(["text", "stream-json"]),
     default=None,
     help=(
-        "Input format to use. This must be used with `--print` "
+        "Input format to use. Must be used with `--print` "
         "and the input must be piped in via stdin. "
         "Default: text."
     ),
@@ -129,7 +130,19 @@ UIMode = Literal["shell", "print", "acp"]
     "--output-format",
     type=click.Choice(["text", "stream-json"]),
     default=None,
-    help="Output format to use. This must be used with `--print`. Default: text.",
+    help="Output format to use. Must be used with `--print`. Default: text.",
+)
+@click.option(
+    "--mcp-config-file",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    help="MCP config file to load. Default: none.",
+)
+@click.option(
+    "--mcp-config",
+    type=str,
+    multiple=True,
+    help="MCP config JSON to load. Default: none.",
 )
 def kimi(
     verbose: bool,
@@ -142,6 +155,8 @@ def kimi(
     ui: UIMode,
     input_format: InputFormat | None,
     output_format: OutputFormat | None,
+    mcp_config_file: list[Path],
+    mcp_config: list[str],
 ):
     """Kimi, your next CLI agent."""
     echo = click.echo if verbose else lambda *args, **kwargs: None
@@ -184,6 +199,16 @@ def kimi(
             "Output format is only supported for print UI",
         )
 
+    try:
+        mcp_configs = [json.loads(conf.read_text()) for conf in mcp_config_file]
+    except json.JSONDecodeError as e:
+        raise click.BadOptionUsage("--mcp-config-file", f"Invalid JSON: {e}") from e
+
+    try:
+        mcp_configs += [json.loads(conf) for conf in mcp_config]
+    except json.JSONDecodeError as e:
+        raise click.BadOptionUsage("--mcp-config", f"Invalid JSON: {e}") from e
+
     succeeded = kimi_run(
         config=config,
         model_name=model_name,
@@ -195,6 +220,7 @@ def kimi(
         ui=ui,
         input_format=input_format,
         output_format=output_format,
+        mcp_configs=mcp_configs,
     )
     if not succeeded:
         sys.exit(1)
@@ -212,6 +238,7 @@ def kimi_run(
     ui: UIMode = "shell",
     input_format: InputFormat | None = None,
     output_format: OutputFormat | None = None,
+    mcp_configs: list[dict[str, Any]] | None = None,
 ) -> bool:
     """Run Kimi CLI."""
     echo = click.echo if verbose else lambda *args, **kwargs: None
@@ -263,7 +290,7 @@ def kimi_run(
         session=session,
     )
     try:
-        agent = load_agent(agent_file, agent_globals)
+        agent = load_agent(agent_file, agent_globals, mcp_configs or [])
     except ValueError as e:
         raise click.BadParameter(f"Failed to load agent: {e}") from e
     echo(f"✓ Loaded agent: {agent.name}")
@@ -276,7 +303,7 @@ def kimi_run(
             raise click.BadParameter("Command cannot be empty")
 
     context = Context(session.history_file)
-    restored = asyncio.run(context.restore())
+    restored = loop.run_until_complete(context.restore())
     if restored:
         echo(f"✓ Restored history from {session.history_file}")
 

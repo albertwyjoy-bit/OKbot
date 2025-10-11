@@ -52,7 +52,7 @@ class Task(CallableTool2[Params]):
         # load all subagents
         assert agent_spec.subagents is not None, "Task tool expects subagents"
         for name, spec in agent_spec.subagents.items():
-            subagents[name] = load_agent(spec.path, agent_globals)
+            subagents[name] = load_agent(spec.path, agent_globals, mcp_configs=[])
             descs.append(f"- `{name}`: {spec.description}")
 
         super().__init__(
