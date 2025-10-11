@@ -6,7 +6,7 @@ import pytest
 from kosong.tooling import ToolError, ToolOk
 
 from kimi_cli.tools.bash import Bash, Params
-from kimi_cli.tools.result_builder import DEFAULT_MAX_CHARS
+from kimi_cli.tools.utils import DEFAULT_MAX_CHARS
 
 
 @pytest.mark.asyncio

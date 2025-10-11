@@ -1,6 +1,6 @@
 """Tests for ToolResultBuilder."""
 
-from kimi_cli.tools.result_builder import ToolResultBuilder
+from kimi_cli.tools.utils import ToolResultBuilder
 
 
 def test_basic_functionality():

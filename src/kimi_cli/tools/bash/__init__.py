@@ -5,8 +5,7 @@ from typing import override
 from kosong.tooling import CallableTool2, ToolReturnType
 from pydantic import BaseModel, Field
 
-from kimi_cli.tools.result_builder import ToolResultBuilder
-from kimi_cli.tools.utils import load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 
 MAX_TIMEOUT = 5 * 60
 
