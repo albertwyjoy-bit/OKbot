@@ -58,8 +58,7 @@ UIMode = Literal["shell", "print", "acp"]
     help="Log debug information. Default: no.",
 )
 @click.option(
-    "--agent",
-    "agent_file",
+    "--agent-file",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     default=DEFAULT_AGENT_FILE,
     help="Custom agent specification file. Default: builtin Kimi Koder.",
