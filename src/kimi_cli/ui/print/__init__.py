@@ -1,7 +1,7 @@
 import asyncio
 import json
 import sys
-from typing import Literal, override
+from typing import Literal
 
 import aiofiles
 from kosong.base.message import Message
@@ -10,20 +10,18 @@ from kosong.chat_provider import ChatProviderError
 from kimi_cli.event import EventQueue, StepInterrupted
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
-from kimi_cli.ui import BaseApp
 from kimi_cli.utils.message import message_extract_text
 
 InputFormat = Literal["text", "stream-json"]
 OutputFormat = Literal["text", "stream-json"]
 
 
-class PrintApp(BaseApp):
+class PrintApp:
     def __init__(self, soul: Soul, input_format: InputFormat, output_format: OutputFormat):
         self.soul = soul
         self.input_format = input_format
         self.output_format = output_format
 
-    @override
     def run(self, command: str | None = None) -> bool:
         if command is None and not sys.stdin.isatty() and self.input_format == "text":
             command = sys.stdin.read().strip()

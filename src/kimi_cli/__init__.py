@@ -305,14 +305,17 @@ def kimi_run(
                     "Session": session.id,
                 },
             )
+            return app.run(command)
         elif ui == "print":
             app = PrintApp(soul, input_format or "text", output_format or "text")
+            return app.run(command)
         elif ui == "acp":
+            if command is not None:
+                logger.warning("ACP server ignores command argument")
             app = ACPServer(soul)
+            return app.run()
         else:
             raise click.BadParameter(f"Invalid UI mode: {ui}")
-
-        return app.run(command)
     finally:
         os.chdir(original_cwd)
 

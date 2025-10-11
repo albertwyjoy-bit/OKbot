@@ -1,6 +1,5 @@
 import asyncio
 import getpass
-from typing import override
 
 from kosong.base.message import ContentPart, TextPart, ToolCall, ToolCallPart
 from kosong.chat_provider import ChatProviderError
@@ -18,7 +17,6 @@ from kimi_cli.event import (
 )
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
-from kimi_cli.ui import BaseApp
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.liveview import StepLiveView
 from kimi_cli.ui.shell.metacmd import (
@@ -27,12 +25,11 @@ from kimi_cli.ui.shell.metacmd import (
 )
 
 
-class ShellApp(BaseApp):
+class ShellApp:
     def __init__(self, soul: Soul, welcome_info: dict[str, str]):
         self.soul = soul
         self.welcome_info = welcome_info
 
-    @override
     def run(self, command: str | None = None) -> bool:
         if command is not None:
             # run single command and exit

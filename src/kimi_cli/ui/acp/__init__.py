@@ -1,6 +1,5 @@
 import asyncio
 import uuid
-from typing import override
 
 import acp
 import streamingjson
@@ -22,7 +21,6 @@ from kimi_cli.event import (
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.tools import extract_subtitle
-from kimi_cli.ui import BaseApp
 
 
 class _ToolCallState:
@@ -326,20 +324,15 @@ def _tool_result_to_acp_content(
     return content
 
 
-class ACPServer(BaseApp):
+class ACPServer:
     """ACP server using the official acp library."""
 
     def __init__(self, soul: Soul):
         self.soul = soul
 
-    @override
-    def run(self, command: str | None = None) -> bool:
+    def run(self) -> bool:
         """Run the ACP server."""
-        if command is not None:
-            logger.warning("ACP server ignores command argument")
-
         logger.info("Starting ACP server on stdio")
-
         try:
             asyncio.run(self._run_async())
         except KeyboardInterrupt:
