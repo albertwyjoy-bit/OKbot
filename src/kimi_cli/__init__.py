@@ -27,12 +27,12 @@ from kimi_cli.config import (
     LLMProvider,
     load_config,
 )
-from kimi_cli.context import Context
-from kimi_cli.denwarenji import DenwaRenji
 from kimi_cli.logging import logger
 from kimi_cli.metadata import Session, continue_session, new_session
 from kimi_cli.share import get_share_dir
-from kimi_cli.soul import KimiSoul
+from kimi_cli.soul.context import Context
+from kimi_cli.soul.denwarenji import DenwaRenji
+from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.acp import ACPServer
 from kimi_cli.ui.print import InputFormat, OutputFormat, PrintApp
 from kimi_cli.ui.shell import ShellApp

@@ -12,14 +12,14 @@ from kosong.base.message import (
 from kosong.chat_provider import ChatProviderError
 from kosong.tooling import ToolError, ToolOk, ToolResult
 
-from kimi_cli.event import (
+from kimi_cli.logging import logger
+from kimi_cli.soul import MaxStepsReached, Soul
+from kimi_cli.soul.event import (
     ContextUsageUpdate,
     EventQueue,
     StepBegin,
     StepInterrupted,
 )
-from kimi_cli.logging import logger
-from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.tools import extract_subtitle
 
 

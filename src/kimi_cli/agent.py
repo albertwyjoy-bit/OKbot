@@ -11,10 +11,10 @@ from kosong.tooling.simple import ToolType
 from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
-from kimi_cli.denwarenji import DenwaRenji
 from kimi_cli.llm import LLM
 from kimi_cli.logging import logger
 from kimi_cli.metadata import Session
+from kimi_cli.soul.denwarenji import DenwaRenji
 
 
 class AgentSpec(BaseModel):

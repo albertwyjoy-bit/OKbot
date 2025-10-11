@@ -3,7 +3,7 @@ from typing import override
 
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
 
-from kimi_cli.denwarenji import DenwaRenji, DenwaRenjiError, DMail
+from kimi_cli.soul.denwarenji import DenwaRenji, DenwaRenjiError, DMail
 
 NAME = "SendDMail"
 

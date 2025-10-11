@@ -22,9 +22,9 @@ from kimi_cli.agent import (
     load_agents_md,
 )
 from kimi_cli.config import Config
-from kimi_cli.denwarenji import DenwaRenji
 from kimi_cli.llm import LLM
 from kimi_cli.metadata import Session
+from kimi_cli.soul.denwarenji import DenwaRenji
 
 
 def test_load_agent_basic(agent_file: Path, agent_globals: AgentGlobals):

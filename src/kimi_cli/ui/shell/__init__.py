@@ -9,14 +9,14 @@ from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.panel import Panel
 
-from kimi_cli.event import (
+from kimi_cli.logging import logger
+from kimi_cli.soul import MaxStepsReached, Soul
+from kimi_cli.soul.event import (
     ContextUsageUpdate,
     EventQueue,
     StepBegin,
     StepInterrupted,
 )
-from kimi_cli.logging import logger
-from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.liveview import StepLiveView
 from kimi_cli.ui.shell.metacmd import (

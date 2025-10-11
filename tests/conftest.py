@@ -16,9 +16,9 @@ from kimi_cli.agent import (
     _load_agent_spec,
 )
 from kimi_cli.config import Config, MoonshotSearchConfig, get_default_config
-from kimi_cli.denwarenji import DenwaRenji
 from kimi_cli.llm import LLM
 from kimi_cli.metadata import Session, WorkDirMeta
+from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.tools.bash import Bash
 from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob

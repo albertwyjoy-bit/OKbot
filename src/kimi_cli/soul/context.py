@@ -7,7 +7,7 @@ import aiofiles.os
 from kosong.base.message import Message
 
 from kimi_cli.logging import logger
-from kimi_cli.utils.message import system
+from kimi_cli.soul.message import system
 from kimi_cli.utils.path import next_available_rotation
 
 

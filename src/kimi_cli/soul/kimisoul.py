@@ -1,5 +1,4 @@
 import asyncio
-from typing import Protocol, runtime_checkable
 
 import kosong
 import tenacity
@@ -16,66 +15,13 @@ from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wai
 
 from kimi_cli.agent import Agent, AgentGlobals
 from kimi_cli.config import LoopControl
-from kimi_cli.context import Context
-from kimi_cli.event import (
-    ContextUsageUpdate,
-    EventQueue,
-    StepBegin,
-    StepInterrupted,
-)
 from kimi_cli.logging import logger
+from kimi_cli.soul import MaxStepsReached, Soul
+from kimi_cli.soul.context import Context
+from kimi_cli.soul.denwarenji import DMail
+from kimi_cli.soul.event import ContextUsageUpdate, EventQueue, StepBegin, StepInterrupted
+from kimi_cli.soul.message import system, tool_result_to_messages
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
-from kimi_cli.tools.dmail import DMail
-from kimi_cli.utils.message import system, tool_result_to_messages
-
-
-class MaxStepsReached(Exception):
-    """Raised when the maximum number of steps is reached."""
-
-    n_steps: int
-    """The number of steps that have been taken."""
-
-    def __init__(self, n_steps: int):
-        self.n_steps = n_steps
-
-
-@runtime_checkable
-class Soul(Protocol):
-    @property
-    def name(self) -> str:
-        """The name of the soul."""
-        ...
-
-    @property
-    def model(self) -> str:
-        """The LLM model used by the soul."""
-        ...
-
-    @property
-    def context_usage(self) -> float:
-        """The usage of the context, in percentage."""
-        ...
-
-    async def run(self, user_input: str, event_queue: EventQueue):
-        """
-        Run the agent with the given user input.
-
-        Args:
-            user_input (str): The user input to the agent.
-            event_queue (EventQueue): The event queue to send events to the visualization loop.
-
-        Raises:
-            ChatProviderError: When the LLM provider returns an error.
-            MaxStepsReached: When the maximum number of steps is reached.
-            asyncio.CancelledError: When the run is cancelled by user.
-        """
-        ...
-
-
-def __static_type_check(
-    kimi_soul: "KimiSoul",
-):
-    _: Soul = kimi_soul
 
 
 class KimiSoul:
@@ -262,3 +208,9 @@ class BackToTheFuture(Exception):
 
     def __init__(self, dmail: DMail):
         self.dmail = dmail
+
+
+def __static_type_check(
+    kimi_soul: KimiSoul,
+):
+    _: Soul = kimi_soul

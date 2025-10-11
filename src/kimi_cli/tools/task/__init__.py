@@ -5,9 +5,10 @@ from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
 from pydantic import BaseModel, Field
 
 from kimi_cli.agent import Agent, AgentGlobals, AgentSpec, load_agent
-from kimi_cli.context import Context
-from kimi_cli.event import EventQueue
-from kimi_cli.soul import KimiSoul, MaxStepsReached
+from kimi_cli.soul import MaxStepsReached
+from kimi_cli.soul.context import Context
+from kimi_cli.soul.event import EventQueue
+from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.message import message_extract_text
 from kimi_cli.utils.path import next_available_rotation
