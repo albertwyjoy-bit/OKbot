@@ -134,7 +134,7 @@ class PrintApp:
 
     async def _visualize_stream_json(self, event_queue: EventQueue, start_position: int):
         try:
-            async with aiofiles.open(self.soul._context._file_backend) as f:
+            async with aiofiles.open(self.soul._context._file_backend, encoding="utf-8") as f:
                 await f.seek(start_position)
                 while True:
                     should_end = False
