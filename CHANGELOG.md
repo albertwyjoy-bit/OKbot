@@ -9,6 +9,16 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.27] - 2025-10-11
+
+### Added
+
+- Add `--mcp-config-file` and `--mcp-config` options to load MCP configs
+
+### Changed
+
+- Rename `--agent` option to `--agent-file`
+
 ## [0.26] - 2025-10-11
 
 ### Fixed
