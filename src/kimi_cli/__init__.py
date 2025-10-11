@@ -136,13 +136,19 @@ UIMode = Literal["shell", "print", "acp"]
     "--mcp-config-file",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     multiple=True,
-    help="MCP config file to load. Default: none.",
+    help=(
+        "MCP config file to load. Add this option multiple times to specify multiple MCP configs. "
+        "Default: none."
+    ),
 )
 @click.option(
     "--mcp-config",
     type=str,
     multiple=True,
-    help="MCP config JSON to load. Default: none.",
+    help=(
+        "MCP config JSON to load. Add this option multiple times to specify multiple MCP configs. "
+        "Default: none."
+    ),
 )
 def kimi(
     verbose: bool,
