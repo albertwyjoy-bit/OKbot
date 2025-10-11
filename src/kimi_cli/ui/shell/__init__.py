@@ -26,9 +26,9 @@ from kimi_cli.ui.shell.metacmd import (
 
 
 class ShellApp:
-    def __init__(self, soul: Soul, welcome_info: dict[str, str]):
+    def __init__(self, soul: Soul, welcome_info: dict[str, str] | None = None):
         self.soul = soul
-        self.welcome_info = welcome_info
+        self.welcome_info = welcome_info or {}
 
     def run(self, command: str | None = None) -> bool:
         if command is not None:
