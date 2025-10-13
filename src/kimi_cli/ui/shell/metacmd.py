@@ -185,7 +185,7 @@ def init(app: "ShellApp", args: list[str]):
     aio.run(app.soul._context.append_message(Message(role="user", content=[system_message])))
 
 
-@meta_command(name="clear")
+@meta_command(name="clear", aliases=["reset"])
 def clear(app: "ShellApp", args: list[str]):
     """Clear the context"""
     if not isinstance(app.soul, KimiSoul):
