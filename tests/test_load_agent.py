@@ -102,7 +102,6 @@ agent:
         assert spec.tools == snapshot(
             [
                 "kimi_cli.tools.task:Task",
-                "kimi_cli.tools.dmail:SendDMail",
                 "kimi_cli.tools.think:Think",
                 "kimi_cli.tools.todo:SetTodoList",
                 "kimi_cli.tools.bash:Bash",
