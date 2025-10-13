@@ -9,6 +9,17 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.28] - 2025-10-13
+
+### Added
+
+- Add `/init` meta command to analyze the codebase and generate an `AGENTS.md` file
+- Add `/clear` meta command to clear the context
+
+### Fixed
+
+- Fix `ReadFile` output
+
 ## [0.27] - 2025-10-11
 
 ### Added
