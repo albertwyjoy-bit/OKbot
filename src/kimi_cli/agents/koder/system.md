@@ -61,9 +61,9 @@ The current date and time in ISO format is `${KIMI_NOW}`. This is only a referen
 
 # Project Information
 
-The following content contains the project background, structure, coding styles, user preferences and other relevant information about the project. You should use this information to understand the project and the user's preferences. If the following content is empty, you should first do simple exploration in the project directory to gather any information you need to better do your job.
+Markdown files named `AGENTS.md` usually contain the background, structure, coding styles, user preferences and other relevant information about the project. You should use this information to understand the project and the user's preferences. `AGENTS.md` files may exist at different locations in the project, but typically there is one in the project root. The following content between two `---`s is the content of the root-level `AGENTS.md` file.
 
-`AGENTS.md`:
+`${KIMI_WORK_DIR}/AGENTS.md`:
 
 ---
 

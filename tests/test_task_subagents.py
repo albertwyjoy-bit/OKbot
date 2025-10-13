@@ -10,7 +10,7 @@ def test_task_subagents(task_tool: Task, temp_work_dir: Path):
     subagents = [
         (
             agent.name,
-            agent.system_prompt.replace(f"`{temp_work_dir}`", "`/path/to/work/dir`"),
+            agent.system_prompt.replace(f"{temp_work_dir}", "/path/to/work/dir"),
             [tool.name for tool in agent.toolset.tools],
         )
         for agent in task_tool._subagents.values()
@@ -84,9 +84,9 @@ The current date and time in ISO format is `1970-01-01T00:00:00+00:00`. This is 
 
 # Project Information
 
-The following content contains the project background, structure, coding styles, user preferences and other relevant information about the project. You should use this information to understand the project and the user's preferences. If the following content is empty, you should first do simple exploration in the project directory to gather any information you need to better do your job.
+Markdown files named `AGENTS.md` usually contain the background, structure, coding styles, user preferences and other relevant information about the project. You should use this information to understand the project and the user's preferences. `AGENTS.md` files may exist at different locations in the project, but typically there is one in the project root. The following content between two `---`s is the content of the root-level `AGENTS.md` file.
 
-`AGENTS.md`:
+`/path/to/work/dir/AGENTS.md`:
 
 ---
 

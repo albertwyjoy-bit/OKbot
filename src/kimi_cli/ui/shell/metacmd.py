@@ -1,9 +1,19 @@
+import tempfile
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, overload
 
+from kosong.base.message import Message
 from prompt_toolkit.completion import Completer, Completion
 from rich.panel import Panel
 
+import kimi_cli.prompts.metacmds as prompts
+from kimi_cli.agent import load_agents_md
+from kimi_cli.asyncio import loop
+from kimi_cli.logging import logger
+from kimi_cli.soul.context import Context
+from kimi_cli.soul.kimisoul import KimiSoul
+from kimi_cli.soul.message import system
 from kimi_cli.ui.shell.console import console
 from kimi_cli.utils.changelog import CHANGELOG, format_release_notes
 
@@ -165,3 +175,43 @@ def release_notes(app: "ShellApp", args: list[str]):
     text = format_release_notes(CHANGELOG)
     with console.pager(styles=True):
         console.print(Panel.fit(text, border_style="wheat4", title="Release Notes"))
+
+
+@meta_command(name="init")
+def init(app: "ShellApp", args: list[str]):
+    """Initialize the project"""
+    soul_bak = app.soul
+    if not isinstance(soul_bak, KimiSoul):
+        console.print("[bold red]Failed to analyze the codebase.[/bold red]")
+        return
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        logger.info("Running `/init`")
+        console.print("[bold]Analyzing the codebase...[/bold]")
+        tmp_context = Context(file_backend=Path(temp_dir) / "context.jsonl")
+        app.soul = KimiSoul(
+            soul_bak._agent,
+            soul_bak._agent_globals,
+            context=tmp_context,
+            loop_control=soul_bak._loop_control,
+        )
+        ok = app._run(prompts.INIT)
+
+        if ok:
+            console.print(
+                "[bold]Codebase analyzed successfully! "
+                "An [underline]AGENTS.md[/underline] file has been created.[/bold]"
+            )
+        else:
+            console.print("[bold red]Failed to analyze the codebase.[/bold red]")
+
+    app.soul = soul_bak
+    agents_md = load_agents_md(soul_bak._agent_globals.builtin_args.KIMI_WORK_DIR)
+    system_message = system(
+        "The user just ran `/init` meta command. "
+        "The system has analyzed the codebase and generated an `AGENTS.md` file. "
+        f"Latest AGENTS.md file content:\n{agents_md}"
+    )
+    loop.run_until_complete(
+        app.soul._context.append_message(Message(role="user", content=[system_message]))
+    )
