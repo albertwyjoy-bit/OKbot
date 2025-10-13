@@ -14,6 +14,7 @@ Only write entries that are worth mentioning to users.
 ### Added
 
 - Support Enter key to accept completion in shell mode
+- Remember user input history across sessions in shell mode
 
 ### Fixed
 
