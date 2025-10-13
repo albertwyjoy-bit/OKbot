@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, overload
 
 from kosong.base.message import Message
-from prompt_toolkit.completion import Completer, Completion
 from rich.panel import Panel
 
 import kimi_cli.prompts.metacmds as prompts
@@ -113,35 +112,6 @@ def meta_command(
     if func is not None:
         return _register(func)
     return _register
-
-
-class MetaCommandCompleter(Completer):
-    """A completer that:
-    - Shows one line per meta command in the form: "/name (alias1, alias2)"
-    - Matches by primary name or any alias while inserting the canonical "/name"
-    - Only activates when the current token starts with '/'
-    """
-
-    def get_completions(self, document, complete_event):
-        text = document.text_before_cursor
-        # Only consider the last token (allowing future arguments after a space)
-        last_space = text.rfind(" ")
-        token = text[last_space + 1 :]
-        if not token.startswith("/"):
-            return
-
-        typed = token[1:]
-        typed_lower = typed.lower()
-
-        for cmd in sorted(get_meta_commands(), key=lambda c: c.name):
-            names = [cmd.name] + list(cmd.aliases)
-            if typed == "" or any(n.lower().startswith(typed_lower) for n in names):
-                yield Completion(
-                    text=f"/{cmd.name}",
-                    start_position=-len(token),
-                    display=cmd.slash_name(),
-                    display_meta=cmd.description,
-                )
 
 
 @meta_command(aliases=["quit"])
