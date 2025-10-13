@@ -129,7 +129,7 @@ class ReadFile(CallableTool2[Params]):
             if truncated_line_numbers:
                 message += f" Lines {truncated_line_numbers} were truncated."
             return ToolOk(
-                output="\n".join(lines_with_no),
+                output="".join(lines_with_no),  # lines already contain \n, just join them
                 message=message,
             )
         except Exception as e:

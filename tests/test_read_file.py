@@ -31,13 +31,9 @@ async def test_read_entire_file(read_file_tool: ReadFile, sample_file: Path):
         ToolOk(
             output="""\
      1	Line 1: Hello World
-
      2	Line 2: This is a test file
-
      3	Line 3: With multiple lines
-
      4	Line 4: For testing purposes
-
      5	Line 5: End of file\
 """,
             message="5 lines read from file starting from line 1. End of file reached.",
@@ -53,9 +49,7 @@ async def test_read_with_line_offset(read_file_tool: ReadFile, sample_file: Path
         ToolOk(
             output="""\
      3	Line 3: With multiple lines
-
      4	Line 4: For testing purposes
-
      5	Line 5: End of file\
 """,
             message="3 lines read from file starting from line 3. End of file reached.",
@@ -71,7 +65,6 @@ async def test_read_with_n_lines(read_file_tool: ReadFile, sample_file: Path):
         ToolOk(
             output="""\
      1	Line 1: Hello World
-
      2	Line 2: This is a test file
 """,
             message="2 lines read from file starting from line 1.",
@@ -87,7 +80,6 @@ async def test_read_with_line_offset_and_n_lines(read_file_tool: ReadFile, sampl
         ToolOk(
             output="""\
      2	Line 2: This is a test file
-
      3	Line 3: With multiple lines
 """,
             message="2 lines read from file starting from line 2.",
@@ -103,8 +95,7 @@ async def test_read_nonexistent_file(read_file_tool: ReadFile, temp_work_dir: Pa
     assert result == snapshot(
         ToolError(
             message=(
-                "`/var/folders/w3/vb1wsr1n4q95qgq421m6hm2h0000gn/T/tmpfwkr7_2k/nonexistent.txt` "
-                "does not exist."
+                "`/var/folders/w3/vb1wsr1n4q95qgq421m6hm2h0000gn/T/tmpm0v7ocwd/nonexistent.txt` does not exist."
             ),
             brief="File not found",
         )
@@ -117,7 +108,7 @@ async def test_read_directory_instead_of_file(read_file_tool: ReadFile, temp_wor
     result = await read_file_tool(Params(path=str(temp_work_dir)))
     assert result == snapshot(
         ToolError(
-            message="`/var/folders/w3/vb1wsr1n4q95qgq421m6hm2h0000gn/T/tmpkie874ur` is not a file.",
+            message="`/var/folders/w3/vb1wsr1n4q95qgq421m6hm2h0000gn/T/tmpri8jn9sc` is not a file.",
             brief="Invalid path",
         )
     )
@@ -171,7 +162,6 @@ async def test_read_unicode_file(read_file_tool: ReadFile, temp_work_dir: Path):
         ToolOk(
             output="""\
      1	Hello 世界 🌍
-
      2	Unicode test: café, naïve, résumé\
 """,
             message="2 lines read from file starting from line 1. End of file reached.",
@@ -188,13 +178,9 @@ async def test_read_edge_cases(read_file_tool: ReadFile, sample_file: Path):
         ToolOk(
             output="""\
      1	Line 1: Hello World
-
      2	Line 2: This is a test file
-
      3	Line 3: With multiple lines
-
      4	Line 4: For testing purposes
-
      5	Line 5: End of file\
 """,
             message="5 lines read from file starting from line 1. End of file reached.",
