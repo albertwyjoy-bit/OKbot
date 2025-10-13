@@ -21,7 +21,8 @@ def truncate_line(line: str, max_length: int, marker: str = "...") -> str:
     if len(line) <= max_length:
         return line
 
-    m = re.match(r"[\r\n]+$", line)
+    # Find line breaks at the end of the line
+    m = re.search(r"[\r\n]+$", line)
     linebreak = m.group(0) if m else ""
     end = marker + linebreak
     max_length = max(max_length, len(end))

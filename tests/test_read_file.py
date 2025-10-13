@@ -26,7 +26,6 @@ Line 5: End of file"""
 async def test_read_entire_file(read_file_tool: ReadFile, sample_file: Path):
     """Test reading an entire file."""
     result = await read_file_tool(Params(path=str(sample_file)))
-
     assert result == snapshot(
         ToolOk(
             output="""\
@@ -94,9 +93,7 @@ async def test_read_nonexistent_file(read_file_tool: ReadFile, temp_work_dir: Pa
     result = await read_file_tool(Params(path=str(nonexistent_file)))
     assert result == snapshot(
         ToolError(
-            message=(
-                "`/var/folders/w3/vb1wsr1n4q95qgq421m6hm2h0000gn/T/tmpm0v7ocwd/nonexistent.txt` does not exist."
-            ),
+            message=(f"`{nonexistent_file}` does not exist."),
             brief="File not found",
         )
     )
@@ -108,7 +105,7 @@ async def test_read_directory_instead_of_file(read_file_tool: ReadFile, temp_wor
     result = await read_file_tool(Params(path=str(temp_work_dir)))
     assert result == snapshot(
         ToolError(
-            message="`/var/folders/w3/vb1wsr1n4q95qgq421m6hm2h0000gn/T/tmpri8jn9sc` is not a file.",
+            message=(f"`{temp_work_dir}` is not a file."),
             brief="Invalid path",
         )
     )
@@ -239,14 +236,21 @@ async def test_line_truncation_and_messaging(read_file_tool: ReadFile, temp_work
     result = await read_file_tool(Params(path=str(multi_line_file)))
     assert isinstance(result, ToolOk)
     assert isinstance(result.output, str)
-    assert "Lines [1, 3] were truncated" in result.message
+    assert result.message == snapshot(
+        "3 lines read from file starting from line 1. End of file reached. "
+        "Lines [1, 3] were truncated."
+    )
 
     # Verify truncation actually happened for specific lines
     lines = result.output.split("\n")
-    contents = [line.split("\t", 1)[1] if "\t" in line else line for line in lines if line.strip()]
-    assert contents[0].endswith("...")  # First line truncated
-    assert contents[1] == "Short line"  # Second line not truncated
-    assert contents[2].endswith("...")  # Third line truncated
+    endings = [line[-20:] for line in lines]
+    assert endings == snapshot(
+        [
+            "AAAAAAAAAAAAAAAAA...",
+            "     2\tShort line",
+            "BBBBBBBBBBBBBBBBB...",
+        ]
+    )
 
 
 @pytest.mark.asyncio
