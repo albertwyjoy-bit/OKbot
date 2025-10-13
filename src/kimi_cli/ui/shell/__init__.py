@@ -5,7 +5,9 @@ from kosong.base.message import ContentPart, TextPart, ToolCall, ToolCallPart
 from kosong.chat_provider import ChatProviderError
 from kosong.tooling import ToolResult
 from prompt_toolkit import PromptSession
+from prompt_toolkit.filters import has_completions
 from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.panel import Panel
 
@@ -37,11 +39,26 @@ class ShellApp:
             logger.info("Running agent with command: {command}", command=command)
             return self._run(command)
 
+        # Create custom key bindings
+        kb = KeyBindings()
+
+        @kb.add("enter", filter=has_completions)
+        def accept_completion(event):
+            """Accept the first completion when Enter is pressed and completions are shown."""
+            buff = event.current_buffer
+            if buff.complete_state and buff.complete_state.completions:
+                # Get the current completion, or use the first one if none is selected
+                completion = buff.complete_state.current_completion
+                if not completion:
+                    completion = buff.complete_state.completions[0]
+                buff.apply_completion(completion)
+
         session = PromptSession(
             message=FormattedText([("bold", f"{getpass.getuser()}✨ ")]),
             prompt_continuation=FormattedText([("fg:#4d4d4d", "... ")]),
             completer=MetaCommandCompleter(),
             complete_while_typing=True,
+            key_bindings=kb,
         )
 
         welcome = f"[bold]Welcome to {self.soul.name}![/bold]"
