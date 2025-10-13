@@ -11,7 +11,6 @@ from kosong.base.chat_provider import ChatProvider
 
 from kimi_cli.agent import (
     DEFAULT_AGENT_FILE,
-    Agent,
     AgentGlobals,
     AgentSpec,
     BuiltinSystemPromptArgs,
@@ -31,7 +30,6 @@ def test_load_agent_basic(agent_file: Path, agent_globals: AgentGlobals):
     """Test loading a basic agent configuration."""
     agent = load_agent(agent_file, agent_globals, [])
 
-    assert isinstance(agent, Agent)
     assert agent.name == "Test Agent"
     assert "You are a test agent" in agent.system_prompt
     assert agent.toolset is not None
