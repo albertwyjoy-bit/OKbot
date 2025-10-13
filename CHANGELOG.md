@@ -9,6 +9,20 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [Unreleased]
+
+### Added
+
+- Support Enter key to accept completion in shell mode
+
+### Fixed
+
+- Fix step interrupting by Ctrl-C
+
+### Changed
+
+- Disable `SendDMail` tool in Kimi Koder agent
+
 ## [0.28] - 2025-10-13
 
 ### Added
