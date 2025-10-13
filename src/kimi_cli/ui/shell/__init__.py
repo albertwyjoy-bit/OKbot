@@ -9,7 +9,7 @@ from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.panel import Panel
 
-from kimi_cli.asyncio import loop
+from kimi_cli.aioloop import loop
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.soul.event import (

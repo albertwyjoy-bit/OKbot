@@ -11,7 +11,7 @@ from kosong.tooling import SimpleToolset, Toolset
 from kosong.tooling.simple import ToolType
 from pydantic import BaseModel, Field
 
-from kimi_cli.asyncio import loop
+from kimi_cli.aioloop import loop
 from kimi_cli.config import Config
 from kimi_cli.llm import LLM
 from kimi_cli.logging import logger

@@ -18,7 +18,7 @@ from kimi_cli.agent import (
     load_agent,
     load_agents_md,
 )
-from kimi_cli.asyncio import loop
+from kimi_cli.aioloop import loop
 from kimi_cli.config import (
     DEFAULT_KIMI_BASE_URL,
     DEFAULT_KIMI_MODEL,

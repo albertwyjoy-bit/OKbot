@@ -12,7 +12,7 @@ from kosong.base.message import (
 from kosong.chat_provider import ChatProviderError
 from kosong.tooling import ToolError, ToolOk, ToolResult
 
-from kimi_cli.asyncio import loop
+from kimi_cli.aioloop import loop
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.soul.event import (

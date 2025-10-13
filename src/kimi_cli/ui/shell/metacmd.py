@@ -9,7 +9,7 @@ from rich.panel import Panel
 
 import kimi_cli.prompts.metacmds as prompts
 from kimi_cli.agent import load_agents_md
-from kimi_cli.asyncio import loop
+from kimi_cli.aioloop import loop
 from kimi_cli.logging import logger
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul

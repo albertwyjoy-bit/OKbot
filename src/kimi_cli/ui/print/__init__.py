@@ -7,7 +7,7 @@ import aiofiles
 from kosong.base.message import Message
 from kosong.chat_provider import ChatProviderError
 
-from kimi_cli.asyncio import loop
+from kimi_cli.aioloop import loop
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached
 from kimi_cli.soul.event import EventQueue, StepInterrupted
