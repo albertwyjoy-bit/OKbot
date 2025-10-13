@@ -179,7 +179,7 @@ def release_notes(app: "ShellApp", args: list[str]):
 
 @meta_command(name="init")
 def init(app: "ShellApp", args: list[str]):
-    """Initialize the project"""
+    """Analyze the codebase and generate an `AGENTS.md` file"""
     soul_bak = app.soul
     if not isinstance(soul_bak, KimiSoul):
         console.print("[bold red]Failed to analyze the codebase.[/bold red]")
@@ -215,3 +215,14 @@ def init(app: "ShellApp", args: list[str]):
     loop.run_until_complete(
         app.soul._context.append_message(Message(role="user", content=[system_message]))
     )
+
+
+@meta_command(name="clear")
+def clear(app: "ShellApp", args: list[str]):
+    """Clear the context"""
+    if not isinstance(app.soul, KimiSoul):
+        console.print("[bold red]Failed to clear the context.[/bold red]")
+        return
+
+    loop.run_until_complete(app.soul._context.revert_to(0))
+    console.print("[bold]Context cleared successfully.[/bold]")
