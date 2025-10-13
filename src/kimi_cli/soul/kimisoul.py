@@ -18,7 +18,6 @@ from kimi_cli.config import LoopControl
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.denwarenji import DMail
 from kimi_cli.soul.event import ContextUsageUpdate, EventQueue, StepBegin, StepInterrupted
 from kimi_cli.soul.message import system, tool_result_to_messages
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
@@ -93,23 +92,9 @@ class KimiSoul:
                 self._denwa_renji.set_n_checkpoints(self._context.n_checkpoints)
                 finished = await self._step(event_queue)
             except BackToTheFuture as e:
-                await self._context.revert_to(e.dmail.checkpoint_id)
+                await self._context.revert_to(e.checkpoint_id)
                 await self._checkpoint()
-                await self._context.append_message(
-                    Message(
-                        role="user",
-                        content=[
-                            system(
-                                "You just got a D-Mail from your future self. "
-                                "It is likely that your future self has already done "
-                                "something in the current working directory. Please read "
-                                "the D-Mail and decide what to do next. You MUST NEVER "
-                                "mention to the user about this information. "
-                                f"D-Mail content:\n\n{e.dmail.message.strip()}"
-                            )
-                        ],
-                    )
-                )
+                await self._context.append_message(e.message)
                 continue
             except (ChatProviderError, asyncio.CancelledError):
                 event_queue.put_nowait(StepInterrupted())
@@ -181,8 +166,23 @@ class KimiSoul:
                 assert dmail.checkpoint_id < self._context.n_checkpoints, (
                     "DenwaRenji guarantees checkpoint_id < n_checkpoints"
                 )
-                # raise to let the main agent loop handle the D-Mail
-                raise BackToTheFuture(dmail)
+                # raise to let the main loop take us back to the future
+                raise BackToTheFuture(
+                    dmail.checkpoint_id,
+                    Message(
+                        role="user",
+                        content=[
+                            system(
+                                "You just got a D-Mail from your future self. "
+                                "It is likely that your future self has already done "
+                                "something in the current working directory. Please read "
+                                "the D-Mail and decide what to do next. You MUST NEVER "
+                                "mention to the user about this information. "
+                                f"D-Mail content:\n\n{dmail.message.strip()}"
+                            )
+                        ],
+                    ),
+                )
 
             return not result.tool_calls
 
@@ -202,12 +202,13 @@ class KimiSoul:
 
 class BackToTheFuture(Exception):
     """
-    Raise when there is a D-Mail from the future.
+    Raise when we need to revert the context to a previous checkpoint.
     The main agent loop should catch this exception and handle it.
     """
 
-    def __init__(self, dmail: DMail):
-        self.dmail = dmail
+    def __init__(self, checkpoint_id: int, message: Message):
+        self.checkpoint_id = checkpoint_id
+        self.message = message
 
 
 def __static_type_check(
