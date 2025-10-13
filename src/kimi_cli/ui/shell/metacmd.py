@@ -8,12 +8,12 @@ from rich.panel import Panel
 
 import kimi_cli.prompts.metacmds as prompts
 from kimi_cli.agent import load_agents_md
-from kimi_cli.aioloop import loop
 from kimi_cli.logging import logger
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.message import system
 from kimi_cli.ui.shell.console import console
+from kimi_cli.utils import aio
 from kimi_cli.utils.changelog import CHANGELOG, format_release_notes
 
 if TYPE_CHECKING:
@@ -182,9 +182,7 @@ def init(app: "ShellApp", args: list[str]):
         "The system has analyzed the codebase and generated an `AGENTS.md` file. "
         f"Latest AGENTS.md file content:\n{agents_md}"
     )
-    loop.run_until_complete(
-        app.soul._context.append_message(Message(role="user", content=[system_message]))
-    )
+    aio.run(app.soul._context.append_message(Message(role="user", content=[system_message])))
 
 
 @meta_command(name="clear")
@@ -194,5 +192,5 @@ def clear(app: "ShellApp", args: list[str]):
         console.print("[bold red]Failed to clear the context.[/bold red]")
         return
 
-    loop.run_until_complete(app.soul._context.revert_to(0))
+    aio.run(app.soul._context.revert_to(0))
     console.print("[bold]Context cleared successfully.[/bold]")

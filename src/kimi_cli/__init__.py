@@ -18,7 +18,6 @@ from kimi_cli.agent import (
     load_agent,
     load_agents_md,
 )
-from kimi_cli.aioloop import loop
 from kimi_cli.config import (
     DEFAULT_KIMI_BASE_URL,
     DEFAULT_KIMI_MODEL,
@@ -37,6 +36,7 @@ from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.acp import ACPServer
 from kimi_cli.ui.print import InputFormat, OutputFormat, PrintApp
 from kimi_cli.ui.shell import ShellApp
+from kimi_cli.utils import aio
 from kimi_cli.utils.provider import augment_provider_with_env_vars, create_llm
 
 __version__ = importlib.metadata.version("kimi-cli")
@@ -309,7 +309,7 @@ def kimi_run(
             raise click.BadParameter("Command cannot be empty")
 
     context = Context(session.history_file)
-    restored = loop.run_until_complete(context.restore())
+    restored = aio.run(context.restore())
     if restored:
         echo(f"✓ Restored history from {session.history_file}")
 

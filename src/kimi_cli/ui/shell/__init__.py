@@ -5,7 +5,6 @@ from kosong.chat_provider import ChatProviderError
 from kosong.tooling import ToolResult
 from rich.panel import Panel
 
-from kimi_cli.aioloop import loop
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.soul.event import (
@@ -18,6 +17,7 @@ from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.liveview import StepLiveView
 from kimi_cli.ui.shell.metacmd import get_meta_command
 from kimi_cli.ui.shell.prompt import CustomPromptSession
+from kimi_cli.utils import aio
 
 
 class ShellApp:
@@ -85,7 +85,7 @@ class ShellApp:
 
     def _run(self, user_input: str) -> bool:
         try:
-            loop.run_until_complete(self._soul_run(user_input))
+            aio.run(self._soul_run(user_input))
             return True
         except ChatProviderError as e:
             logger.exception("LLM provider error:")

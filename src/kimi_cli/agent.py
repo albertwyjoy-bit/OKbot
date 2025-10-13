@@ -11,13 +11,13 @@ from kosong.tooling import SimpleToolset, Toolset
 from kosong.tooling.simple import ToolType
 from pydantic import BaseModel, Field
 
-from kimi_cli.aioloop import loop
 from kimi_cli.config import Config
 from kimi_cli.llm import LLM
 from kimi_cli.logging import logger
 from kimi_cli.metadata import Session
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.tools.mcp import MCPTool
+from kimi_cli.utils import aio
 
 
 class AgentSpec(BaseModel):
@@ -125,7 +125,7 @@ def load_agent(
         raise ValueError(f"Invalid tools: {bad_tools}")
 
     if mcp_configs:
-        loop.run_until_complete(_load_mcp_tools(toolset, mcp_configs))
+        aio.run(_load_mcp_tools(toolset, mcp_configs))
 
     return Agent(
         name=agent_spec.name,

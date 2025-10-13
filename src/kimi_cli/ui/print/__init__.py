@@ -7,11 +7,11 @@ import aiofiles
 from kosong.base.message import Message
 from kosong.chat_provider import ChatProviderError
 
-from kimi_cli.aioloop import loop
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached
 from kimi_cli.soul.event import EventQueue, StepInterrupted
 from kimi_cli.soul.kimisoul import KimiSoul
+from kimi_cli.utils import aio
 from kimi_cli.utils.message import message_extract_text
 
 InputFormat = Literal["text", "stream-json"]
@@ -54,7 +54,7 @@ class PrintApp:
                     logger.info("Running agent with command: {command}", command=command)
                     if self.output_format == "text":
                         print(command)
-                    loop.run_until_complete(self._soul_run(command))
+                    aio.run(self._soul_run(command))
                 else:
                     logger.info("Empty command, skipping")
 
