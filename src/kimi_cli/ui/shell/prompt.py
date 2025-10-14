@@ -125,10 +125,10 @@ class CustomPromptSession:
             history=history,
         )
 
-    def prompt(self) -> str:
+    async def prompt(self) -> str:
         """Prompt for user input with stdout patching."""
         with patch_stdout():
-            result = str(self._session.prompt()).strip()
+            result = str(await self._session.prompt_async()).strip()
         self._append_history_entry(result)
         return result
 

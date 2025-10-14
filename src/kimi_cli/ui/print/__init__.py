@@ -1,6 +1,8 @@
 import asyncio
 import json
+import signal
 import sys
+from functools import partial
 from typing import Literal
 
 import aiofiles
@@ -11,7 +13,7 @@ from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached
 from kimi_cli.soul.event import EventQueue, StepInterrupted
 from kimi_cli.soul.kimisoul import KimiSoul
-from kimi_cli.utils import aio
+from kimi_cli.ui import RunCancelled, run_soul
 from kimi_cli.utils.message import message_extract_text
 
 InputFormat = Literal["text", "stream-json"]
@@ -33,12 +35,20 @@ class PrintApp:
         self.input_format = input_format
         self.output_format = output_format
 
-    def run(self, command: str | None = None) -> bool:
+    async def run(self, command: str | None = None) -> bool:
+        cancel_event = asyncio.Event()
+
+        def _handler():
+            logger.debug("SIGINT received.")
+            cancel_event.set()
+
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGINT, _handler)
+
         if command is None and not sys.stdin.isatty() and self.input_format == "text":
             command = sys.stdin.read().strip()
             logger.info("Read command from stdin: {command}", command=command)
 
-        # TODO: maybe unify with `_soul_run` in `ShellApp`
         try:
             while True:
                 if command is None:
@@ -53,8 +63,12 @@ class PrintApp:
                 if command:
                     logger.info("Running agent with command: {command}", command=command)
                     if self.output_format == "text":
+                        visualize_fn = self._visualize_text
                         print(command)
-                    aio.run(self._soul_run(command))
+                    else:
+                        assert self.output_format == "stream-json"
+                        visualize_fn = partial(self._visualize_stream_json, start_position=0)
+                    await run_soul(self.soul, command, visualize_fn, cancel_event)
                 else:
                     logger.info("Empty command, skipping")
 
@@ -65,13 +79,15 @@ class PrintApp:
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
             print(f"Max steps reached: {e.n_steps}")
-        except KeyboardInterrupt:
+        except RunCancelled:
             logger.error("Interrupted by user")
             print("Interrupted by user")
         except BaseException as e:
             logger.exception("Unknown error:")
             print(f"Unknown error: {e}")
             raise
+        finally:
+            loop.remove_signal_handler(signal.SIGINT)
         return False
 
     # TODO: unify with `_soul_run` in `ShellApp` and `ACPAgentImpl`

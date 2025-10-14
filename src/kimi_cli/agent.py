@@ -17,7 +17,6 @@ from kimi_cli.logging import logger
 from kimi_cli.metadata import Session
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.tools.mcp import MCPTool
-from kimi_cli.utils import aio
 
 
 class AgentSpec(BaseModel):
@@ -81,10 +80,21 @@ def get_agents_dir() -> Path:
 DEFAULT_AGENT_FILE = get_agents_dir() / "koder" / "agent.yaml"
 
 
-def load_agent(
+async def load_agent_with_mcp(
     agent_file: Path,
     globals_: AgentGlobals,
     mcp_configs: list[dict[str, Any]],
+) -> Agent:
+    agent = load_agent(agent_file, globals_)
+    assert isinstance(agent.toolset, SimpleToolset)
+    if mcp_configs:
+        await _load_mcp_tools(agent.toolset, mcp_configs)
+    return agent
+
+
+def load_agent(
+    agent_file: Path,
+    globals_: AgentGlobals,
 ) -> Agent:
     """
     Load agent from specification file.
@@ -123,9 +133,6 @@ def load_agent(
     bad_tools = _load_tools(toolset, tools, tool_deps)
     if bad_tools:
         raise ValueError(f"Invalid tools: {bad_tools}")
-
-    if mcp_configs:
-        aio.run(_load_mcp_tools(toolset, mcp_configs))
 
     return Agent(
         name=agent_spec.name,

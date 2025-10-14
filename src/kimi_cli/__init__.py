@@ -1,3 +1,4 @@
+import asyncio
 import importlib.metadata
 import json
 import os
@@ -15,7 +16,7 @@ from kimi_cli.agent import (
     DEFAULT_AGENT_FILE,
     AgentGlobals,
     BuiltinSystemPromptArgs,
-    load_agent,
+    load_agent_with_mcp,
     load_agents_md,
 )
 from kimi_cli.config import (
@@ -36,7 +37,6 @@ from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.acp import ACPServer
 from kimi_cli.ui.print import InputFormat, OutputFormat, PrintApp
 from kimi_cli.ui.shell import ShellApp
-from kimi_cli.utils import aio
 from kimi_cli.utils.provider import augment_provider_with_env_vars, create_llm
 
 __version__ = importlib.metadata.version("kimi-cli")
@@ -215,24 +215,26 @@ def kimi(
     except json.JSONDecodeError as e:
         raise click.BadOptionUsage("--mcp-config", f"Invalid JSON: {e}") from e
 
-    succeeded = kimi_run(
-        config=config,
-        model_name=model_name,
-        work_dir=work_dir,
-        session=session,
-        command=command,
-        agent_file=agent_file,
-        verbose=verbose,
-        ui=ui,
-        input_format=input_format,
-        output_format=output_format,
-        mcp_configs=mcp_configs,
+    succeeded = asyncio.run(
+        kimi_run(
+            config=config,
+            model_name=model_name,
+            work_dir=work_dir,
+            session=session,
+            command=command,
+            agent_file=agent_file,
+            verbose=verbose,
+            ui=ui,
+            input_format=input_format,
+            output_format=output_format,
+            mcp_configs=mcp_configs,
+        )
     )
     if not succeeded:
         sys.exit(1)
 
 
-def kimi_run(
+async def kimi_run(
     *,
     config: Config,
     model_name: str | None,
@@ -296,7 +298,7 @@ def kimi_run(
         session=session,
     )
     try:
-        agent = load_agent(agent_file, agent_globals, mcp_configs or [])
+        agent = await load_agent_with_mcp(agent_file, agent_globals, mcp_configs or [])
     except ValueError as e:
         raise click.BadParameter(f"Failed to load agent: {e}") from e
     echo(f"✓ Loaded agent: {agent.name}")
@@ -309,7 +311,7 @@ def kimi_run(
             raise click.BadParameter("Command cannot be empty")
 
     context = Context(session.history_file)
-    restored = aio.run(context.restore())
+    restored = await context.restore()
     if restored:
         echo(f"✓ Restored history from {session.history_file}")
 
@@ -337,15 +339,15 @@ def kimi_run(
                     "Session": session.id,
                 },
             )
-            return app.run(command)
+            return await app.run(command)
         elif ui == "print":
             app = PrintApp(soul, input_format or "text", output_format or "text")
-            return app.run(command)
+            return await app.run(command)
         elif ui == "acp":
             if command is not None:
                 logger.warning("ACP server ignores command argument")
             app = ACPServer(soul)
-            return app.run()
+            return await app.run()
         else:
             raise click.BadParameter(f"Invalid UI mode: {ui}")
     finally:

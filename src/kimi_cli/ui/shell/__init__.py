@@ -1,4 +1,5 @@
 import asyncio
+import signal
 
 from kosong.base.message import ContentPart, TextPart, ToolCall, ToolCallPart
 from kosong.chat_provider import ChatProviderError
@@ -13,11 +14,11 @@ from kimi_cli.soul.event import (
     StepBegin,
     StepInterrupted,
 )
+from kimi_cli.ui import RunCancelled, run_soul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.liveview import StepLiveView
 from kimi_cli.ui.shell.metacmd import get_meta_command
 from kimi_cli.ui.shell.prompt import CustomPromptSession
-from kimi_cli.utils import aio
 
 
 class ShellApp:
@@ -25,11 +26,11 @@ class ShellApp:
         self.soul = soul
         self.welcome_info = welcome_info or {}
 
-    def run(self, command: str | None = None) -> bool:
+    async def run(self, command: str | None = None) -> bool:
         if command is not None:
             # run single command and exit
             logger.info("Running agent with command: {command}", command=command)
-            return self._run(command)
+            return await self._run(command)
 
         prompt_session = CustomPromptSession()
 
@@ -53,8 +54,9 @@ class ShellApp:
 
         while True:
             try:
-                user_input = prompt_session.prompt()
+                user_input = await prompt_session.prompt()
             except KeyboardInterrupt:
+                # TODO: check if this still works
                 logger.debug("Exiting by KeyboardInterrupt")
                 console.print("[grey30]Tip: press Ctrl-D or send 'exit' to quit[/grey30]")
                 continue
@@ -79,13 +81,28 @@ class ShellApp:
                 continue
 
             logger.info("Running agent with user input: {user_input}", user_input=user_input)
-            self._run(user_input)
+            await self._run(user_input)
 
         return True
 
-    def _run(self, user_input: str) -> bool:
+    async def _run(self, user_input: str) -> bool:
+        """
+        Run the soul and handle any known exceptions.
+
+        Returns:
+            bool: Whether the run is successful.
+        """
+        cancel_event = asyncio.Event()
+
+        def _handler():
+            logger.debug("SIGINT received.")
+            cancel_event.set()
+
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGINT, _handler)
+
         try:
-            aio.run(self._soul_run(user_input))
+            await run_soul(self.soul, user_input, self._visualize, cancel_event)
             return True
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
@@ -93,38 +110,21 @@ class ShellApp:
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
             console.print(f"[bold yellow]Max steps reached: {e.n_steps}[/bold yellow]")
-        except KeyboardInterrupt:
-            logger.info("Interrupted by user")
+        except RunCancelled:
+            logger.info("Cancelled by user")
             console.print("[bold red]Interrupted by user[/bold red]")
         except BaseException as e:
             logger.exception("Unknown error:")
             console.print(f"[bold red]Unknown error: {e}[/bold red]")
             raise  # re-raise unknown error
-        return False
-
-    async def _soul_run(self, user_input: str):
-        """Run the soul with the given user input and return whether the run is successful."""
-        event_queue = EventQueue()
-        logger.debug(
-            "Starting visualization loop with visualize function: {visualize}",
-            visualize=self._visualize,
-        )
-        vis_task = asyncio.create_task(self._visualize(event_queue))
-
-        try:
-            await self.soul.run(user_input, event_queue)
         finally:
-            event_queue.shutdown()
-            # shutting down the event queue should break the visualization loop
-            try:
-                await asyncio.wait_for(vis_task, timeout=0.5)
-            except TimeoutError:
-                logger.warning("Visualization loop timed out")
+            loop.remove_signal_handler(signal.SIGINT)
+        return False
 
     async def _visualize(self, event_queue: EventQueue):
         """
         A loop to consume agent events and visualize the agent behavior.
-        This loop never raise any exception.
+        This loop never raise any exception except asyncio.CancelledError.
         """
         try:
             # expect a StepBegin

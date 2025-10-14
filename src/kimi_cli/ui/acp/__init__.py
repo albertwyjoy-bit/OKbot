@@ -21,7 +21,7 @@ from kimi_cli.soul.event import (
     StepInterrupted,
 )
 from kimi_cli.tools import extract_subtitle
-from kimi_cli.utils import aio
+from kimi_cli.ui import RunCancelled, run_soul
 
 
 class _ToolCallState:
@@ -57,7 +57,7 @@ class ACPAgentImpl:
         self.session_id: str | None = None
         self._tool_calls: dict[str, _ToolCallState] = {}
         self._last_tool_call: _ToolCallState | None = None
-        self.running_task: asyncio.Task | None = None
+        self._cancel_event: asyncio.Event | None = None
 
     async def initialize(self, params: acp.InitializeRequest) -> acp.InitializeResponse:
         """Handle initialize request."""
@@ -125,14 +125,14 @@ class ACPAgentImpl:
         logger.info("Processing prompt: {text}", text=prompt_text[:100])
 
         try:
-            self.running_task = asyncio.create_task(self._soul_run(prompt_text))
-            await self.running_task
+            self._cancel_event = asyncio.Event()
+            await run_soul(self.soul, prompt_text, self._stream_events, self._cancel_event)
             return acp.PromptResponse(stopReason="end_turn")
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n}", n=e.n_steps)
             return acp.PromptResponse(stopReason="max_turn_requests")
-        except asyncio.CancelledError:
-            logger.info("Prompt interrupted by user")
+        except RunCancelled:
+            logger.info("Prompt cancelled by user")
             return acp.PromptResponse(stopReason="cancelled")
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
@@ -141,32 +141,18 @@ class ACPAgentImpl:
             logger.exception("Error in prompt:")
             raise acp.RequestError.internal_error({"error": f"Unknown error: {e}"}) from e
         finally:
-            self.running_task = None
+            self._cancel_event = None
 
     async def cancel(self, params: acp.CancelNotification) -> None:
         """Handle cancel notification."""
         logger.info("Cancel for session: {id}", id=params.sessionId)
 
         # Cancel the running task if it exists
-        if self.running_task is not None and not self.running_task.done():
-            logger.info("Cancelling running task")
-            self.running_task.cancel()
+        if self._cancel_event is not None and not self._cancel_event.is_set():
+            logger.info("Cancelling running prompt")
+            self._cancel_event.set()
         else:
-            logger.warning("No running task to cancel")
-
-    async def _soul_run(self, user_input: str):
-        event_queue = EventQueue()
-        logger.debug("Starting event stream loop")
-        stream_task = asyncio.create_task(self._stream_events(event_queue))
-        try:
-            await self.soul.run(user_input, event_queue)
-        finally:
-            event_queue.shutdown()
-            # shutting down the event queue should break the event stream loop
-            try:
-                await asyncio.wait_for(stream_task, timeout=0.5)
-            except TimeoutError:
-                logger.warning("Event stream loop timed out")
+            logger.warning("No running prompt to cancel")
 
     async def _stream_events(self, event_queue: EventQueue):
         try:
@@ -331,22 +317,15 @@ class ACPServer:
     def __init__(self, soul: Soul):
         self.soul = soul
 
-    def run(self) -> bool:
+    async def run(self) -> bool:
         """Run the ACP server."""
         logger.info("Starting ACP server on stdio")
-        try:
-            aio.run(self._run_async())
-        except KeyboardInterrupt:
-            logger.info("ACP server shutting down")
-        return True
 
-    async def _run_async(self):
-        """Async main loop."""
         # Get stdio streams
         reader, writer = await acp.stdio_streams()
 
         # Create connection - the library handles all JSON-RPC details!
-        _connection = acp.AgentSideConnection(
+        _ = acp.AgentSideConnection(
             lambda conn: ACPAgentImpl(self.soul, conn),
             writer,
             reader,
@@ -356,3 +335,5 @@ class ACPServer:
 
         # Keep running - connection handles everything
         await asyncio.Event().wait()
+
+        return True
