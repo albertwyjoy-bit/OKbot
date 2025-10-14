@@ -9,12 +9,13 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
-## [Unreleased]
+## [0.29] - 2025-10-14
 
 ### Added
 
 - Support Enter key to accept completion in shell mode
 - Remember user input history across sessions in shell mode
+- Add `/reset` meta command as an alias for `/clear`
 
 ### Fixed
 
