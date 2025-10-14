@@ -1,5 +1,5 @@
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING, NamedTuple, overload
@@ -15,13 +15,12 @@ from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.message import system
 from kimi_cli.ui.shell.console import console
-from kimi_cli.utils import aio
 from kimi_cli.utils.changelog import CHANGELOG, format_release_notes
 
 if TYPE_CHECKING:
     from kimi_cli.ui.shell import ShellApp
 
-type MetaCmdFunc = Callable[["ShellApp", list[str]], None]
+type MetaCmdFunc = Callable[["ShellApp", list[str]], None | Awaitable[None]]
 
 
 class MetaCommand(NamedTuple):
@@ -150,7 +149,7 @@ def release_notes(app: "ShellApp", args: list[str]):
 
 
 @meta_command(name="init")
-def init(app: "ShellApp", args: list[str]):
+async def init(app: "ShellApp", args: list[str]):
     """Analyze the codebase and generate an `AGENTS.md` file"""
     soul_bak = app.soul
     if not isinstance(soul_bak, KimiSoul):
@@ -167,7 +166,7 @@ def init(app: "ShellApp", args: list[str]):
             context=tmp_context,
             loop_control=soul_bak._loop_control,
         )
-        ok = app._run(prompts.INIT)
+        ok = await app._run(prompts.INIT)
 
         if ok:
             console.print(
@@ -184,11 +183,11 @@ def init(app: "ShellApp", args: list[str]):
         "The system has analyzed the codebase and generated an `AGENTS.md` file. "
         f"Latest AGENTS.md file content:\n{agents_md}"
     )
-    aio.run(app.soul._context.append_message(Message(role="user", content=[system_message])))
+    await app.soul._context.append_message(Message(role="user", content=[system_message]))
 
 
 @meta_command(name="clear", aliases=["reset"])
-def clear(app: "ShellApp", args: list[str]):
+async def clear(app: "ShellApp", args: list[str]):
     """Clear the context"""
     if not isinstance(app.soul, KimiSoul):
         console.print("[bold red]Failed to clear the context.[/bold red]")
@@ -198,12 +197,12 @@ def clear(app: "ShellApp", args: list[str]):
         console.print("[bold yellow]Context is empty.[/bold yellow]")
         return
 
-    aio.run(app.soul._context.revert_to(0))
+    await app.soul._context.revert_to(0)
     console.print("[bold green]✓[/bold green] Context has been cleared.")
 
 
 @meta_command(name="compact")
-def compact(app: "ShellApp", args: list[str]):
+async def compact(app: "ShellApp", args: list[str]):
     """Compact the context"""
     if not isinstance(app.soul, KimiSoul):
         console.print("[bold red]Failed to compact the context.[/bold red]")
@@ -233,17 +232,15 @@ def compact(app: "ShellApp", args: list[str]):
     # Call generate to get the compacted context
     try:
         with console.status("[bold cyan]Compacting...[/bold cyan]"):
-            compacted_msg, usage = aio.run(
-                generate(
-                    chat_provider=app.soul._chat_provider,
-                    system_prompt="You are a helpful assistant that compacts conversation context.",
-                    tools=[],
-                    history=[compact_message],
-                )
+            compacted_msg, usage = await generate(
+                chat_provider=app.soul._chat_provider,
+                system_prompt="You are a helpful assistant that compacts conversation context.",
+                tools=[],
+                history=[compact_message],
             )
 
         # Clear the context and add the compacted message as the first message
-        aio.run(app.soul._context.revert_to(0))
+        await app.soul._context.revert_to(0)
         content: list[ContentPart] = (
             [TextPart(text=compacted_msg.content)]
             if isinstance(compacted_msg.content, str)
@@ -252,7 +249,7 @@ def compact(app: "ShellApp", args: list[str]):
         content.insert(
             0, system("Previous context has been compacted. Here is the compaction output:")
         )
-        aio.run(app.soul._context.append_message(Message(role="assistant", content=content)))
+        await app.soul._context.append_message(Message(role="assistant", content=content))
 
         console.print("[bold green]✓[/bold green] Context has been compacted.")
         if usage:

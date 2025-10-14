@@ -1,5 +1,6 @@
 import asyncio
 import signal
+from collections.abc import Awaitable
 
 from kosong.base.message import ContentPart, TextPart, ToolCall, ToolCallPart
 from kosong.chat_provider import ChatProviderError
@@ -77,7 +78,7 @@ class ShellApp:
                 break
             if user_input.startswith("/"):
                 logger.debug("Running meta command: {user_input}", user_input=user_input)
-                self._run_meta_command(user_input[1:])
+                await self._run_meta_command(user_input[1:])
                 continue
 
             logger.info("Running agent with user input: {user_input}", user_input=user_input)
@@ -171,7 +172,7 @@ class ShellApp:
         except asyncio.QueueShutDown:
             logger.debug("Visualization loop shutting down")
 
-    def _run_meta_command(self, command_str: str):
+    async def _run_meta_command(self, command_str: str):
         parts = command_str.split(" ")
         command_name = parts[0]
         command_args = parts[1:]
@@ -184,4 +185,6 @@ class ShellApp:
             command_name=command_name,
             command_args=command_args,
         )
-        command.func(self, command_args)
+        ret = command.func(self, command_args)
+        if isinstance(ret, Awaitable):
+            await ret
