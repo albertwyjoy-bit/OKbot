@@ -194,8 +194,12 @@ def clear(app: "ShellApp", args: list[str]):
         console.print("[bold red]Failed to clear the context.[/bold red]")
         return
 
+    if app.soul._context.n_checkpoints == 0:
+        console.print("[bold yellow]Context is empty.[/bold yellow]")
+        return
+
     aio.run(app.soul._context.revert_to(0))
-    console.print("[bold]Context cleared successfully.[/bold]")
+    console.print("[bold green]✓[/bold green] Context has been cleared.")
 
 
 @meta_command(name="compact")
