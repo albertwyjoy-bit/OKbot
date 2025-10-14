@@ -9,6 +9,12 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.31] - 2025-10-14
+
+### Fixed
+
+- Fix step interrupting by Ctrl-C, for real
+
 ## [0.30] - 2025-10-14
 
 ### Added
