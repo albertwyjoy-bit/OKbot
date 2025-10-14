@@ -1,6 +1,9 @@
+# ruff: noqa
+
 """Tests for WebFetch tool."""
 
 import pytest
+from inline_snapshot import snapshot
 from kosong.tooling import ToolError, ToolOk
 
 from kimi_cli.tools.web.fetch import FetchURL, Params
@@ -14,13 +17,22 @@ async def test_fetch_url_basic_functionality(fetch_url_tool: FetchURL) -> None:
 
     result = await fetch_url_tool(Params(url=test_url))
 
-    # Should succeed
     assert isinstance(result, ToolOk)
-    assert isinstance(result.output, str)
-
-    # Should have content
-    assert "Typo: adamw vs adamW" in result.output
-    assert "The default parameter value" in result.output
+    assert result.output == snapshot(
+        """\
+---
+title: Typo: adamw vs adamW · Issue #4 · MoonshotAI/Moonlight
+author: MoonshotAI
+url: https://github.com/MoonshotAI/Moonlight/issues/4
+hostname: github.com
+description: The default parameter value for optimizer should probably be adamw instead of adamW according to how get_optimizer is written.
+sitename: GitHub
+date: 2025-02-23
+categories: ['issue:2873381615']
+---
+The default parameter value for `optimizer` should probably be `adamw` instead of `adamW` according to how `get_optimizer` is written.\
+"""
+    )
 
 
 @pytest.mark.asyncio
@@ -32,7 +44,9 @@ async def test_fetch_url_invalid_url(fetch_url_tool: FetchURL) -> None:
 
     # Should fail with network error
     assert isinstance(result, ToolError)
-    assert "network error" in result.message.lower()
+    assert result.message == snapshot(
+        "Failed to fetch URL due to network error: Cannot connect to host this-domain-definitely-does-not-exist-12345.com:443 ssl:default [nodename nor servname provided, or not known]. This may indicate the URL is invalid or the server is unreachable."
+    )
 
 
 @pytest.mark.asyncio
@@ -44,7 +58,9 @@ async def test_fetch_url_404_url(fetch_url_tool: FetchURL) -> None:
 
     # Should fail with HTTP error
     assert isinstance(result, ToolError)
-    assert "404" in result.message or "failed to fetch" in result.message.lower()
+    assert result.message == snapshot(
+        "Failed to fetch URL. Status: 404. This may indicate the page is not accessible or the server is down."
+    )
 
 
 @pytest.mark.asyncio
@@ -54,6 +70,9 @@ async def test_fetch_url_malformed_url(fetch_url_tool: FetchURL) -> None:
 
     # Should fail
     assert isinstance(result, ToolError)
+    assert result.message == snapshot(
+        "Failed to fetch URL due to network error: not-a-valid-url. This may indicate the URL is invalid or the server is unreachable."
+    )
 
 
 @pytest.mark.asyncio
@@ -63,6 +82,9 @@ async def test_fetch_url_empty_url(fetch_url_tool: FetchURL) -> None:
 
     # Should fail
     assert isinstance(result, ToolError)
+    assert result.message == snapshot(
+        "Failed to fetch URL due to network error: . This may indicate the URL is invalid or the server is unreachable."
+    )
 
 
 @pytest.mark.asyncio
