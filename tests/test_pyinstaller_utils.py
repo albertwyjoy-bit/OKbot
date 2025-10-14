@@ -35,6 +35,7 @@ def test_pyinstaller_datas():
                 "src/kimi_cli/agents/koder/system.md",
                 "kimi_cli/agents/koder",
             ),
+            ("src/kimi_cli/prompts/metacmds/compact.md", "kimi_cli/prompts/metacmds"),
             ("src/kimi_cli/prompts/metacmds/init.md", "kimi_cli/prompts/metacmds"),
             (
                 "src/kimi_cli/tools/bash/bash.md",

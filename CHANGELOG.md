@@ -9,6 +9,12 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [Unreleased]
+
+### Added
+
+- Add `/compact` meta command to allow manually compacting context
+
 ## [0.29] - 2025-10-14
 
 ### Added

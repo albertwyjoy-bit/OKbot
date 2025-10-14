@@ -1,9 +1,11 @@
 import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from string import Template
 from typing import TYPE_CHECKING, NamedTuple, overload
 
-from kosong.base.message import Message
+from kosong.base import generate
+from kosong.base.message import ContentPart, Message, TextPart
 from rich.panel import Panel
 
 import kimi_cli.prompts.metacmds as prompts
@@ -194,3 +196,68 @@ def clear(app: "ShellApp", args: list[str]):
 
     aio.run(app.soul._context.revert_to(0))
     console.print("[bold]Context cleared successfully.[/bold]")
+
+
+@meta_command(name="compact")
+def compact(app: "ShellApp", args: list[str]):
+    """Compact the context"""
+    if not isinstance(app.soul, KimiSoul):
+        console.print("[bold red]Failed to compact the context.[/bold red]")
+        return
+
+    logger.info("Running `/compact`")
+
+    # Get current context history
+    current_history = list(app.soul._context.history)
+    if len(current_history) <= 1:
+        console.print("[bold yellow]Context is too short to compact.[/bold yellow]")
+        return
+
+    # Convert history to string for the compact prompt
+    history_text = "\n\n".join(
+        f"## Message {i + 1}\nRole: {msg.role}\nContent: {msg.content}"
+        for i, msg in enumerate(current_history)
+    )
+
+    # Build the compact prompt using string template
+    compact_template = Template(prompts.COMPACT)
+    compact_prompt = compact_template.substitute(CONTEXT=history_text)
+
+    # Create input message for compaction
+    compact_message = Message(role="user", content=compact_prompt)
+
+    # Call generate to get the compacted context
+    try:
+        with console.status("[bold cyan]Compacting...[/bold cyan]"):
+            compacted_msg, usage = aio.run(
+                generate(
+                    chat_provider=app.soul._chat_provider,
+                    system_prompt="You are a helpful assistant that compacts conversation context.",
+                    tools=[],
+                    history=[compact_message],
+                )
+            )
+
+        # Clear the context and add the compacted message as the first message
+        aio.run(app.soul._context.revert_to(0))
+        content: list[ContentPart] = (
+            [TextPart(text=compacted_msg.content)]
+            if isinstance(compacted_msg.content, str)
+            else compacted_msg.content
+        )
+        content.insert(
+            0, system("Previous context has been compacted. Here is the compaction output:")
+        )
+        aio.run(app.soul._context.append_message(Message(role="assistant", content=content)))
+
+        console.print("[bold green]✓[/bold green] Context has been compacted.")
+        if usage:
+            logger.info(
+                "Compaction used {input} input tokens and {output} output tokens",
+                input=usage.input,
+                output=usage.output,
+            )
+    except Exception as e:
+        logger.error("Failed to compact context: {error}", error=e)
+        console.print(f"[bold red]Failed to compact the context: {e}[/bold red]")
+        return
