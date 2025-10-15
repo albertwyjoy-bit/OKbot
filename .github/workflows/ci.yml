@@ -1,0 +1,53 @@
+name: Check & Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          allow-prereleases: true
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "0.8.5"
+
+      - name: Cache ripgrep
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin
+          key: ripgrep-${{ runner.os }}-${{ runner.arch }}-14.1.1
+          restore-keys: |
+            ripgrep-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install ripgrep
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          if [ ! -x "$HOME/.local/bin/rg" ]; then
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+            cp /usr/bin/rg "$HOME/.local/bin/rg"
+          fi
+          chmod +x "$HOME/.local/bin/rg"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run checks
+        run: make check
+
+      - name: Run tests
+        run: make test

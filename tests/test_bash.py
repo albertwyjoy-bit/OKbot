@@ -23,13 +23,10 @@ async def test_simple_command(bash_tool: Bash):
 async def test_command_with_error(bash_tool: Bash):
     """Test executing a command that returns an error."""
     result = await bash_tool(Params(command="ls /nonexistent/directory"))
-    assert result == snapshot(
-        ToolError(
-            output="ls: /nonexistent/directory: No such file or directory\n",
-            message="Command failed with exit code: 1.",
-            brief="Failed with exit code: 1",
-        )
-    )
+    assert isinstance(result, ToolError)
+    assert "No such file or directory" in result.output
+    assert "Command failed with exit code:" in result.message
+    assert "Failed with exit code:" in result.brief
 
 
 @pytest.mark.asyncio
@@ -73,7 +70,18 @@ async def test_command_conditional(bash_tool: Bash):
 async def test_command_pipe(bash_tool: Bash):
     """Test command piping."""
     result = await bash_tool(Params(command="echo 'Hello World' | wc -w"))
-    assert result == snapshot(ToolOk(output="       2\n", message="Command executed successfully."))
+    assert isinstance(result, ToolOk)
+    assert isinstance(result.output, str)
+    assert result.output.strip() == snapshot("2")
+
+
+@pytest.mark.asyncio
+async def test_multiple_pipes(bash_tool: Bash):
+    """Test multiple pipes in one command."""
+    result = await bash_tool(Params(command="echo -e '1\\n2\\n3' | grep '2' | wc -l"))
+    assert isinstance(result, ToolOk)
+    assert isinstance(result.output, str)
+    assert result.output.strip() == snapshot("1")
 
 
 @pytest.mark.asyncio
@@ -122,13 +130,6 @@ async def test_text_processing(bash_tool: Bash):
     assert result == snapshot(
         ToolOk(output="apple orange cherry\n", message="Command executed successfully.")
     )
-
-
-@pytest.mark.asyncio
-async def test_multiple_pipes(bash_tool: Bash):
-    """Test multiple pipes in one command."""
-    result = await bash_tool(Params(command="echo -e '1\\n2\\n3' | grep '2' | wc -l"))
-    assert result == snapshot(ToolOk(output="       1\n", message="Command executed successfully."))
 
 
 @pytest.mark.asyncio
@@ -191,7 +192,7 @@ async def test_output_truncation_on_failure(bash_tool: Bash):
     if len(result.output) > DEFAULT_MAX_CHARS:
         assert result.output.endswith("[...truncated]\n")
         assert "Output is truncated" in result.message
-    assert "Command failed with exit code: 1" in result.message
+    assert "Command failed with exit code:" in result.message
 
 
 @pytest.mark.asyncio

@@ -44,9 +44,7 @@ async def test_fetch_url_invalid_url(fetch_url_tool: FetchURL) -> None:
 
     # Should fail with network error
     assert isinstance(result, ToolError)
-    assert result.message == snapshot(
-        "Failed to fetch URL due to network error: Cannot connect to host this-domain-definitely-does-not-exist-12345.com:443 ssl:default [nodename nor servname provided, or not known]. This may indicate the URL is invalid or the server is unreachable."
-    )
+    assert "Failed to fetch URL due to network error:" in result.message
 
 
 @pytest.mark.asyncio

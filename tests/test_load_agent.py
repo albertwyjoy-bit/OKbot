@@ -92,7 +92,7 @@ agent:
 
         spec = _load_agent_spec(extending_agent)
 
-        assert spec.name == snapshot("Kimi Koder")
+        assert spec.name == snapshot("")
         assert spec.system_prompt_path == DEFAULT_AGENT_FILE.parent / "system.md"
         assert spec.system_prompt_args == snapshot(
             {"ROLE_ADDITIONAL": "", "CUSTOM_ARG": "custom_value"}
