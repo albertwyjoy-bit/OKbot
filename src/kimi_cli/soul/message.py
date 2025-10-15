@@ -1,5 +1,6 @@
 from kosong.base.message import ContentPart, Message, TextPart
 from kosong.tooling import ToolError, ToolOk, ToolResult
+from kosong.tooling.error import ToolRuntimeError
 
 
 def system(message: str) -> ContentPart:
@@ -10,7 +11,10 @@ def tool_result_to_messages(tool_result: ToolResult) -> list[Message]:
     """Convert a tool result to a list of messages."""
     if isinstance(tool_result.result, ToolError):
         assert tool_result.result.message, "ToolError should have a message"
-        content = [system(tool_result.result.message)]
+        message = tool_result.result.message
+        if isinstance(tool_result.result, ToolRuntimeError):
+            message += "\nThis is an unexpected error and the tool is probably not working."
+        content = [system(message)]
         if tool_result.result.output:
             content.append(TextPart(text=tool_result.result.output))
         return [
