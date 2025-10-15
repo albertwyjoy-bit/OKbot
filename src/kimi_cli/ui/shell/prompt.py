@@ -28,9 +28,18 @@ class MetaCommandCompleter(Completer):
     @override
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
+
+        # Only autocomplete when the input buffer has no other content.
+        if document.text_after_cursor.strip():
+            return
+
         # Only consider the last token (allowing future arguments after a space)
         last_space = text.rfind(" ")
         token = text[last_space + 1 :]
+        prefix = text[: last_space + 1] if last_space != -1 else ""
+
+        if prefix.strip():
+            return
         if not token.startswith("/"):
             return
 
