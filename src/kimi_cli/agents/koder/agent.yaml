@@ -1,6 +1,6 @@
 version: 1
 agent:
-  name: "Kimi Koder"
+  name: ""
   system_prompt_path: ./system.md
   system_prompt_args:
     ROLE_ADDITIONAL: ""

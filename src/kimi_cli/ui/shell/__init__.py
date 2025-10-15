@@ -35,7 +35,7 @@ class ShellApp:
 
         prompt_session = CustomPromptSession()
 
-        welcome = f"[bold]Welcome to {self.soul.name}![/bold]"
+        welcome = f"[bold]Welcome to {self.soul.name or 'Kimi CLI'}![/bold]"
         if self.welcome_info:
             welcome += "\n\n" + "\n".join(
                 f"[grey30]{key}: {value}[/grey30]" for key, value in self.welcome_info.items()

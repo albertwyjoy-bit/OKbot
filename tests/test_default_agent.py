@@ -8,7 +8,6 @@ from kimi_cli.agent import DEFAULT_AGENT_FILE, AgentGlobals, load_agent
 
 def test_default_agent(agent_globals: AgentGlobals):
     agent = load_agent(DEFAULT_AGENT_FILE, agent_globals)
-    assert agent.name == snapshot("Kimi Koder")
     assert agent.system_prompt.replace(
         f"{agent_globals.builtin_args.KIMI_WORK_DIR}", "/path/to/work/dir"
     ) == snapshot(
