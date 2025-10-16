@@ -7,6 +7,7 @@ from rich.markup import escape
 from rich.spinner import Spinner
 from rich.text import Text
 
+from kimi_cli.soul import StatusSnapshot
 from kimi_cli.tools import extract_subtitle
 from kimi_cli.ui.shell.console import console
 
@@ -73,12 +74,12 @@ class _ToolCallDisplay:
 
 
 class StepLiveView:
-    def __init__(self, context_usage: float):
+    def __init__(self, status: StatusSnapshot):
         self._line_buffer = Text("")
         self._tool_calls: dict[str, _ToolCallDisplay] = {}
         self._last_tool_call: _ToolCallDisplay | None = None
-        self._context_usage_text: Text | None = Text(
-            f"context: {context_usage:.1%}", style="grey50", justify="right"
+        self._status_text: Text | None = Text(
+            self._format_status(status), style="grey50", justify="right"
         )
 
     def __enter__(self):
@@ -95,7 +96,8 @@ class StepLiveView:
             sections.append(self._line_buffer)
         for view in self._tool_calls.values():
             sections.append(view.renderable)
-        sections.append(self._context_usage_text)
+        if self._status_text:
+            sections.append(self._status_text)
         return Group(*sections)
 
     def _push_out(self, text: Text | str):
@@ -132,10 +134,10 @@ class StepLiveView:
             view.finish(tool_result.result)
             self._live.update(self._compose())
 
-    def update_context_usage(self, usage: float):
-        if self._context_usage_text is None:
+    def update_status(self, status: StatusSnapshot):
+        if self._status_text is None:
             return
-        self._context_usage_text.plain = f"context: {usage:.1%}"
+        self._status_text.plain = self._format_status(status)
 
     def finish(self):
         line_buffer = self._line_buffer
@@ -156,3 +158,8 @@ class StepLiveView:
             if not view.finished:
                 view.finish(ToolError(message="", brief="Interrupted"))
         self._live.update(self._compose())
+
+    @staticmethod
+    def _format_status(status: StatusSnapshot) -> str:
+        bounded = max(0.0, min(status.context_usage, 1.0))
+        return f"context: {bounded:.1%}"

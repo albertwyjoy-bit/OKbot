@@ -5,6 +5,7 @@ from kosong.base.message import ContentPart, ToolCall, ToolCallPart
 from kosong.tooling import ToolResult
 
 from kimi_cli.logging import logger
+from kimi_cli.soul import StatusSnapshot
 
 
 class StepBegin(NamedTuple):
@@ -15,11 +16,11 @@ class StepInterrupted(NamedTuple):
     pass
 
 
-class ContextUsageUpdate(NamedTuple):
-    usage_percentage: float
+class StatusUpdate(NamedTuple):
+    status: StatusSnapshot
 
 
-type ControlFlowEvent = StepBegin | StepInterrupted | ContextUsageUpdate
+type ControlFlowEvent = StepBegin | StepInterrupted | StatusUpdate
 type Event = ControlFlowEvent | ContentPart | ToolCall | ToolCallPart | ToolResult
 
 

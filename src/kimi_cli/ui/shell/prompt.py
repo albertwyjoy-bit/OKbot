@@ -3,11 +3,14 @@ import json
 import os
 import re
 import time
+from collections.abc import Callable
+from datetime import datetime
 from hashlib import md5
 from pathlib import Path
 from typing import override
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.completion import (
     Completer,
     Completion,
@@ -25,6 +28,7 @@ from pydantic import BaseModel, ValidationError
 
 from kimi_cli.logging import logger
 from kimi_cli.share import get_share_dir
+from kimi_cli.soul import StatusSnapshot
 from kimi_cli.ui.shell.metacmd import get_meta_commands
 
 
@@ -353,11 +357,12 @@ def _load_history_entries(history_file: Path) -> list[_HistoryEntry]:
 
 
 class CustomPromptSession:
-    def __init__(self):
+    def __init__(self, status_provider: Callable[[], StatusSnapshot]):
         history_dir = get_share_dir() / "user-history"
         history_dir.mkdir(parents=True, exist_ok=True)
         work_dir_id = md5(str(Path.cwd()).encode()).hexdigest()
         self._history_file = (history_dir / work_dir_id).with_suffix(".jsonl")
+        self._status_provider = status_provider
 
         history_entries = _load_history_entries(self._history_file)
         history = InMemoryHistory()
@@ -377,6 +382,7 @@ class CustomPromptSession:
             complete_while_typing=True,
             key_bindings=_kb,
             history=history,
+            bottom_toolbar=self._render_bottom_toolbar,
         )
 
     async def prompt(self) -> str:
@@ -401,3 +407,26 @@ class CustomPromptSession:
                 file=self._history_file,
                 error=exc,
             )
+
+    def _render_bottom_toolbar(self) -> FormattedText:
+        now = datetime.now().strftime("%H:%M:%S")
+        snapshot = self._status_provider()
+        status_text = self._format_status(snapshot)
+
+        app = get_app_or_none()
+        columns = app.output.get_size().columns if app is not None else None
+        padding = 1
+        if status_text and columns is not None:
+            padding = max(1, columns - len(now) - len(status_text))
+
+        fragments: list[tuple[str, str]] = [("", now)]
+        if status_text:
+            fragments.append(("", " " * padding))
+            fragments.append(("", status_text))
+
+        return FormattedText(fragments)
+
+    @staticmethod
+    def _format_status(snapshot: StatusSnapshot) -> str:
+        bounded = max(0.0, min(snapshot.context_usage, 1.0))
+        return f"context: {bounded:.1%}"

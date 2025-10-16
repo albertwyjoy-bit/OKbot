@@ -1,8 +1,7 @@
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, NamedTuple, Protocol, runtime_checkable
 
-from kimi_cli.soul.event import (
-    EventQueue,
-)
+if TYPE_CHECKING:
+    from kimi_cli.soul.event import EventQueue
 
 
 class MaxStepsReached(Exception):
@@ -13,6 +12,11 @@ class MaxStepsReached(Exception):
 
     def __init__(self, n_steps: int):
         self.n_steps = n_steps
+
+
+class StatusSnapshot(NamedTuple):
+    context_usage: float
+    """The usage of the context, in percentage."""
 
 
 @runtime_checkable
@@ -28,11 +32,11 @@ class Soul(Protocol):
         ...
 
     @property
-    def context_usage(self) -> float:
-        """The usage of the context, in percentage."""
+    def status(self) -> StatusSnapshot:
+        """The current status of the soul. The returned value is immutable."""
         ...
 
-    async def run(self, user_input: str, event_queue: EventQueue):
+    async def run(self, user_input: str, event_queue: "EventQueue"):
         """
         Run the agent with the given user input.
 

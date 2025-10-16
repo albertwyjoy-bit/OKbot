@@ -8,13 +8,8 @@ from kosong.tooling import ToolResult
 from rich.panel import Panel
 
 from kimi_cli.logging import logger
-from kimi_cli.soul import MaxStepsReached, Soul
-from kimi_cli.soul.event import (
-    ContextUsageUpdate,
-    EventQueue,
-    StepBegin,
-    StepInterrupted,
-)
+from kimi_cli.soul import MaxStepsReached, Soul, StatusSnapshot
+from kimi_cli.soul.event import EventQueue, StatusUpdate, StepBegin, StepInterrupted
 from kimi_cli.ui import RunCancelled, run_soul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.liveview import StepLiveView
@@ -33,7 +28,10 @@ class ShellApp:
             logger.info("Running agent with command: {command}", command=command)
             return await self._run(command)
 
-        prompt_session = CustomPromptSession()
+        def _status() -> StatusSnapshot:
+            return self.soul.status
+
+        prompt_session = CustomPromptSession(_status)
 
         welcome = f"[bold]Welcome to {self.soul.name or 'Kimi CLI'}![/bold]"
         if self.welcome_info:
@@ -136,7 +134,7 @@ class ShellApp:
                 with console.status("", spinner="moon"):
                     event = await event_queue.get()
 
-                with StepLiveView(self.soul.context_usage) as step:
+                with StepLiveView(self.soul.status) as step:
                     # visualization loop for one step
                     while True:
                         match event:
@@ -151,8 +149,8 @@ class ShellApp:
                                 step.append_tool_call_part(event)
                             case ToolResult():
                                 step.append_tool_result(event)
-                            case ContextUsageUpdate(usage_percentage=usage):
-                                step.update_context_usage(usage)
+                            case StatusUpdate(status=status):
+                                step.update_status(status)
                             case _:
                                 break  # break the step loop
                         event = await event_queue.get()

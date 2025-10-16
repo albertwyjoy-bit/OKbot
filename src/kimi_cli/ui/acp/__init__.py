@@ -14,12 +14,7 @@ from kosong.tooling import ToolError, ToolOk, ToolResult
 
 from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
-from kimi_cli.soul.event import (
-    ContextUsageUpdate,
-    EventQueue,
-    StepBegin,
-    StepInterrupted,
-)
+from kimi_cli.soul.event import EventQueue, StatusUpdate, StepBegin, StepInterrupted
 from kimi_cli.tools import extract_subtitle
 from kimi_cli.ui import RunCancelled, run_soul
 
@@ -173,8 +168,8 @@ class ACPAgentImpl:
                     await self._send_tool_call_part(event)
                 elif isinstance(event, ToolResult):
                     await self._send_tool_result(event)
-                elif isinstance(event, ContextUsageUpdate):
-                    # TODO: send context usage if possible
+                elif isinstance(event, StatusUpdate):
+                    # TODO: stream status if needed
                     pass
                 elif isinstance(event, StepInterrupted):
                     break

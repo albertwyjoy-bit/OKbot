@@ -16,9 +16,9 @@ from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wai
 from kimi_cli.agent import Agent, AgentGlobals
 from kimi_cli.config import LoopControl
 from kimi_cli.logging import logger
-from kimi_cli.soul import MaxStepsReached, Soul
+from kimi_cli.soul import MaxStepsReached, Soul, StatusSnapshot
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.event import ContextUsageUpdate, EventQueue, StepBegin, StepInterrupted
+from kimi_cli.soul.event import EventQueue, StatusUpdate, StepBegin, StepInterrupted
 from kimi_cli.soul.message import system, tool_result_to_messages
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 
@@ -67,8 +67,10 @@ class KimiSoul:
         return self._chat_provider.model_name
 
     @property
-    def context_usage(self) -> float:
-        return self._context.token_count / self._max_context_size
+    def status(self) -> StatusSnapshot:
+        return StatusSnapshot(
+            context_usage=self._context.token_count / self._max_context_size,
+        )
 
     async def _checkpoint(self):
         await self._context.checkpoint(self._checkpoint_with_user_message)
@@ -151,7 +153,7 @@ class KimiSoul:
             if result.usage is not None:
                 # mark the token count for the context before the step
                 await self._context.update_token_count(result.usage.input)
-                event_queue.put_nowait(ContextUsageUpdate(self.context_usage))
+                event_queue.put_nowait(StatusUpdate(status=self.status))
 
             # wait for all tool results (may be interrupted)
             results = await result.tool_results()
