@@ -339,7 +339,8 @@ def _load_history_entries(history_file: Path) -> list[_HistoryEntry]:
                     )
                     continue
                 try:
-                    entries.append(_HistoryEntry.model_validate(record))
+                    entry = _HistoryEntry.model_validate(record)
+                    entries.append(entry)
                 except ValidationError:
                     logger.warning(
                         "Failed to validate user history entry; skipping: {line}",
@@ -363,11 +364,16 @@ class CustomPromptSession:
         work_dir_id = md5(str(Path.cwd()).encode()).hexdigest()
         self._history_file = (history_dir / work_dir_id).with_suffix(".jsonl")
         self._status_provider = status_provider
+        self._last_history_content: str | None = None
 
         history_entries = _load_history_entries(self._history_file)
         history = InMemoryHistory()
         for entry in history_entries:
             history.append_string(entry.content)
+
+        if history_entries:
+            # for consecutive deduplication
+            self._last_history_content = history_entries[-1].content
 
         self._session = PromptSession(
             message=FormattedText([("bold", f"{getpass.getuser()}✨ ")]),
@@ -397,10 +403,15 @@ class CustomPromptSession:
         if not entry.content:
             return
 
+        # skip if same as last entry
+        if entry.content == self._last_history_content:
+            return
+
         try:
             self._history_file.parent.mkdir(parents=True, exist_ok=True)
             with self._history_file.open("a", encoding="utf-8") as f:
                 f.write(entry.model_dump_json(ensure_ascii=False) + "\n")
+            self._last_history_content = entry.content
         except OSError as exc:
             logger.warning(
                 "Failed to append user history entry: {file} ({error})",
