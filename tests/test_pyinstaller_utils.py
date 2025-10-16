@@ -16,6 +16,34 @@ def test_pyinstaller_datas():
                 "dateparser/data",
             ),
             (
+                ".venv/lib/python3.13/site-packages/fastmcp/../fastmcp-2.12.4.dist-info/INSTALLER",
+                "fastmcp/../fastmcp-2.12.4.dist-info",
+            ),
+            (
+                ".venv/lib/python3.13/site-packages/fastmcp/../fastmcp-2.12.4.dist-info/METADATA",
+                "fastmcp/../fastmcp-2.12.4.dist-info",
+            ),
+            (
+                ".venv/lib/python3.13/site-packages/fastmcp/../fastmcp-2.12.4.dist-info/RECORD",
+                "fastmcp/../fastmcp-2.12.4.dist-info",
+            ),
+            (
+                ".venv/lib/python3.13/site-packages/fastmcp/../fastmcp-2.12.4.dist-info/REQUESTED",
+                "fastmcp/../fastmcp-2.12.4.dist-info",
+            ),
+            (
+                ".venv/lib/python3.13/site-packages/fastmcp/../fastmcp-2.12.4.dist-info/WHEEL",
+                "fastmcp/../fastmcp-2.12.4.dist-info",
+            ),
+            (
+                ".venv/lib/python3.13/site-packages/fastmcp/../fastmcp-2.12.4.dist-info/entry_points.txt",
+                "fastmcp/../fastmcp-2.12.4.dist-info",
+            ),
+            (
+                ".venv/lib/python3.13/site-packages/fastmcp/../fastmcp-2.12.4.dist-info/licenses/LICENSE",
+                "fastmcp/../fastmcp-2.12.4.dist-info/licenses",
+            ),
+            (
                 "src/kimi_cli/CHANGELOG.md",
                 "kimi_cli",
             ),
