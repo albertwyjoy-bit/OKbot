@@ -36,9 +36,9 @@ class ShellApp:
         welcome = f"[bold]Welcome to {self.soul.name or 'Kimi CLI'}![/bold]"
         if self.welcome_info:
             welcome += "\n\n" + "\n".join(
-                f"[grey30]{key}: {value}[/grey30]" for key, value in self.welcome_info.items()
+                f"[grey50]{key}: {value}[/grey50]" for key, value in self.welcome_info.items()
             )
-        welcome += "\n\n" + "[grey30]Send /help for help information.[/grey30]"
+        welcome += "\n\n" + "[grey50]Send /help for help information.[/grey50]"
 
         console.print()
         console.print(
@@ -57,7 +57,7 @@ class ShellApp:
             except KeyboardInterrupt:
                 # TODO: check if this still works
                 logger.debug("Exiting by KeyboardInterrupt")
-                console.print("[grey30]Tip: press Ctrl-D or send 'exit' to quit[/grey30]")
+                console.print("[grey50]Tip: press Ctrl-D or send 'exit' to quit[/grey50]")
                 continue
             except EOFError:
                 logger.debug("Exiting by EOF")
