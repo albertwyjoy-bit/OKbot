@@ -9,6 +9,17 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.32] - 2025-10-16
+
+### Added
+
+- Add bottom status line
+- Support file path auto-completion (`@filepath`)
+
+### Fixed
+
+- Do not auto-complete meta command in the middle of user input
+
 ## [0.31] - 2025-10-14
 
 ### Fixed

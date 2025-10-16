@@ -1,6 +1,6 @@
 [project]
 name = "kimi-cli"
-version = "0.31"
+version = "0.32"
 description = "Kimi CLI is your next CLI agent."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -20,12 +20,12 @@ dependencies = [
     "trafilatura>=2.0.0",
     "tenacity>=9.1.2",
     "fastmcp>=2.12.4",
-    "pydantic>=2.12.1",
+    "pydantic>=2.12.2",
 ]
 
 [dependency-groups]
 dev = [
-    "inline-snapshot[black]>=0.29.3",
+    "inline-snapshot[black]>=0.30.0",
     "pyinstaller>=6.16.0",
     "pyright>=1.1.406",
     "pytest>=8.4.2",
