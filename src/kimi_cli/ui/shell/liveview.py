@@ -83,7 +83,13 @@ class StepLiveView:
         )
 
     def __enter__(self):
-        self._live = Live(self._compose(), console=console, refresh_per_second=4)
+        self._live = Live(
+            self._compose(),
+            console=console,
+            refresh_per_second=4,
+            transient=False,  # leave the last frame on the screen
+            vertical_overflow="visible",
+        )
         self._live.__enter__()
         return self
 
@@ -140,20 +146,13 @@ class StepLiveView:
         self._status_text.plain = self._format_status(status)
 
     def finish(self):
-        line_buffer = self._line_buffer
-        self._line_buffer = Text("")
         for view in self._tool_calls.values():
             if not view.finished:
                 # this should not happen, but just in case
                 view.finish(ToolOk(output=""))
         self._live.update(self._compose())
-        if line_buffer:
-            self._push_out(line_buffer)
 
     def interrupt(self):
-        self._line_buffer = Text("")
-        # FIXME: Due to a strange bug of `rich`, when the display is interrupted by the user,
-        # the line buffer will be duplicated, so let's just clear one of them.
         for view in self._tool_calls.values():
             if not view.finished:
                 view.finish(ToolError(message="", brief="Interrupted"))
