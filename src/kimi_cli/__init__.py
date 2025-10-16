@@ -1,10 +1,12 @@
 import asyncio
+import contextlib
 import importlib.metadata
 import json
 import os
 import subprocess
 import sys
 import textwrap
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -28,7 +30,7 @@ from kimi_cli.config import (
     LLMProvider,
     load_config,
 )
-from kimi_cli.logging import logger
+from kimi_cli.logging import StreamToLogger, logger
 from kimi_cli.metadata import Session, continue_session, new_session
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul.context import Context
@@ -339,7 +341,10 @@ async def kimi_run(
                     "Session": session.id,
                 },
             )
-            return await app.run(command)
+            # to ignore possible warnings from dateparser
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
+            with contextlib.redirect_stderr(StreamToLogger()):
+                return await app.run(command)
         elif ui == "print":
             app = PrintApp(soul, input_format or "text", output_format or "text")
             return await app.run(command)
