@@ -122,17 +122,30 @@ def exit(app: "ShellApp", args: list[str]):
     raise NotImplementedError
 
 
+_HELP_MESSAGE_FMT = """
+[grey50]▌ Won't you please, please, help me?[/grey50]
+[grey50]▌ ― The Beatles, [italic]Help![/italic][/grey50]
+
+Sure! Just send message. I will help you to get things done!
+
+Meta commands are also available:
+
+[grey50]{meta_commands_md}[/grey50]
+"""
+
+
 @meta_command(aliases=["h", "?"])
 def help(app: "ShellApp", args: list[str]):
     """Show help information"""
     console.print(
         Panel(
-            f"Send message to {app.soul.name} to get things done!\n\n"
-            "Meta commands are also available:\n\n"
-            + "\n".join(
-                f"  {command.slash_name()}: {command.description}"
-                for command in get_meta_commands()
-            ),
+            _HELP_MESSAGE_FMT.format(
+                meta_commands_md="\n".join(
+                    f" • {command.slash_name()}: {command.description}"
+                    for command in get_meta_commands()
+                )
+            ).strip(),
+            title="Kimi CLI Help",
             border_style="wheat4",
             expand=False,
             padding=(1, 2),
