@@ -11,8 +11,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          # - runner: ubuntu-24.04-arm
+          #   target: aarch64-unknown-linux-gnu
+          - runner: macos-13
+            target: x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,34 +36,38 @@ jobs:
         with:
           version: "0.8.5"
 
-      - name: Cache ripgrep
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/bin
-          key: ripgrep-${{ runner.os }}-${{ runner.arch }}-14.1.1
-          restore-keys: |
-            ripgrep-${{ runner.os }}-${{ runner.arch }}-
-
       - name: Install ripgrep
+        shell: bash
         run: |
-          mkdir -p "$HOME/.local/bin"
-          if [ ! -x "$HOME/.local/bin/rg" ]; then
-            if [ "$RUNNER_OS" = "Linux" ]; then
-              sudo apt-get update
-              sudo apt-get install -y ripgrep
-              SRC="/usr/bin/rg"
-            elif [ "$RUNNER_OS" = "macOS" ]; then
-              brew update || true
-              brew install ripgrep || true
-              SRC="$(brew --prefix)/bin/rg"
-            else
-              echo "Unsupported OS: $RUNNER_OS" >&2
+          set -euxo pipefail
+          VER="15.0.0"
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-gnu)
+              ASSET="x86_64-unknown-linux-musl" # use musl build for portability
+              ;;
+            x86_64-apple-darwin)
+              ASSET="x86_64-apple-darwin"
+              ;;
+            aarch64-apple-darwin)
+              ASSET="aarch64-apple-darwin"
+              ;;
+            *)
+              echo "Unsupported target: ${{ matrix.target }}" >&2
               exit 1
-            fi
-            cp "$SRC" "$HOME/.local/bin/rg"
-          fi
+              ;;
+          esac
+          URL="https://github.com/BurntSushi/ripgrep/releases/download/${VER}/ripgrep-${VER}-${ASSET}.tar.gz"
+          echo "Downloading ripgrep from $URL"
+          TMPDIR="$(mktemp -d)"
+          curl -fsSL "$URL" -o "$TMPDIR/rg.tgz"
+          tar -xzf "$TMPDIR/rg.tgz" -C "$TMPDIR"
+          RG_PATH="$(find "$TMPDIR" -type f -name rg -perm -111 | head -n1)"
+          test -n "$RG_PATH"
+          mkdir -p "$HOME/.local/bin"
+          cp "$RG_PATH" "$HOME/.local/bin/rg"
           chmod +x "$HOME/.local/bin/rg"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/rg" --version
 
       - name: Install dependencies
         run: uv sync --frozen
@@ -76,7 +88,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: kimi-${{ matrix.os }}
+          name: kimi-${{ matrix.target }}
           path: dist/kimi
           if-no-files-found: error
           retention-days: 7
