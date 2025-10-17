@@ -337,7 +337,7 @@ async def kimi_run(
                 soul,
                 welcome_info={
                     "Model": llm.chat_provider.model_name,
-                    "Working directory": str(work_dir),
+                    "Directory": str(work_dir),
                     "Session": session.id,
                 },
             )
