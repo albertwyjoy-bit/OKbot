@@ -4,7 +4,14 @@ hiddenimports = collect_submodules("kimi_cli.tools")
 datas = (
     collect_data_files(
         "kimi_cli",
-        includes=["**/*.yaml", "**/*.md"],
+        includes=[
+            "agents/**/*.yaml",
+            "agents/**/*.md",
+            "deps/bin/**",
+            "prompts/**/*.md",
+            "tools/**/*.md",
+            "CHANGELOG.md",
+        ],
     )
     + collect_data_files(
         "dateparser",

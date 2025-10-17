@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import override
 
@@ -5,7 +6,8 @@ import ripgrepy
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
 from pydantic import BaseModel, Field
 
-# TODO: download ripgrep if not available
+import kimi_cli
+from kimi_cli.logging import logger
 
 
 class Params(BaseModel):
@@ -105,7 +107,15 @@ class Grep(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnType:
         try:
             # Initialize ripgrep with pattern and path
-            rg = ripgrepy.Ripgrepy(params.pattern, params.path)
+            rg_path_local = (
+                Path(kimi_cli.__file__).parent
+                / "deps"
+                / "bin"
+                / ("rg.exe" if os.name == "nt" else "rg")
+            )
+            rg_bin = str(rg_path_local) if rg_path_local.exists() else "rg"
+            logger.debug(f"Using ripgrep binary: {rg_bin}")
+            rg = ripgrepy.Ripgrepy(params.pattern, params.path, rg_path=rg_bin)
 
             # Apply search options
             if params.ignore_case:

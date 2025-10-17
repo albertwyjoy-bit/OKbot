@@ -41,7 +41,7 @@ jobs:
           version: "0.8.5"
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen && make prepare
 
       - name: Build standalone binary
         run: make build

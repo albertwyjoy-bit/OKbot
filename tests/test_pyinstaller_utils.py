@@ -47,10 +47,7 @@ def test_pyinstaller_datas():
                 "src/kimi_cli/CHANGELOG.md",
                 "kimi_cli",
             ),
-            (
-                "src/kimi_cli/agents/koder/README.md",
-                "kimi_cli/agents/koder",
-            ),
+            ("src/kimi_cli/agents/koder/README.md", "kimi_cli/agents/koder"),
             (
                 "src/kimi_cli/agents/koder/agent.yaml",
                 "kimi_cli/agents/koder",
@@ -59,10 +56,8 @@ def test_pyinstaller_datas():
                 "src/kimi_cli/agents/koder/sub.yaml",
                 "kimi_cli/agents/koder",
             ),
-            (
-                "src/kimi_cli/agents/koder/system.md",
-                "kimi_cli/agents/koder",
-            ),
+            ("src/kimi_cli/agents/koder/system.md", "kimi_cli/agents/koder"),
+            ("src/kimi_cli/deps/bin/rg", "kimi_cli/deps/bin"),
             ("src/kimi_cli/prompts/metacmds/compact.md", "kimi_cli/prompts/metacmds"),
             ("src/kimi_cli/prompts/metacmds/init.md", "kimi_cli/prompts/metacmds"),
             (

@@ -36,41 +36,8 @@ jobs:
         with:
           version: "0.8.5"
 
-      - name: Install ripgrep
-        shell: bash
-        run: |
-          set -euxo pipefail
-          VER="15.0.0"
-          case "${{ matrix.target }}" in
-            x86_64-unknown-linux-gnu)
-              ASSET="x86_64-unknown-linux-musl" # use musl build for portability
-              ;;
-            x86_64-apple-darwin)
-              ASSET="x86_64-apple-darwin"
-              ;;
-            aarch64-apple-darwin)
-              ASSET="aarch64-apple-darwin"
-              ;;
-            *)
-              echo "Unsupported target: ${{ matrix.target }}" >&2
-              exit 1
-              ;;
-          esac
-          URL="https://github.com/BurntSushi/ripgrep/releases/download/${VER}/ripgrep-${VER}-${ASSET}.tar.gz"
-          echo "Downloading ripgrep from $URL"
-          TMPDIR="$(mktemp -d)"
-          curl -fsSL "$URL" -o "$TMPDIR/rg.tgz"
-          tar -xzf "$TMPDIR/rg.tgz" -C "$TMPDIR"
-          RG_PATH="$(find "$TMPDIR" -type f -name rg -perm -111 | head -n1)"
-          test -n "$RG_PATH"
-          mkdir -p "$HOME/.local/bin"
-          cp "$RG_PATH" "$HOME/.local/bin/rg"
-          chmod +x "$HOME/.local/bin/rg"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/rg" --version
-
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen && make prepare
 
       - name: Run checks
         run: make check
