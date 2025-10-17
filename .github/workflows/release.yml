@@ -55,15 +55,17 @@ jobs:
           mkdir -p artifacts
           # package the binary as tar.gz; keep filename with target and tag
           cp dist/kimi artifacts/kimi
-          FILENAME="kimi-${{ matrix.target }}-${TAG}.tar.gz"
+          FILENAME="kimi-${TAG}-${{ matrix.target }}.tar.gz"
           tar -C artifacts -czf "artifacts/${FILENAME}" kimi
           rm -f artifacts/kimi
           echo "Built artifact: artifacts/${FILENAME}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
+        env:
+          TAG: ${{ github.ref_name }}
         with:
-          name: kimi-${{ github.ref_name }}-${{ matrix.target }}
+          name: kimi-${TAG}-${{ matrix.target }}
           path: artifacts/*.tar.gz
           if-no-files-found: error
           retention-days: 7
