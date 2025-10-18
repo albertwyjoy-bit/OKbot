@@ -353,6 +353,9 @@ class PromptMode(Enum):
     def toggle(self) -> "PromptMode":
         return PromptMode.SHELL if self == PromptMode.AGENT else PromptMode.AGENT
 
+    def __str__(self) -> str:
+        return self.value
+
 
 class UserInput(BaseModel):
     mode: PromptMode
@@ -510,24 +513,42 @@ class CustomPromptSession:
             )
 
     def _render_bottom_toolbar(self) -> FormattedText:
-        now = datetime.now().strftime("%H:%M:%S")
-        snapshot = self._status_provider()
-        status_text = self._format_status(snapshot)
-
         app = get_app_or_none()
-        columns = app.output.get_size().columns if app is not None else None
-        padding = 1
-        if status_text and columns is not None:
-            padding = max(1, columns - len(now) - len(status_text))
+        assert app is not None
+        columns = app.output.get_size().columns
 
-        fragments: list[tuple[str, str]] = [("", now)]
-        if status_text:
-            fragments.append(("", " " * padding))
-            fragments.append(("", status_text))
+        fragments: list[tuple[str, str]] = []
+
+        now_text = datetime.now().strftime("%H:%M")
+        fragments.extend([("", now_text), ("", " " * 2)])
+        columns -= len(now_text) + 2
+
+        mode = str(self._mode).lower()
+        fragments.extend([("", f"{mode}"), ("", " " * 2)])
+        columns -= len(mode) + 2
+
+        status = self._status_provider()
+        status_text = self._format_status(status)
+
+        shortcuts = [
+            "ctrl-k: toggle mode",
+            "ctrl-d: exit",
+            "/help: show help",
+        ]
+        for shortcut in shortcuts:
+            if columns - len(status_text) > len(shortcut) + 2:
+                fragments.extend([("", shortcut), ("", " " * 2)])
+                columns -= len(shortcut) + 2
+            else:
+                break
+
+        padding = max(1, columns - len(status_text))
+        fragments.append(("", " " * padding))
+        fragments.append(("", status_text))
 
         return FormattedText(fragments)
 
     @staticmethod
-    def _format_status(snapshot: StatusSnapshot) -> str:
-        bounded = max(0.0, min(snapshot.context_usage, 1.0))
+    def _format_status(status: StatusSnapshot) -> str:
+        bounded = max(0.0, min(status.context_usage, 1.0))
         return f"context: {bounded:.1%}"
