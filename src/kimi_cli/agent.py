@@ -13,10 +13,10 @@ from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
 from kimi_cli.llm import LLM
-from kimi_cli.logging import logger
 from kimi_cli.metadata import Session
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.tools.mcp import MCPTool
+from kimi_cli.utils.logging import logger
 
 
 class AgentSpec(BaseModel):

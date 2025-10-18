@@ -6,8 +6,8 @@ from typing import NamedTuple
 
 from pydantic import BaseModel, Field
 
-from kimi_cli.logging import logger
 from kimi_cli.share import get_share_dir
+from kimi_cli.utils.logging import logger
 
 
 def get_metadata_file() -> Path:

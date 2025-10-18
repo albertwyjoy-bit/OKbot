@@ -15,12 +15,12 @@ from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wai
 
 from kimi_cli.agent import Agent, AgentGlobals
 from kimi_cli.config import LoopControl
-from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul, StatusSnapshot
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.event import EventQueue, StatusUpdate, StepBegin, StepInterrupted
 from kimi_cli.soul.message import system, tool_result_to_messages
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
+from kimi_cli.utils.logging import logger
 
 
 class KimiSoul:

@@ -7,7 +7,7 @@ from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
 from pydantic import BaseModel, Field
 
 import kimi_cli
-from kimi_cli.logging import logger
+from kimi_cli.utils.logging import logger
 
 
 class Params(BaseModel):

@@ -30,7 +30,6 @@ from kimi_cli.config import (
     LLMProvider,
     load_config,
 )
-from kimi_cli.logging import StreamToLogger, logger
 from kimi_cli.metadata import Session, continue_session, new_session
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul.context import Context
@@ -39,6 +38,7 @@ from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.acp import ACPServer
 from kimi_cli.ui.print import InputFormat, OutputFormat, PrintApp
 from kimi_cli.ui.shell import ShellApp
+from kimi_cli.utils.logging import StreamToLogger, logger
 from kimi_cli.utils.provider import augment_provider_with_env_vars, create_llm
 
 __version__ = importlib.metadata.version("kimi-cli")

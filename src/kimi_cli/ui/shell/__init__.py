@@ -7,7 +7,6 @@ from kosong.chat_provider import ChatProviderError
 from kosong.tooling import ToolResult
 from rich.panel import Panel
 
-from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul, StatusSnapshot
 from kimi_cli.soul.event import EventQueue, StatusUpdate, StepBegin, StepInterrupted
 from kimi_cli.ui import RunCancelled, run_soul
@@ -15,6 +14,7 @@ from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.liveview import StepLiveView
 from kimi_cli.ui.shell.metacmd import get_meta_command
 from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode
+from kimi_cli.utils.logging import logger
 
 
 class ShellApp:

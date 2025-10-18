@@ -4,8 +4,8 @@ from typing import NamedTuple
 from kosong.base.message import ContentPart, ToolCall, ToolCallPart
 from kosong.tooling import ToolResult
 
-from kimi_cli.logging import logger
 from kimi_cli.soul import StatusSnapshot
+from kimi_cli.utils.logging import logger
 
 
 class StepBegin(NamedTuple):

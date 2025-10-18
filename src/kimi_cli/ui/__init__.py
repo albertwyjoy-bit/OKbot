@@ -3,9 +3,9 @@ import contextlib
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from kimi_cli.logging import logger
 from kimi_cli.soul import Soul
 from kimi_cli.soul.event import EventQueue
+from kimi_cli.utils.logging import logger
 
 type VisualizeFn = Callable[[EventQueue], Coroutine[Any, Any, None]]
 """A long-running async function to visualize the agent behavior."""

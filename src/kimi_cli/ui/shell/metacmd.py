@@ -10,12 +10,12 @@ from rich.panel import Panel
 
 import kimi_cli.prompts.metacmds as prompts
 from kimi_cli.agent import load_agents_md
-from kimi_cli.logging import logger
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.message import system
 from kimi_cli.ui.shell.console import console
 from kimi_cli.utils.changelog import CHANGELOG, format_release_notes
+from kimi_cli.utils.logging import logger
 
 if TYPE_CHECKING:
     from kimi_cli.ui.shell import ShellApp

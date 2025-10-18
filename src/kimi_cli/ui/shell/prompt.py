@@ -30,10 +30,10 @@ from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.patch_stdout import patch_stdout
 from pydantic import BaseModel, ValidationError
 
-from kimi_cli.logging import logger
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul import StatusSnapshot
 from kimi_cli.ui.shell.metacmd import get_meta_commands
+from kimi_cli.utils.logging import logger
 
 
 class MetaCommandCompleter(Completer):

@@ -12,11 +12,11 @@ from kosong.base.message import (
 from kosong.chat_provider import ChatProviderError
 from kosong.tooling import ToolError, ToolOk, ToolResult
 
-from kimi_cli.logging import logger
 from kimi_cli.soul import MaxStepsReached, Soul
 from kimi_cli.soul.event import EventQueue, StatusUpdate, StepBegin, StepInterrupted
 from kimi_cli.tools import extract_subtitle
 from kimi_cli.ui import RunCancelled, run_soul
+from kimi_cli.utils.logging import logger
 
 
 class _ToolCallState:

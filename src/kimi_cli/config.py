@@ -4,7 +4,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_serializer, model_validator
 
-from kimi_cli.logging import logger
+from kimi_cli.utils.logging import logger
 
 
 class LLMProvider(BaseModel):
