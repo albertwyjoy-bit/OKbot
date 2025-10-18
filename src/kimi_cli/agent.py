@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.config import Config
 from kimi_cli.llm import LLM
 from kimi_cli.metadata import Session
+from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.tools.mcp import MCPTool
 from kimi_cli.utils.logging import logger
@@ -63,6 +64,7 @@ class AgentGlobals(NamedTuple):
     builtin_args: BuiltinSystemPromptArgs
     denwa_renji: DenwaRenji
     session: Session
+    approval: Approval
 
 
 class Agent(NamedTuple):
@@ -124,6 +126,7 @@ def load_agent(
         BuiltinSystemPromptArgs: globals_.builtin_args,
         Session: globals_.session,
         DenwaRenji: globals_.denwa_renji,
+        Approval: globals_.approval,
     }
     tools = agent_spec.tools
     if agent_spec.exclude_tools:

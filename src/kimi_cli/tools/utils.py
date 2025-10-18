@@ -137,3 +137,14 @@ class ToolResultBuilder:
     def n_lines(self) -> int:
         """Get current line count."""
         return self._n_lines
+
+
+class ToolRejectedError(ToolError):
+    def __init__(self):
+        super().__init__(
+            message=(
+                "The tool call is rejected by the user. "
+                "Please follow the new instructions from the user."
+            ),
+            brief="Rejected by user",
+        )

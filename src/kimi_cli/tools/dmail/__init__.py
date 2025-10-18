@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import override
 
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
+from kosong.tooling import CallableTool2, ToolError, ToolReturnType
 
 from kimi_cli.soul.denwarenji import DenwaRenji, DenwaRenjiError, DMail
 
@@ -27,4 +27,12 @@ class SendDMail(CallableTool2):
                 message=f"Failed to send D-Mail. Error: {str(e)}",
                 brief="Failed to send D-Mail",
             )
-        return ToolOk(output="")
+        # always return an error because a successful SendDMail call will never return
+        return ToolError(
+            output="",
+            message=(
+                "If you see this message, the D-Mail was not sent successfully. "
+                "This may be because some other tool that needs approval was rejected."
+            ),
+            brief="D-Mail not sent",
+        )

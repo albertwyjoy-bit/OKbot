@@ -23,6 +23,7 @@ from kimi_cli.agent import (
 from kimi_cli.config import Config
 from kimi_cli.llm import LLM
 from kimi_cli.metadata import Session
+from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
 
 
@@ -146,6 +147,7 @@ def test_load_tools_valid(agent_globals: AgentGlobals):
             BuiltinSystemPromptArgs: agent_globals.builtin_args,
             Session: agent_globals.session,
             DenwaRenji: agent_globals.denwa_renji,
+            Approval: agent_globals.approval,
         },
     )
 
@@ -170,6 +172,7 @@ def test_load_tools_invalid(agent_globals: AgentGlobals):
             BuiltinSystemPromptArgs: agent_globals.builtin_args,
             Session: agent_globals.session,
             DenwaRenji: agent_globals.denwa_renji,
+            Approval: agent_globals.approval,
         },
     )
 

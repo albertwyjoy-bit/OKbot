@@ -8,7 +8,14 @@ from kosong.tooling import ToolResult
 from rich.panel import Panel
 
 from kimi_cli.soul import MaxStepsReached, Soul, StatusSnapshot
-from kimi_cli.soul.event import EventQueue, StatusUpdate, StepBegin, StepInterrupted
+from kimi_cli.soul.event import (
+    ApprovalRequest,
+    ApprovalResponse,
+    StatusUpdate,
+    StepBegin,
+    StepInterrupted,
+    Wire,
+)
 from kimi_cli.ui import RunCancelled, run_soul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.liveview import StepLiveView
@@ -148,52 +155,55 @@ class ShellApp:
             loop.remove_signal_handler(signal.SIGINT)
         return False
 
-    async def _visualize(self, event_queue: EventQueue):
+    async def _visualize(self, wire: Wire):
         """
         A loop to consume agent events and visualize the agent behavior.
         This loop never raise any exception except asyncio.CancelledError.
         """
         try:
             # expect a StepBegin
-            assert isinstance(await event_queue.get(), StepBegin)
+            assert isinstance(await wire.receive(), StepBegin)
 
             while True:
                 # spin the moon at the beginning of each step
                 with console.status("", spinner="moon"):
-                    event = await event_queue.get()
+                    msg = await wire.receive()
 
                 with StepLiveView(self.soul.status) as step:
                     # visualization loop for one step
                     while True:
-                        match event:
+                        match msg:
                             case TextPart(text=text):
                                 step.append_text(text)
                             case ContentPart():
                                 # TODO: support more content parts
-                                step.append_text(f"[{event.__class__.__name__}]")
+                                step.append_text(f"[{msg.__class__.__name__}]")
                             case ToolCall():
-                                step.append_tool_call(event)
+                                step.append_tool_call(msg)
                             case ToolCallPart():
-                                step.append_tool_call_part(event)
+                                step.append_tool_call_part(msg)
                             case ToolResult():
-                                step.append_tool_result(event)
+                                step.append_tool_result(msg)
+                            case ApprovalRequest():
+                                msg.resolve(ApprovalResponse.APPROVE)
+                                # TODO(approval): handle approval request
                             case StatusUpdate(status=status):
                                 step.update_status(status)
                             case _:
                                 break  # break the step loop
-                        event = await event_queue.get()
+                        msg = await wire.receive()
 
                     # cleanup the step live view
-                    if isinstance(event, StepInterrupted):
+                    if isinstance(msg, StepInterrupted):
                         step.interrupt()
                     else:
                         step.finish()
 
-                if isinstance(event, StepInterrupted):
+                if isinstance(msg, StepInterrupted):
                     # for StepInterrupted, the visualization loop should end immediately
                     break
 
-                assert isinstance(event, StepBegin), "expect a StepBegin"
+                assert isinstance(msg, StepBegin), "expect a StepBegin"
                 # start a new step
         except asyncio.QueueShutDown:
             logger.debug("Visualization loop shutting down")

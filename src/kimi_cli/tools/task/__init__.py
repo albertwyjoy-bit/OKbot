@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.agent import Agent, AgentGlobals, AgentSpec, load_agent
 from kimi_cli.soul import MaxStepsReached
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.event import EventQueue
+from kimi_cli.soul.event import ApprovalRequest, Wire, WireMessage, get_wire_or_none
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.message import message_extract_text
@@ -107,10 +107,12 @@ class Task(CallableTool2[Params]):
             context=context,
             loop_control=self._agent_globals.config.loop_control,
         )
-        event_queue = _MockEventQueue()
+        wire = get_wire_or_none()
+        assert wire is not None, "Wire is expected to be set"
+        sub_wire = _SubWire(wire)
 
         try:
-            await soul.run(prompt, event_queue)
+            await soul.run(prompt, sub_wire)
         except MaxStepsReached as e:
             return ToolError(
                 message=(
@@ -133,7 +135,7 @@ class Task(CallableTool2[Params]):
         # Check if response is too brief, if so, run again with continuation prompt
         n_attempts_remaining = MAX_CONTINUE_ATTEMPTS
         if len(final_response) < 200 and n_attempts_remaining > 0:
-            await soul.run(CONTINUE_PROMPT, event_queue)
+            await soul.run(CONTINUE_PROMPT, sub_wire)
 
             if len(context.history) == 0 or context.history[-1].role != "assistant":
                 return ToolError(message=_error_msg, brief="Failed to run subagent")
@@ -142,8 +144,13 @@ class Task(CallableTool2[Params]):
         return ToolOk(output=final_response)
 
 
-class _MockEventQueue(EventQueue):
+class _SubWire(Wire):
+    def __init__(self, super_wire: Wire):
+        super().__init__()
+        self._super_wire = super_wire
+
     @override
-    def put_nowait(self, *args, **kwargs):
-        # do nothing
-        pass
+    def send(self, msg: WireMessage):
+        if isinstance(msg, ApprovalRequest):
+            self._super_wire.send(msg)
+        # TODO: visualize subagent behavior by sending other messages in some way

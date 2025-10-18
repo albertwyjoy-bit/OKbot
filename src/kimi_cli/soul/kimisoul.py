@@ -17,9 +17,10 @@ from kimi_cli.agent import Agent, AgentGlobals
 from kimi_cli.config import LoopControl
 from kimi_cli.soul import MaxStepsReached, Soul, StatusSnapshot
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.event import EventQueue, StatusUpdate, StepBegin, StepInterrupted
+from kimi_cli.soul.event import StatusUpdate, StepBegin, StepInterrupted, Wire, current_wire
 from kimi_cli.soul.message import system, tool_result_to_messages
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
+from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.logging import logger
 
 
@@ -48,6 +49,7 @@ class KimiSoul:
         self._chat_provider = agent_globals.llm.chat_provider
         self._max_context_size = agent_globals.llm.max_context_size  # unit: tokens
         self._denwa_renji = agent_globals.denwa_renji
+        self._approval = agent_globals.approval
         self._context = context
         self._loop_control = loop_control
 
@@ -75,33 +77,47 @@ class KimiSoul:
     async def _checkpoint(self):
         await self._context.checkpoint(self._checkpoint_with_user_message)
 
-    async def run(self, user_input: str, event_queue: EventQueue):
+    async def run(self, user_input: str, wire: Wire):
         await self._checkpoint()  # this creates the checkpoint 0 on first run
         await self._context.append_message(Message(role="user", content=user_input))
         logger.debug("Appended user message to context")
-        await self._agent_loop(event_queue)
+        wire_token = current_wire.set(wire)
+        try:
+            await self._agent_loop(wire)
+        finally:
+            current_wire.reset(wire_token)
 
-    async def _agent_loop(
-        self,
-        event_queue: EventQueue,
-    ):
+    async def _agent_loop(self, wire: Wire):
         """The main agent loop for one run."""
+
+        async def _pipe_approval_to_wire():
+            while True:
+                request = await self._approval.fetch_request()
+                wire.send(request)
+
         step_no = 1
         while True:
-            event_queue.put_nowait(StepBegin(step_no))
+            wire.send(StepBegin(step_no))
+            approval_task = asyncio.create_task(_pipe_approval_to_wire())
+            # FIXME: It's possible that a subagent's approval task steals approval request
+            # from the main agent. We must ensure that the Task tool will redirect them
+            # to the main wire. See `_SubWire` for more details. Later we need to figure
+            # out a better solution.
             try:
                 await self._checkpoint()
                 self._denwa_renji.set_n_checkpoints(self._context.n_checkpoints)
-                finished = await self._step(event_queue)
+                finished = await self._step(wire)
             except BackToTheFuture as e:
                 await self._context.revert_to(e.checkpoint_id)
                 await self._checkpoint()
                 await self._context.append_message(e.message)
                 continue
             except (ChatProviderError, asyncio.CancelledError):
-                event_queue.put_nowait(StepInterrupted())
+                wire.send(StepInterrupted())
                 # break the agent loop
                 raise
+            finally:
+                approval_task.cancel()  # stop piping approval requests to the wire
 
             if finished:
                 return
@@ -110,8 +126,8 @@ class KimiSoul:
             if step_no > self._loop_control.max_steps_per_run:
                 raise MaxStepsReached(self._loop_control.max_steps_per_run)
 
-    async def _step(self, event_queue: EventQueue) -> bool:
-        """Run an single step and return whether the run is finished."""
+    async def _step(self, wire: Wire) -> bool:
+        """Run an single step and return whether the run should be stopped."""
 
         def _is_retryable_error(exception: BaseException) -> bool:
             if isinstance(exception, (APIConnectionError, APITimeoutError)):
@@ -139,56 +155,61 @@ class KimiSoul:
             stop=stop_after_attempt(self._loop_control.max_retries_per_step),
             reraise=True,
         )
-        async def _step_impl() -> bool:
+        async def _kosong_step_with_retry() -> StepResult:
             # run an LLM step (may be interrupted)
-            result = await kosong.step(
+            return await kosong.step(
                 self._chat_provider,
                 self._agent.system_prompt,
                 self._agent.toolset,
                 self._context.history,
-                on_message_part=event_queue.put_nowait,
-                on_tool_result=event_queue.put_nowait,
+                on_message_part=wire.send,
+                on_tool_result=wire.send,
             )
-            logger.debug("Got step result: {result}", result=result)
-            if result.usage is not None:
-                # mark the token count for the context before the step
-                await self._context.update_token_count(result.usage.input)
-                event_queue.put_nowait(StatusUpdate(status=self.status))
 
-            # wait for all tool results (may be interrupted)
-            results = await result.tool_results()
-            logger.debug("Got tool results: {results}", results=results)
+        result = await _kosong_step_with_retry()
+        logger.debug("Got step result: {result}", result=result)
+        if result.usage is not None:
+            # mark the token count for the context before the step
+            await self._context.update_token_count(result.usage.input)
+            wire.send(StatusUpdate(status=self.status))
 
-            # shield the context manipulation from interruption
-            await asyncio.shield(self._grow_context(result, results))
+        # wait for all tool results (may be interrupted)
+        results = await result.tool_results()
+        logger.debug("Got tool results: {results}", results=results)
 
-            # handle pending D-Mail
-            if dmail := self._denwa_renji.fetch_pending_dmail():
-                assert dmail.checkpoint_id >= 0, "DenwaRenji guarantees checkpoint_id >= 0"
-                assert dmail.checkpoint_id < self._context.n_checkpoints, (
-                    "DenwaRenji guarantees checkpoint_id < n_checkpoints"
-                )
-                # raise to let the main loop take us back to the future
-                raise BackToTheFuture(
-                    dmail.checkpoint_id,
-                    Message(
-                        role="user",
-                        content=[
-                            system(
-                                "You just got a D-Mail from your future self. "
-                                "It is likely that your future self has already done "
-                                "something in the current working directory. Please read "
-                                "the D-Mail and decide what to do next. You MUST NEVER "
-                                "mention to the user about this information. "
-                                f"D-Mail content:\n\n{dmail.message.strip()}"
-                            )
-                        ],
-                    ),
-                )
+        # shield the context manipulation from interruption
+        await asyncio.shield(self._grow_context(result, results))
 
-            return not result.tool_calls
+        rejected = any(isinstance(result.result, ToolRejectedError) for result in results)
+        if rejected:
+            _ = self._denwa_renji.fetch_pending_dmail()
+            return True
 
-        return await _step_impl()
+        # handle pending D-Mail
+        if dmail := self._denwa_renji.fetch_pending_dmail():
+            assert dmail.checkpoint_id >= 0, "DenwaRenji guarantees checkpoint_id >= 0"
+            assert dmail.checkpoint_id < self._context.n_checkpoints, (
+                "DenwaRenji guarantees checkpoint_id < n_checkpoints"
+            )
+            # raise to let the main loop take us back to the future
+            raise BackToTheFuture(
+                dmail.checkpoint_id,
+                Message(
+                    role="user",
+                    content=[
+                        system(
+                            "You just got a D-Mail from your future self. "
+                            "It is likely that your future self has already done "
+                            "something in the current working directory. Please read "
+                            "the D-Mail and decide what to do next. You MUST NEVER "
+                            "mention to the user about this information. "
+                            f"D-Mail content:\n\n{dmail.message.strip()}"
+                        )
+                    ],
+                ),
+            )
+
+        return not result.tool_calls
 
     async def _grow_context(self, result: StepResult, tool_results: list[ToolResult]):
         logger.debug("Growing context with result: {result}", result=result)

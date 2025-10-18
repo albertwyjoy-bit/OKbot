@@ -5,7 +5,8 @@ from typing import override
 from kosong.tooling import CallableTool2, ToolReturnType
 from pydantic import BaseModel, Field
 
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.soul.approval import Approval
+from kimi_cli.tools.utils import ToolRejectedError, ToolResultBuilder, load_desc
 
 MAX_TIMEOUT = 5 * 60
 
@@ -28,9 +29,16 @@ class Bash(CallableTool2[Params]):
     description: str = load_desc(Path(__file__).parent / "bash.md", {})
     params: type[Params] = Params
 
+    def __init__(self, approval: Approval, **kwargs):
+        super().__init__(**kwargs)
+        self._approval = approval
+
     @override
-    async def __call__(self, params) -> ToolReturnType:
+    async def __call__(self, params: Params) -> ToolReturnType:
         builder = ToolResultBuilder()
+
+        if not await self._approval.request(self.name, f"run command {params.command}"):
+            return ToolRejectedError()
 
         def stdout_cb(line: bytes):
             line_str = line.decode()

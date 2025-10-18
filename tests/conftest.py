@@ -18,6 +18,7 @@ from kimi_cli.agent import (
 from kimi_cli.config import Config, MoonshotSearchConfig, get_default_config
 from kimi_cli.llm import LLM
 from kimi_cli.metadata import Session, WorkDirMeta
+from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.tools.bash import Bash
 from kimi_cli.tools.dmail import SendDMail
@@ -90,9 +91,9 @@ def session(temp_work_dir: Path, temp_share_dir: Path) -> Session:
 
 
 @pytest.fixture
-def agent_spec() -> AgentSpec:
-    """Create a AgentSpec instance."""
-    return _load_agent_spec(DEFAULT_AGENT_FILE)
+def approval() -> Approval:
+    """Create a Approval instance."""
+    return Approval(yolo=True)
 
 
 @pytest.fixture
@@ -102,6 +103,7 @@ def agent_globals(
     builtin_args: BuiltinSystemPromptArgs,
     denwa_renji: DenwaRenji,
     session: Session,
+    approval: Approval,
 ) -> AgentGlobals:
     """Create a AgentGlobals instance."""
     return AgentGlobals(
@@ -110,7 +112,14 @@ def agent_globals(
         builtin_args=builtin_args,
         denwa_renji=denwa_renji,
         session=session,
+        approval=approval,
     )
+
+
+@pytest.fixture
+def agent_spec() -> AgentSpec:
+    """Create a AgentSpec instance."""
+    return _load_agent_spec(DEFAULT_AGENT_FILE)
 
 
 @pytest.fixture
@@ -138,9 +147,9 @@ def set_todo_list_tool() -> SetTodoList:
 
 
 @pytest.fixture
-def bash_tool() -> Bash:
+def bash_tool(approval: Approval) -> Bash:
     """Create a Bash tool instance."""
-    return Bash()
+    return Bash(approval)
 
 
 @pytest.fixture

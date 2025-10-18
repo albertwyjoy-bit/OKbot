@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, NamedTuple, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from kimi_cli.soul.event import EventQueue
+    from kimi_cli.soul.event import Wire
 
 
 class MaxStepsReached(Exception):
@@ -36,13 +36,13 @@ class Soul(Protocol):
         """The current status of the soul. The returned value is immutable."""
         ...
 
-    async def run(self, user_input: str, event_queue: "EventQueue"):
+    async def run(self, user_input: str, wire: "Wire"):
         """
         Run the agent with the given user input.
 
         Args:
             user_input (str): The user input to the agent.
-            event_queue (EventQueue): The event queue to send events to the visualization loop.
+            wire (Wire): The wire to send events and requests to the UI loop.
 
         Raises:
             ChatProviderError: When the LLM provider returns an error.

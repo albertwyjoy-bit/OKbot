@@ -4,10 +4,10 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from kimi_cli.soul import Soul
-from kimi_cli.soul.event import EventQueue
+from kimi_cli.soul.event import Wire
 from kimi_cli.utils.logging import logger
 
-type VisualizeFn = Callable[[EventQueue], Coroutine[Any, Any, None]]
+type UILoopFn = Callable[[Wire], Coroutine[Any, Any, None]]
 """A long-running async function to visualize the agent behavior."""
 
 
@@ -18,7 +18,7 @@ class RunCancelled(Exception):
 async def run_soul(
     soul: Soul,
     user_input: str,
-    visualize_fn: VisualizeFn,
+    ui_loop_fn: UILoopFn,
     cancel_event: asyncio.Event,
 ):
     """
@@ -32,40 +32,37 @@ async def run_soul(
         MaxStepsReached: When the maximum number of steps is reached.
         RunCancelled: When the run is cancelled by the cancel event.
     """
-    event_queue = EventQueue()
-    logger.debug(
-        "Starting visualization loop with visualize function: {visualize}",
-        visualize=visualize_fn,
-    )
+    wire = Wire()
+    logger.debug("Starting UI loop with function: {ui_loop_fn}", ui_loop_fn=ui_loop_fn)
 
-    vis_task = asyncio.create_task(visualize_fn(event_queue))
-    run_task = asyncio.create_task(soul.run(user_input, event_queue))
+    ui_task = asyncio.create_task(ui_loop_fn(wire))
+    soul_task = asyncio.create_task(soul.run(user_input, wire))
 
     cancel_event_task = asyncio.create_task(cancel_event.wait())
     await asyncio.wait(
-        [run_task, cancel_event_task],
+        [soul_task, cancel_event_task],
         return_when=asyncio.FIRST_COMPLETED,
     )
 
     try:
         if cancel_event.is_set():
             logger.debug("Cancelling the run task")
-            run_task.cancel()
+            soul_task.cancel()
             try:
-                await run_task
+                await soul_task
             except asyncio.CancelledError:
                 raise RunCancelled from None
         else:
-            assert run_task.done()  # either stop event is set or the run task is done
+            assert soul_task.done()  # either stop event is set or the run task is done
             cancel_event_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await cancel_event_task
-            run_task.result()  # this will raise if any exception was raised in the run task
+            soul_task.result()  # this will raise if any exception was raised in the run task
     finally:
         logger.debug("Shutting down the visualization loop")
         # shutting down the event queue should break the visualization loop
-        event_queue.shutdown()
+        wire.shutdown()
         try:
-            await asyncio.wait_for(vis_task, timeout=0.5)
+            await asyncio.wait_for(ui_task, timeout=0.5)
         except TimeoutError:
             logger.warning("Visualization loop timed out")

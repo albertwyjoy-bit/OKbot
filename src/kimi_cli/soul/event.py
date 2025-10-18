@@ -1,4 +1,9 @@
+# TODO: rename this file to `wire.py`
+
 import asyncio
+import uuid
+from contextvars import ContextVar
+from enum import Enum
 from typing import NamedTuple
 
 from kosong.base.message import ContentPart, ToolCall, ToolCallPart
@@ -24,20 +29,64 @@ type ControlFlowEvent = StepBegin | StepInterrupted | StatusUpdate
 type Event = ControlFlowEvent | ContentPart | ToolCall | ToolCallPart | ToolResult
 
 
-class EventQueue:
+class ApprovalResponse(Enum):
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
+class ApprovalRequest:
+    def __init__(self, sender: str, action: str, extra: dict[str, str] | None = None):
+        self.id = str(uuid.uuid4())
+        self.sender = sender
+        self.action = action
+        self.extra = extra or {}
+        self._future = asyncio.Future[ApprovalResponse]()
+
+    async def wait(self) -> ApprovalResponse:
+        """
+        Wait for the request to be resolved or cancelled.
+
+        Returns:
+            ApprovalResponse: The response to the approval request.
+        """
+        return await self._future
+
+    def resolve(self, response: ApprovalResponse) -> None:
+        """
+        Resolve the approval request with the given response.
+        This will cause the `wait()` method to return the response.
+        """
+        self._future.set_result(response)
+
+
+type WireMessage = Event | ApprovalRequest
+
+
+class Wire:
+    """
+    A channel for communication between the soul and the UI.
+    """
+
     def __init__(self):
-        self._queue = asyncio.Queue()
+        self._queue = asyncio.Queue[WireMessage]()
 
-    def put_nowait(self, event: Event):
-        if not isinstance(event, ContentPart | ToolCallPart):
-            logger.debug("Emitting event: {event}", event=event)
-        self._queue.put_nowait(event)
+    def send(self, msg: WireMessage) -> None:
+        if not isinstance(msg, ContentPart | ToolCallPart):
+            logger.debug("Sending wire message: {msg}", msg=msg)
+        self._queue.put_nowait(msg)
 
-    async def get(self) -> Event:
-        event = await self._queue.get()
-        if not isinstance(event, ContentPart | ToolCallPart):
-            logger.debug("Consuming event: {event}", event=event)
-        return event
+    async def receive(self) -> WireMessage:
+        msg = await self._queue.get()
+        if not isinstance(msg, ContentPart | ToolCallPart):
+            logger.debug("Receiving wire message: {msg}", msg=msg)
+        return msg
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         self._queue.shutdown()
+
+
+current_wire = ContextVar[Wire | None]("current_wire", default=None)
+
+
+def get_wire_or_none() -> Wire | None:
+    return current_wire.get()

@@ -13,7 +13,14 @@ from kosong.chat_provider import ChatProviderError
 from kosong.tooling import ToolError, ToolOk, ToolResult
 
 from kimi_cli.soul import MaxStepsReached, Soul
-from kimi_cli.soul.event import EventQueue, StatusUpdate, StepBegin, StepInterrupted
+from kimi_cli.soul.event import (
+    ApprovalRequest,
+    ApprovalResponse,
+    StatusUpdate,
+    StepBegin,
+    StepInterrupted,
+    Wire,
+)
 from kimi_cli.tools import extract_subtitle
 from kimi_cli.ui import RunCancelled, run_soul
 from kimi_cli.utils.logging import logger
@@ -149,29 +156,32 @@ class ACPAgentImpl:
         else:
             logger.warning("No running prompt to cancel")
 
-    async def _stream_events(self, event_queue: EventQueue):
+    async def _stream_events(self, wire: Wire):
         try:
             # expect a StepBegin
-            assert isinstance(await event_queue.get(), StepBegin)
+            assert isinstance(await wire.receive(), StepBegin)
 
             while True:
-                event = await event_queue.get()
+                msg = await wire.receive()
 
-                if isinstance(event, TextPart):
-                    await self._send_text(event.text)
-                elif isinstance(event, ContentPart):
-                    logger.warning("Unsupported content part: {part}", part=event)
-                    await self._send_text(f"[{event.__class__.__name__}]")
-                elif isinstance(event, ToolCall):
-                    await self._send_tool_call(event)
-                elif isinstance(event, ToolCallPart):
-                    await self._send_tool_call_part(event)
-                elif isinstance(event, ToolResult):
-                    await self._send_tool_result(event)
-                elif isinstance(event, StatusUpdate):
+                if isinstance(msg, TextPart):
+                    await self._send_text(msg.text)
+                elif isinstance(msg, ContentPart):
+                    logger.warning("Unsupported content part: {part}", part=msg)
+                    await self._send_text(f"[{msg.__class__.__name__}]")
+                elif isinstance(msg, ToolCall):
+                    await self._send_tool_call(msg)
+                elif isinstance(msg, ToolCallPart):
+                    await self._send_tool_call_part(msg)
+                elif isinstance(msg, ToolResult):
+                    await self._send_tool_result(msg)
+                elif isinstance(msg, StatusUpdate):
                     # TODO: stream status if needed
                     pass
-                elif isinstance(event, StepInterrupted):
+                elif isinstance(msg, ApprovalRequest):
+                    # TODO(approval): handle approval request
+                    msg.resolve(ApprovalResponse.APPROVE)
+                elif isinstance(msg, StepInterrupted):
                     break
         except asyncio.QueueShutDown:
             logger.debug("Event stream loop shutting down")

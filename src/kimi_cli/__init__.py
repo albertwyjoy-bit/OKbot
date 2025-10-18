@@ -32,6 +32,7 @@ from kimi_cli.config import (
 )
 from kimi_cli.metadata import Session, continue_session, new_session
 from kimi_cli.share import get_share_dir
+from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.kimisoul import KimiSoul
@@ -298,6 +299,7 @@ async def kimi_run(
         ),
         denwa_renji=DenwaRenji(),
         session=session,
+        approval=Approval(),
     )
     try:
         agent = await load_agent_with_mcp(agent_file, agent_globals, mcp_configs or [])
