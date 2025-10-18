@@ -1,3 +1,4 @@
+import contextlib
 import getpass
 import json
 import os
@@ -5,6 +6,7 @@ import re
 import time
 from collections.abc import Callable
 from datetime import datetime
+from enum import Enum
 from hashlib import md5
 from pathlib import Path
 from typing import override
@@ -14,12 +16,13 @@ from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.completion import (
     Completer,
     Completion,
+    DummyCompleter,
     FuzzyCompleter,
     WordCompleter,
     merge_completers,
 )
 from prompt_toolkit.document import Document
-from prompt_toolkit.filters import has_completions
+from prompt_toolkit.filters import Always, Never, has_completions
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
@@ -300,21 +303,6 @@ class FileMentionCompleter(Completer):
             self._fragment_hint = None
 
 
-_kb = KeyBindings()
-
-
-@_kb.add("enter", filter=has_completions)
-def accept_completion(event: KeyPressEvent) -> None:
-    """Accept the first completion when Enter is pressed and completions are shown."""
-    buff = event.current_buffer
-    if buff.complete_state and buff.complete_state.completions:
-        # Get the current completion, or use the first one if none is selected
-        completion = buff.complete_state.current_completion
-        if not completion:
-            completion = buff.complete_state.completions[0]
-        buff.apply_completion(completion)
-
-
 class _HistoryEntry(BaseModel):
     content: str
 
@@ -357,6 +345,25 @@ def _load_history_entries(history_file: Path) -> list[_HistoryEntry]:
     return entries
 
 
+class PromptMode(Enum):
+    AGENT = "agent"
+    SHELL = "shell"
+
+    def toggle(self) -> "PromptMode":
+        return PromptMode.SHELL if self == PromptMode.AGENT else PromptMode.AGENT
+
+
+class UserInput(BaseModel):
+    mode: PromptMode
+    command: str
+
+    def __str__(self) -> str:
+        return self.command
+
+    def __bool__(self) -> bool:
+        return bool(self.command)
+
+
 class CustomPromptSession:
     def __init__(self, status_provider: Callable[[], StatusSnapshot]):
         history_dir = get_share_dir() / "user-history"
@@ -365,6 +372,7 @@ class CustomPromptSession:
         self._history_file = (history_dir / work_dir_id).with_suffix(".jsonl")
         self._status_provider = status_provider
         self._last_history_content: str | None = None
+        self._mode: PromptMode = PromptMode.AGENT
 
         history_entries = _load_history_entries(self._history_file)
         history = InMemoryHistory()
@@ -375,28 +383,76 @@ class CustomPromptSession:
             # for consecutive deduplication
             self._last_history_content = history_entries[-1].content
 
+        # Build completers
+        self._agent_mode_completer = merge_completers(
+            [
+                MetaCommandCompleter(),
+                FileMentionCompleter(Path.cwd()),
+            ],
+            deduplicate=True,
+        )
+
+        # Build key bindings
+        _kb = KeyBindings()
+
+        @_kb.add("enter", filter=has_completions)
+        def _accept_completion(event: KeyPressEvent) -> None:
+            """Accept the first completion when Enter is pressed and completions are shown."""
+            buff = event.current_buffer
+            if buff.complete_state and buff.complete_state.completions:
+                # Get the current completion, or use the first one if none is selected
+                completion = buff.complete_state.current_completion
+                if not completion:
+                    completion = buff.complete_state.completions[0]
+                buff.apply_completion(completion)
+
+        @_kb.add("c-k", eager=True)
+        def _toggle_mode(event: KeyPressEvent) -> None:
+            self._mode = self._mode.toggle()
+            # Apply mode-specific settings
+            self._apply_mode(event)
+            # Redraw UI (invalidate for immediate rerender)
+            event.app.invalidate()
+
         self._session = PromptSession(
-            message=FormattedText([("bold", f"{getpass.getuser()}✨ ")]),
+            message=self._render_message,
             prompt_continuation=FormattedText([("fg:#4d4d4d", "... ")]),
-            completer=merge_completers(
-                [
-                    MetaCommandCompleter(),
-                    FileMentionCompleter(Path.cwd()),
-                ],
-                deduplicate=True,
-            ),
+            completer=self._agent_mode_completer,
             complete_while_typing=True,
             key_bindings=_kb,
             history=history,
             bottom_toolbar=self._render_bottom_toolbar,
         )
 
-    async def prompt(self) -> str:
-        """Prompt for user input with stdout patching."""
+    def _render_message(self) -> FormattedText:
+        symbol = "✨" if self._mode == PromptMode.AGENT else "$"
+        return FormattedText([("bold", f"{getpass.getuser()}{symbol} ")])
+
+    def _apply_mode(self, event: KeyPressEvent | None = None) -> None:
+        # Apply mode to the active buffer (not the PromptSession itself)
+        try:
+            buff = event.current_buffer if event is not None else self._session.default_buffer
+        except Exception:
+            buff = None
+
+        if self._mode == PromptMode.SHELL:
+            # Cancel any active completion menu
+            with contextlib.suppress(Exception):
+                if buff is not None:
+                    buff.cancel_completion()
+            if buff is not None:
+                buff.completer = DummyCompleter()
+                buff.complete_while_typing = Never()
+        else:
+            if buff is not None:
+                buff.completer = self._agent_mode_completer
+                buff.complete_while_typing = Always()
+
+    async def prompt(self) -> UserInput:
         with patch_stdout():
-            result = str(await self._session.prompt_async()).strip()
-        self._append_history_entry(result)
-        return result
+            command = str(await self._session.prompt_async()).strip()
+        self._append_history_entry(command)
+        return UserInput(mode=self._mode, command=command)
 
     def _append_history_entry(self, text: str) -> None:
         entry = _HistoryEntry(content=text.strip())

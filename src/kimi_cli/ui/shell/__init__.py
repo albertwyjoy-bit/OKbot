@@ -14,7 +14,7 @@ from kimi_cli.ui import RunCancelled, run_soul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.liveview import StepLiveView
 from kimi_cli.ui.shell.metacmd import get_meta_command
-from kimi_cli.ui.shell.prompt import CustomPromptSession
+from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode
 
 
 class ShellApp:
@@ -55,7 +55,6 @@ class ShellApp:
             try:
                 user_input = await prompt_session.prompt()
             except KeyboardInterrupt:
-                # TODO: check if this still works
                 logger.debug("Exiting by KeyboardInterrupt")
                 console.print("[grey50]Tip: press Ctrl-D or send 'exit' to quit[/grey50]")
                 continue
@@ -70,21 +69,52 @@ class ShellApp:
 
             logger.debug("Got user input: {user_input}", user_input=user_input)
 
-            if user_input in ["exit", "quit", "/exit", "/quit"]:
+            if user_input.mode == PromptMode.SHELL:
+                await self._run_shell_command(user_input.command)
+                continue
+
+            command = user_input.command
+
+            if command in ["exit", "quit", "/exit", "/quit"]:
                 logger.debug("Exiting by meta command")
                 console.print("Bye!")
                 break
-            if user_input.startswith("/"):
-                logger.debug("Running meta command: {user_input}", user_input=user_input)
-                await self._run_meta_command(user_input[1:])
+            if command.startswith("/"):
+                logger.debug("Running meta command: {command}", command=command)
+                await self._run_meta_command(command[1:])
                 continue
 
-            logger.info("Running agent with user input: {user_input}", user_input=user_input)
-            await self._run(user_input)
+            logger.info("Running agent command: {command}", command=command)
+            await self._run(command)
 
         return True
 
-    async def _run(self, user_input: str) -> bool:
+    async def _run_shell_command(self, command: str) -> None:
+        """Run a shell command in foreground."""
+        if not command.strip():
+            return
+        logger.info("Running shell command: {cmd}", cmd=command)
+        try:
+            # TODO: For the sake of simplicity, we now use `create_subprocess_shell`.
+            # Later we should consider making this behave like a real shell.
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            assert proc.stdout is not None
+            # stream output
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                print(line.decode(errors="ignore"), end="", flush=True)
+            await proc.wait()
+        except Exception as e:
+            logger.exception("Failed to run shell command:")
+            console.print(f"[bold red]Failed to run shell command: {e}[/bold red]")
+
+    async def _run(self, command: str) -> bool:
         """
         Run the soul and handle any known exceptions.
 
@@ -101,7 +131,7 @@ class ShellApp:
         loop.add_signal_handler(signal.SIGINT, _handler)
 
         try:
-            await run_soul(self.soul, user_input, self._visualize, cancel_event)
+            await run_soul(self.soul, command, self._visualize, cancel_event)
             return True
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
