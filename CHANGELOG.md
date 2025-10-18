@@ -9,6 +9,19 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.33] - 2025-10-18
+
+### Added
+
+- Add `/version` meta command
+- Support raw shell mode, which can be switched to by Ctrl-K
+- Show shortcuts in bottom status line
+
+### Fixed
+
+- Fix logging redirection
+- Merge duplicated input histories
+
 ## [0.32] - 2025-10-16
 
 ### Added
