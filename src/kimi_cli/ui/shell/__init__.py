@@ -8,7 +8,7 @@ from kosong.tooling import ToolResult
 from rich.panel import Panel
 
 from kimi_cli.soul import MaxStepsReached, Soul, StatusSnapshot
-from kimi_cli.soul.event import (
+from kimi_cli.soul.wire import (
     ApprovalRequest,
     ApprovalResponse,
     StatusUpdate,

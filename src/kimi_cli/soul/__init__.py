@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, NamedTuple, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from kimi_cli.soul.event import Wire
+    from kimi_cli.soul.wire import Wire
 
 
 class MaxStepsReached(Exception):

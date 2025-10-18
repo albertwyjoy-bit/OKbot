@@ -1,6 +1,6 @@
 import asyncio
 
-from kimi_cli.soul.event import ApprovalRequest, ApprovalResponse
+from kimi_cli.soul.wire import ApprovalRequest, ApprovalResponse
 from kimi_cli.utils.logging import logger
 
 

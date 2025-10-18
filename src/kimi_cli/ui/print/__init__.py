@@ -10,8 +10,8 @@ from kosong.base.message import Message
 from kosong.chat_provider import ChatProviderError
 
 from kimi_cli.soul import MaxStepsReached
-from kimi_cli.soul.event import StepInterrupted, Wire
 from kimi_cli.soul.kimisoul import KimiSoul
+from kimi_cli.soul.wire import StepInterrupted, Wire
 from kimi_cli.ui import RunCancelled, run_soul
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import message_extract_text

@@ -1,5 +1,3 @@
-# TODO: rename this file to `wire.py`
-
 import asyncio
 import uuid
 from contextvars import ContextVar

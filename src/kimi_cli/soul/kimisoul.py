@@ -17,8 +17,8 @@ from kimi_cli.agent import Agent, AgentGlobals
 from kimi_cli.config import LoopControl
 from kimi_cli.soul import MaxStepsReached, Soul, StatusSnapshot
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.event import StatusUpdate, StepBegin, StepInterrupted, Wire, current_wire
 from kimi_cli.soul.message import system, tool_result_to_messages
+from kimi_cli.soul.wire import StatusUpdate, StepBegin, StepInterrupted, Wire, current_wire
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.logging import logger

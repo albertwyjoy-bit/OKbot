@@ -13,7 +13,7 @@ from kosong.chat_provider import ChatProviderError
 from kosong.tooling import ToolError, ToolOk, ToolResult
 
 from kimi_cli.soul import MaxStepsReached, Soul
-from kimi_cli.soul.event import (
+from kimi_cli.soul.wire import (
     ApprovalRequest,
     ApprovalResponse,
     StatusUpdate,

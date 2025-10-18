@@ -4,7 +4,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from kimi_cli.soul import Soul
-from kimi_cli.soul.event import Wire
+from kimi_cli.soul.wire import Wire
 from kimi_cli.utils.logging import logger
 
 type UILoopFn = Callable[[Wire], Coroutine[Any, Any, None]]
