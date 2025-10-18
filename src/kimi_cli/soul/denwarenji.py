@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class DMail(BaseModel):
     message: str = Field(description="The message to send.")
     checkpoint_id: int = Field(description="The checkpoint to send the message back to.", ge=0)
+    # TODO: allow restoring filesystem state to the checkpoint
 
 
 class DenwaRenjiError(Exception):
