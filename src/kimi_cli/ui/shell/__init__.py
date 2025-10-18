@@ -31,8 +31,6 @@ class ShellApp:
         def _status() -> StatusSnapshot:
             return self.soul.status
 
-        prompt_session = CustomPromptSession(_status)
-
         welcome = f"[bold]Welcome to {self.soul.name or 'Kimi CLI'}![/bold]"
         if self.welcome_info:
             welcome += "\n\n" + "\n".join(
@@ -51,41 +49,41 @@ class ShellApp:
         )
         console.print()
 
-        while True:
-            try:
-                user_input = await prompt_session.prompt()
-            except KeyboardInterrupt:
-                logger.debug("Exiting by KeyboardInterrupt")
-                console.print("[grey50]Tip: press Ctrl-D or send 'exit' to quit[/grey50]")
-                continue
-            except EOFError:
-                logger.debug("Exiting by EOF")
-                console.print("Bye!")
-                break
+        with CustomPromptSession(_status) as prompt_session:
+            while True:
+                try:
+                    user_input = await prompt_session.prompt()
+                except KeyboardInterrupt:
+                    logger.debug("Exiting by KeyboardInterrupt")
+                    console.print("[grey50]Tip: press Ctrl-D or send 'exit' to quit[/grey50]")
+                    continue
+                except EOFError:
+                    logger.debug("Exiting by EOF")
+                    console.print("Bye!")
+                    break
 
-            if not user_input:
-                logger.debug("Got empty input, skipping")
-                continue
+                if not user_input:
+                    logger.debug("Got empty input, skipping")
+                    continue
+                logger.debug("Got user input: {user_input}", user_input=user_input)
 
-            logger.debug("Got user input: {user_input}", user_input=user_input)
+                if user_input.command in ["exit", "quit", "/exit", "/quit"]:
+                    logger.debug("Exiting by meta command")
+                    console.print("Bye!")
+                    break
 
-            if user_input.mode == PromptMode.SHELL:
-                await self._run_shell_command(user_input.command)
-                continue
+                if user_input.mode == PromptMode.SHELL:
+                    await self._run_shell_command(user_input.command)
+                    continue
 
-            command = user_input.command
+                command = user_input.command
+                if command.startswith("/"):
+                    logger.debug("Running meta command: {command}", command=command)
+                    await self._run_meta_command(command[1:])
+                    continue
 
-            if command in ["exit", "quit", "/exit", "/quit"]:
-                logger.debug("Exiting by meta command")
-                console.print("Bye!")
-                break
-            if command.startswith("/"):
-                logger.debug("Running meta command: {command}", command=command)
-                await self._run_meta_command(command[1:])
-                continue
-
-            logger.info("Running agent command: {command}", command=command)
-            await self._run(command)
+                logger.info("Running agent command: {command}", command=command)
+                await self._run(command)
 
         return True
 

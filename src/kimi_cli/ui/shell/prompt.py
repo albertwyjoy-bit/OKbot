@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import getpass
 import json
@@ -411,7 +412,7 @@ class CustomPromptSession:
             self._mode = self._mode.toggle()
             # Apply mode-specific settings
             self._apply_mode(event)
-            # Redraw UI (invalidate for immediate rerender)
+            # Redraw UI
             event.app.invalidate()
 
         self._session = PromptSession(
@@ -423,6 +424,8 @@ class CustomPromptSession:
             history=history,
             bottom_toolbar=self._render_bottom_toolbar,
         )
+
+        self._status_refresh_task: asyncio.Task | None = None
 
     def _render_message(self) -> FormattedText:
         symbol = "✨" if self._mode == PromptMode.AGENT else "$"
@@ -447,6 +450,37 @@ class CustomPromptSession:
             if buff is not None:
                 buff.completer = self._agent_mode_completer
                 buff.complete_while_typing = Always()
+
+    def __enter__(self) -> "CustomPromptSession":
+        if self._status_refresh_task is not None and not self._status_refresh_task.done():
+            return self
+
+        async def _refresh(interval: float) -> None:
+            try:
+                while True:
+                    app = get_app_or_none()
+                    if app is not None:
+                        app.invalidate()
+
+                    try:
+                        asyncio.get_running_loop()
+                    except RuntimeError:
+                        logger.warning("No running loop found, exiting status refresh task")
+                        self._status_refresh_task = None
+                        break
+
+                    await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                # graceful exit
+                pass
+
+        self._status_refresh_task = asyncio.create_task(_refresh(1.0))
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        if self._status_refresh_task is not None and not self._status_refresh_task.done():
+            self._status_refresh_task.cancel()
+        self._status_refresh_task = None
 
     async def prompt(self) -> UserInput:
         with patch_stdout():
