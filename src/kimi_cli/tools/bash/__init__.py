@@ -37,7 +37,9 @@ class Bash(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnType:
         builder = ToolResultBuilder()
 
-        if not await self._approval.request(self.name, f"run command {params.command}"):
+        if not await self._approval.request(
+            f"run command {params.command}", f"Run command `{params.command}`"
+        ):
             return ToolRejectedError()
 
         def stdout_cb(line: bytes):

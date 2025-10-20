@@ -7,7 +7,7 @@ from typing import Any, NamedTuple
 import fastmcp
 import yaml
 from kosong.base.chat_provider import ChatProvider
-from kosong.tooling import SimpleToolset, Toolset
+from kosong.tooling import Toolset
 from kosong.tooling.simple import ToolType
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,7 @@ from kimi_cli.llm import LLM
 from kimi_cli.metadata import Session
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
+from kimi_cli.soul.toolset import CustomToolset
 from kimi_cli.tools.mcp import MCPTool
 from kimi_cli.utils.logging import logger
 
@@ -88,7 +89,7 @@ async def load_agent_with_mcp(
     mcp_configs: list[dict[str, Any]],
 ) -> Agent:
     agent = load_agent(agent_file, globals_)
-    assert isinstance(agent.toolset, SimpleToolset)
+    assert isinstance(agent.toolset, CustomToolset)
     if mcp_configs:
         await _load_mcp_tools(agent.toolset, mcp_configs)
     return agent
@@ -132,7 +133,7 @@ def load_agent(
     if agent_spec.exclude_tools:
         logger.debug("Excluding tools: {tools}", tools=agent_spec.exclude_tools)
         tools = [tool for tool in tools if tool not in agent_spec.exclude_tools]
-    toolset = SimpleToolset()
+    toolset = CustomToolset()
     bad_tools = _load_tools(toolset, tools, tool_deps)
     if bad_tools:
         raise ValueError(f"Invalid tools: {bad_tools}")
@@ -194,7 +195,7 @@ def _load_system_prompt(
 
 
 def _load_tools(
-    toolset: SimpleToolset,
+    toolset: CustomToolset,
     tool_paths: list[str],
     dependencies: dict[type[Any], Any],
 ) -> list[str]:
@@ -234,7 +235,7 @@ def _load_tool(tool_path: str, dependencies: dict[type[Any], Any]) -> ToolType |
 
 
 async def _load_mcp_tools(
-    toolset: SimpleToolset,
+    toolset: CustomToolset,
     mcp_configs: list[dict[str, Any]],
 ):
     """

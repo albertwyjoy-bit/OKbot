@@ -29,16 +29,23 @@ type Event = ControlFlowEvent | ContentPart | ToolCall | ToolCallPart | ToolResu
 
 class ApprovalResponse(Enum):
     APPROVE = "approve"
+    APPROVE_FOR_SESSION = "approve_for_session"
     REJECT = "reject"
 
 
 class ApprovalRequest:
-    def __init__(self, sender: str, action: str, extra: dict[str, str] | None = None):
+    def __init__(self, tool_call_id: str, action: str, description: str):
         self.id = str(uuid.uuid4())
-        self.sender = sender
+        self.tool_call_id = tool_call_id
         self.action = action
-        self.extra = extra or {}
+        self.description = description
         self._future = asyncio.Future[ApprovalResponse]()
+
+    def __repr__(self) -> str:
+        return (
+            f"ApprovalRequest(id={self.id}, tool_call_id={self.tool_call_id}, "
+            f"action={self.action}, description={self.description})"
+        )
 
     async def wait(self) -> ApprovalResponse:
         """
@@ -87,4 +94,8 @@ current_wire = ContextVar[Wire | None]("current_wire", default=None)
 
 
 def get_wire_or_none() -> Wire | None:
+    """
+    Get the current wire or None.
+    Expect to be not None when called from anywhere in the agent loop.
+    """
     return current_wire.get()

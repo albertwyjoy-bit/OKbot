@@ -147,9 +147,19 @@ def set_todo_list_tool() -> SetTodoList:
 
 
 @pytest.fixture
-def bash_tool(approval: Approval) -> Bash:
+def bash_tool(approval: Approval) -> Generator[Bash]:
     """Create a Bash tool instance."""
-    return Bash(approval)
+    from kosong.base.message import ToolCall
+
+    from kimi_cli.soul.toolset import current_tool_call
+
+    token = current_tool_call.set(
+        ToolCall(id="test", function=ToolCall.FunctionBody(name="Bash", arguments=None))
+    )
+    try:
+        yield Bash(approval)
+    finally:
+        current_tool_call.reset(token)
 
 
 @pytest.fixture

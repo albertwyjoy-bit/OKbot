@@ -25,6 +25,7 @@ from kimi_cli.llm import LLM
 from kimi_cli.metadata import Session
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
+from kimi_cli.soul.toolset import CustomToolset
 
 
 def test_load_agent_basic(agent_file: Path, agent_globals: AgentGlobals):
@@ -132,10 +133,8 @@ def test_load_system_prompt(system_prompt_file: Path, builtin_args: BuiltinSyste
 
 def test_load_tools_valid(agent_globals: AgentGlobals):
     """Test loading valid tools."""
-    from kosong.tooling import SimpleToolset
-
     tool_paths = ["kimi_cli.tools.think:Think", "kimi_cli.tools.bash:Bash"]
-    toolset = SimpleToolset()
+    toolset = CustomToolset()
     bad_tools = _load_tools(
         toolset,
         tool_paths,
@@ -157,10 +156,8 @@ def test_load_tools_valid(agent_globals: AgentGlobals):
 
 def test_load_tools_invalid(agent_globals: AgentGlobals):
     """Test loading with invalid tool paths."""
-    from kosong.tooling import SimpleToolset
-
     tool_paths = ["kimi_cli.tools.nonexistent:Tool", "kimi_cli.tools.think:Think"]
-    toolset = SimpleToolset()
+    toolset = CustomToolset()
     bad_tools = _load_tools(
         toolset,
         tool_paths,

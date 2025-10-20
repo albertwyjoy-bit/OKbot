@@ -30,6 +30,12 @@ class _ToolCallState:
     """Manages the state of a single tool call for streaming updates."""
 
     def __init__(self, tool_call: ToolCall):
+        # When the user rejected or cancelled a tool call, the step result may not
+        # be appended to the context. In this case, future step may emit tool call
+        # with the same tool call ID (on the LLM side). To avoid confusion of the
+        # ACP client, we need to ensure the uniqueness in the ACP connection.
+        self.acp_tool_call_id = str(uuid.uuid4())
+
         self.tool_call = tool_call
         self.args = tool_call.function.arguments or ""
         self.lexer = streamingjson.Lexer()
@@ -50,6 +56,14 @@ class _ToolCallState:
         return tool_name
 
 
+class _RunState:
+    def __init__(self):
+        self.tool_calls: dict[str, _ToolCallState] = {}
+        """Map of tool call ID (LLM-side ID) to tool call state."""
+        self.last_tool_call: _ToolCallState | None = None
+        self.cancel_event = asyncio.Event()
+
+
 class ACPAgentImpl:
     """Implementation of the ACP Agent protocol."""
 
@@ -57,9 +71,7 @@ class ACPAgentImpl:
         self.soul = soul
         self.connection = connection
         self.session_id: str | None = None
-        self._tool_calls: dict[str, _ToolCallState] = {}
-        self._last_tool_call: _ToolCallState | None = None
-        self._cancel_event: asyncio.Event | None = None
+        self.run_state: _RunState | None = None
 
     async def initialize(self, params: acp.InitializeRequest) -> acp.InitializeResponse:
         """Handle initialize request."""
@@ -126,9 +138,9 @@ class ACPAgentImpl:
 
         logger.info("Processing prompt: {text}", text=prompt_text[:100])
 
+        self.run_state = _RunState()
         try:
-            self._cancel_event = asyncio.Event()
-            await run_soul(self.soul, prompt_text, self._stream_events, self._cancel_event)
+            await run_soul(self.soul, prompt_text, self._stream_events, self.run_state.cancel_event)
             return acp.PromptResponse(stopReason="end_turn")
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n}", n=e.n_steps)
@@ -143,18 +155,19 @@ class ACPAgentImpl:
             logger.exception("Error in prompt:")
             raise acp.RequestError.internal_error({"error": f"Unknown error: {e}"}) from e
         finally:
-            self._cancel_event = None
+            self.run_state = None
 
     async def cancel(self, params: acp.CancelNotification) -> None:
         """Handle cancel notification."""
         logger.info("Cancel for session: {id}", id=params.sessionId)
 
-        # Cancel the running task if it exists
-        if self._cancel_event is not None and not self._cancel_event.is_set():
-            logger.info("Cancelling running prompt")
-            self._cancel_event.set()
-        else:
+        if self.run_state is None:
             logger.warning("No running prompt to cancel")
+            return
+
+        if not self.run_state.cancel_event.is_set():
+            logger.info("Cancelling running prompt")
+            self.run_state.cancel_event.set()
 
     async def _stream_events(self, wire: Wire):
         try:
@@ -175,12 +188,11 @@ class ACPAgentImpl:
                     await self._send_tool_call_part(msg)
                 elif isinstance(msg, ToolResult):
                     await self._send_tool_result(msg)
+                elif isinstance(msg, ApprovalRequest):
+                    await self._handle_approval_request(msg)
                 elif isinstance(msg, StatusUpdate):
                     # TODO: stream status if needed
                     pass
-                elif isinstance(msg, ApprovalRequest):
-                    # TODO(approval): handle approval request
-                    msg.resolve(ApprovalResponse.APPROVE)
                 elif isinstance(msg, StepInterrupted):
                     break
         except asyncio.QueueShutDown:
@@ -203,20 +215,21 @@ class ACPAgentImpl:
 
     async def _send_tool_call(self, tool_call: ToolCall):
         """Send tool call to client."""
+        assert self.run_state is not None
         if not self.session_id:
             return
 
         # Create and store tool call state
         state = _ToolCallState(tool_call)
-        self._tool_calls[tool_call.id] = state
-        self._last_tool_call = state
+        self.run_state.tool_calls[tool_call.id] = state
+        self.run_state.last_tool_call = state
 
         await self.connection.sessionUpdate(
             acp.SessionNotification(
                 sessionId=self.session_id,
                 update=acp.schema.ToolCallStart(
                     sessionUpdate="tool_call",
-                    toolCallId=tool_call.id,
+                    toolCallId=state.acp_tool_call_id,
                     title=state.get_title(),
                     status="in_progress",
                     content=[
@@ -232,23 +245,24 @@ class ACPAgentImpl:
 
     async def _send_tool_call_part(self, part: ToolCallPart):
         """Send tool call part (streaming arguments)."""
-        if not self.session_id or not part.arguments_part or self._last_tool_call is None:
+        assert self.run_state is not None
+        if not self.session_id or not part.arguments_part or self.run_state.last_tool_call is None:
             return
 
         # Append new arguments part to the last tool call
-        self._last_tool_call.append_args_part(part.arguments_part)
+        self.run_state.last_tool_call.append_args_part(part.arguments_part)
 
         # Update the tool call with new content and title
         update = acp.schema.ToolCallProgress(
             sessionUpdate="tool_call_update",
-            toolCallId=self._last_tool_call.tool_call.id,
-            title=self._last_tool_call.get_title(),
+            toolCallId=self.run_state.last_tool_call.acp_tool_call_id,
+            title=self.run_state.last_tool_call.get_title(),
             status="in_progress",
             content=[
                 acp.schema.ContentToolCallContent(
                     type="content",
                     content=acp.schema.TextContentBlock(
-                        type="text", text=self._last_tool_call.args
+                        type="text", text=self.run_state.last_tool_call.args
                     ),
                 )
             ],
@@ -261,20 +275,25 @@ class ACPAgentImpl:
 
     async def _send_tool_result(self, result: ToolResult):
         """Send tool result to client."""
+        assert self.run_state is not None
         if not self.session_id:
             return
 
         tool_result = result.result
         is_error = isinstance(tool_result, ToolError)
 
+        state = self.run_state.tool_calls.pop(result.tool_call_id, None)
+        if state is None:
+            logger.warning("Tool call not found: {id}", id=result.tool_call_id)
+            return
+
         update = acp.schema.ToolCallProgress(
             sessionUpdate="tool_call_update",
-            toolCallId=result.tool_call_id,
+            toolCallId=state.acp_tool_call_id,
             status="failed" if is_error else "completed",
         )
 
-        tool_call = self._tool_calls.pop(result.tool_call_id, None)
-        if tool_call and tool_call.tool_call.function.name == "SetTodoList" and not is_error:
+        if state.tool_call.function.name == "SetTodoList" and not is_error:
             update.content = _tool_result_to_acp_content(tool_result)
 
         await self.connection.sessionUpdate(
@@ -282,6 +301,81 @@ class ACPAgentImpl:
         )
 
         logger.debug("Sent tool result: {id}", id=result.tool_call_id)
+
+    async def _handle_approval_request(self, request: ApprovalRequest):
+        """Handle approval request by sending permission request to client."""
+        assert self.run_state is not None
+        if not self.session_id:
+            logger.warning("No session ID, auto-rejecting approval request")
+            request.resolve(ApprovalResponse.REJECT)
+            return
+
+        state = self.run_state.tool_calls.get(request.tool_call_id, None)
+        if state is None:
+            logger.warning("Tool call not found: {id}", id=request.tool_call_id)
+            request.resolve(ApprovalResponse.REJECT)
+            return
+
+        # Create permission request with options
+        permission_request = acp.RequestPermissionRequest(
+            sessionId=self.session_id,
+            toolCall=acp.schema.ToolCallUpdate(
+                toolCallId=state.acp_tool_call_id,
+                content=[
+                    acp.schema.ContentToolCallContent(
+                        type="content",
+                        content=acp.schema.TextContentBlock(
+                            type="text",
+                            text=f"Requesting approval to perform: {request.description}",
+                        ),
+                    ),
+                ],
+            ),
+            options=[
+                acp.schema.PermissionOption(
+                    optionId="approve",
+                    name="Approve",
+                    kind="allow_once",
+                ),
+                acp.schema.PermissionOption(
+                    optionId="approve_for_session",
+                    name="Approve for this session",
+                    kind="allow_always",
+                ),
+                acp.schema.PermissionOption(
+                    optionId="reject",
+                    name="Reject",
+                    kind="reject_once",
+                ),
+            ],
+        )
+
+        try:
+            # Send permission request and wait for response
+            logger.debug("Requesting permission for action: {action}", action=request.action)
+            response = await self.connection.requestPermission(permission_request)
+            logger.debug("Received permission response: {response}", response=response)
+
+            # Process the outcome
+            if isinstance(response.outcome, acp.schema.AllowedOutcome):
+                # selected
+                if response.outcome.optionId == "approve":
+                    logger.debug("Permission granted for: {action}", action=request.action)
+                    request.resolve(ApprovalResponse.APPROVE)
+                elif response.outcome.optionId == "approve_for_session":
+                    logger.debug("Permission granted for session: {action}", action=request.action)
+                    request.resolve(ApprovalResponse.APPROVE_FOR_SESSION)
+                else:
+                    logger.debug("Permission denied for: {action}", action=request.action)
+                    request.resolve(ApprovalResponse.REJECT)
+            else:
+                # cancelled
+                logger.debug("Permission request cancelled for: {action}", action=request.action)
+                request.resolve(ApprovalResponse.REJECT)
+        except Exception:
+            logger.exception("Error handling approval request:")
+            # On error, reject the request
+            request.resolve(ApprovalResponse.REJECT)
 
 
 def _tool_result_to_acp_content(

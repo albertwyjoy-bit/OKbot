@@ -1,5 +1,6 @@
 import asyncio
 
+from kimi_cli.soul.toolset import get_current_tool_call_or_none
 from kimi_cli.soul.wire import ApprovalRequest, ApprovalResponse
 from kimi_cli.utils.logging import logger
 
@@ -8,31 +9,50 @@ class Approval:
     def __init__(self, yolo: bool = False):
         self._request_queue = asyncio.Queue[ApprovalRequest]()
         self._yolo = yolo
+        self._auto_approve_actions = set()  # TODO: persist across sessions
+        """Set of action names that should automatically be approved."""
 
-    async def request(
-        self,
-        sender: str,
-        action: str,
-        extra: dict[str, str] | None = None,
-    ) -> bool:
-        """Request approval for the given action. Intended to be called by tools."""
+    async def request(self, action: str, description: str) -> bool:
+        """
+        Request approval for the given action. Intended to be called by tools.
+
+        Args:
+            action (str): The action to request approval for.
+                This is used to identify the action for auto-approval.
+            description (str): The description of the action. This is used to display to the user.
+
+        Returns:
+            bool: True if the action is approved, False otherwise.
+
+        Raises:
+            RuntimeError: If the approval is requested from outside a tool call.
+        """
+        tool_call = get_current_tool_call_or_none()
+        if tool_call is None:
+            raise RuntimeError("Approval must be requested from a tool call.")
+
         logger.debug(
-            "Requesting approval: {sender} {action} {extra}",
-            sender=sender,
+            "{tool_name} ({tool_call_id}) requesting approval: {action} {description}",
+            tool_name=tool_call.function.name,
+            tool_call_id=tool_call.id,
             action=action,
-            extra=extra,
+            description=description,
         )
         if self._yolo:
             return True
 
-        # TODO(approval): remember choice from the previous request
+        if action in self._auto_approve_actions:
+            return True
 
-        request = ApprovalRequest(sender, action, extra)
+        request = ApprovalRequest(tool_call.id, action, description)
         self._request_queue.put_nowait(request)
         response = await request.wait()
         logger.debug("Received approval response: {response}", response=response)
         match response:
             case ApprovalResponse.APPROVE:
+                return True
+            case ApprovalResponse.APPROVE_FOR_SESSION:
+                self._auto_approve_actions.add(action)
                 return True
             case ApprovalResponse.REJECT:
                 return False
