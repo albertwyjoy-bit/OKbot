@@ -123,10 +123,12 @@ def exit(app: "ShellApp", args: list[str]):
 
 
 _HELP_MESSAGE_FMT = """
-[grey50]▌ Won't you please, please, help me?[/grey50]
+[grey50]▌ Help! I need somebody. Help! Not just anybody.[/grey50]
+[grey50]▌ Help! You know I need someone. Help![/grey50]
 [grey50]▌ ― The Beatles, [italic]Help![/italic][/grey50]
 
-Sure! Just send message. I will help you to get things done!
+Sure, Kimi CLI is ready to help!
+Just send me messages and I will help you get things done!
 
 Meta commands are also available:
 
