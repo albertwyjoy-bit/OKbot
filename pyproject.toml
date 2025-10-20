@@ -39,6 +39,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = ["kimi_cli"]
+source-exclude = ["tests/**/*", "src/kimi_cli/deps/**/*"]
 
 [project.scripts]
 kimi = "kimi_cli:main"
