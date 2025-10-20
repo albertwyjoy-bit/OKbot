@@ -285,3 +285,6 @@ async def compact(app: "ShellApp", args: list[str]):
         logger.error("Failed to compact context: {error}", error=e)
         console.print(f"[bold red]Failed to compact the context: {e}[/bold red]")
         return
+
+
+from . import update  # noqa: E402, F401

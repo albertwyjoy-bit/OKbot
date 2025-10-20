@@ -9,6 +9,12 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [Unreleased]
+
+### Added
+
+- Add `/update` meta command to check for updates
+
 ## [0.33] - 2025-10-18
 
 ### Added
