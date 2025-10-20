@@ -98,26 +98,26 @@ class ShellApp:
         """Run a shell command in foreground."""
         if not command.strip():
             return
+
         logger.info("Running shell command: {cmd}", cmd=command)
+        loop = asyncio.get_running_loop()
         try:
             # TODO: For the sake of simplicity, we now use `create_subprocess_shell`.
             # Later we should consider making this behave like a real shell.
-            proc = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-            assert proc.stdout is not None
-            # stream output
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                print(line.decode(errors="ignore"), end="", flush=True)
+            proc = await asyncio.create_subprocess_shell(command)
+
+            def _handler():
+                logger.debug("SIGINT received.")
+                proc.terminate()
+
+            loop.add_signal_handler(signal.SIGINT, _handler)
+
             await proc.wait()
         except Exception as e:
             logger.exception("Failed to run shell command:")
             console.print(f"[bold red]Failed to run shell command: {e}[/bold red]")
+        finally:
+            loop.remove_signal_handler(signal.SIGINT)
 
     async def _run(self, command: str) -> bool:
         """

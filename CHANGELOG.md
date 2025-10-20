@@ -14,13 +14,14 @@ Only write entries that are worth mentioning to users.
 ### Added
 
 - Add `/update` meta command to check for updates
+- Support running interactive shell commands in raw shell mode
 
 ## [0.33] - 2025-10-18
 
 ### Added
 
 - Add `/version` meta command
-- Support raw shell mode, which can be switched to by Ctrl-K
+- Add raw shell mode, which can be switched to by Ctrl-K
 - Show shortcuts in bottom status line
 
 ### Fixed
