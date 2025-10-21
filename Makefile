@@ -3,6 +3,7 @@ PYRIGHT := $(shell command -v pyright 2> /dev/null || echo "uv run pyright")
 
 .PHONY: prepare
 prepare: download-deps
+	uv sync --frozen
 
 .PHONY: format
 format:

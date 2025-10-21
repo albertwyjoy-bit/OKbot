@@ -1,4 +1,4 @@
-THIS_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+THIS_DIR := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
 BIN_DIR := $(THIS_DIR)/bin
 TMP_DIR := $(THIS_DIR)/tmp
 
@@ -37,21 +37,25 @@ RG_TAR := ripgrep-$(RG_VERSION)-$(RG_TARGET).tar.gz
 
 .PHONY: download-ripgrep
 download-ripgrep:
-	@echo "Downloading ripgrep $(RG_VERSION) from: $(RG_URL)"
-	@mkdir -p "$(BIN_DIR)" "$(TMP_DIR)"
-	@if command -v curl >/dev/null 2>&1; then \
-		curl -L --fail -o "$(TMP_DIR)/$(RG_TAR)" "$(RG_URL)"; \
+	@if [ -f "$(BIN_DIR)/rg" ]; then \
+		echo "rg already installed at $(BIN_DIR)/rg"; \
 	else \
-		if command -v wget >/dev/null 2>&1; then \
-			wget -O "$(TMP_DIR)/$(RG_TAR)" "$(RG_URL)"; \
+		echo "Downloading ripgrep $(RG_VERSION) from: $(RG_URL)"; \
+		mkdir -p "$(BIN_DIR)" "$(TMP_DIR)"; \
+		if command -v curl >/dev/null 2>&1; then \
+			curl -L --fail -o "$(TMP_DIR)/$(RG_TAR)" "$(RG_URL)"; \
 		else \
-			echo "Error: neither curl nor wget is available" && exit 1; \
+			if command -v wget >/dev/null 2>&1; then \
+				wget -O "$(TMP_DIR)/$(RG_TAR)" "$(RG_URL)"; \
+			else \
+				echo "Error: neither curl nor wget is available" && exit 1; \
+			fi; \
 		fi; \
+		tar -xzf "$(TMP_DIR)/$(RG_TAR)" -C "$(TMP_DIR)"; \
+		cp "$(TMP_DIR)/ripgrep-$(RG_VERSION)-$(RG_TARGET)/rg" "$(BIN_DIR)/rg"; \
+		chmod +x "$(BIN_DIR)/rg"; \
+		echo "rg installed at $(BIN_DIR)/rg"; \
 	fi
-	@tar -xzf "$(TMP_DIR)/$(RG_TAR)" -C "$(TMP_DIR)"
-	@cp "$(TMP_DIR)/ripgrep-$(RG_VERSION)-$(RG_TARGET)/rg" "$(BIN_DIR)/rg"
-	@chmod +x "$(BIN_DIR)/rg"
-	@echo "rg installed at $(BIN_DIR)/rg"
 
 
 .PHONY: download-deps
