@@ -29,9 +29,8 @@ class LLMModel(BaseModel):
     """Provider name"""
     model: str
     """Model name"""
-    max_context_size: int = 200_000
+    max_context_size: int
     """Maximum context size (unit: tokens)"""
-    # TODO: derive a default `max_context_size` according to model name
 
 
 class LoopControl(BaseModel):
@@ -46,7 +45,7 @@ class LoopControl(BaseModel):
 class MoonshotSearchConfig(BaseModel):
     """Moonshot Search configuration."""
 
-    base_url: str = "https://search.saas.moonshot.cn/v1/search"
+    base_url: str
     """Base URL for Moonshot Search service."""
     api_key: SecretStr
     """API key for Moonshot Search service."""
@@ -66,7 +65,7 @@ class Services(BaseModel):
 class Config(BaseModel):
     """Main configuration structure."""
 
-    default_model: str | None = Field(default=None, description="Default model to use")
+    default_model: str = Field(default="", description="Default model to use")
     models: dict[str, LLMModel] = Field(default_factory=dict, description="List of LLM models")
     providers: dict[str, LLMProvider] = Field(
         default_factory=dict, description="List of LLM providers"
@@ -96,34 +95,18 @@ def get_config_file() -> Path:
     return get_config_dir() / "config.json"
 
 
-DEFAULT_KIMI_MODEL = "kimi-k2-turbo-preview"
-DEFAULT_KIMI_BASE_URL = "https://api.moonshot.cn/v1"
-
-
 def get_default_config() -> Config:
     """Get the default configuration."""
     return Config(
-        default_model=DEFAULT_KIMI_MODEL,
-        models={
-            DEFAULT_KIMI_MODEL: LLMModel(provider="kimi", model=DEFAULT_KIMI_MODEL),
-        },
-        providers={
-            "kimi": LLMProvider(
-                type="kimi",
-                base_url=DEFAULT_KIMI_BASE_URL,
-                api_key=SecretStr(""),
-            ),
-        },
-        services=Services(
-            moonshot_search=MoonshotSearchConfig(
-                api_key=SecretStr(""),
-            ),
-        ),
+        default_model="",
+        models={},
+        providers={},
+        services=Services(),
     )
 
 
 def load_config() -> Config:
-    """Load configuration from ~/.config/kimi/config.json.
+    """Load configuration from config file.
 
     Returns:
         Validated Config object.
@@ -151,3 +134,11 @@ class ConfigError(Exception):
 
     def __init__(self, message: str):
         super().__init__(message)
+
+
+def save_config(config: Config):
+    """Save configuration to config file."""
+    config_file = get_config_file()
+    logger.debug("Saving config to file: {file}", file=config_file)
+    with open(config_file, "w", encoding="utf-8") as f:
+        f.write(config.model_dump_json(indent=2, exclude_none=True))
