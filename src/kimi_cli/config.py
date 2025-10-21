@@ -4,6 +4,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_serializer, model_validator
 
+from kimi_cli.share import get_share_dir
 from kimi_cli.utils.logging import logger
 
 
@@ -83,16 +84,9 @@ class Config(BaseModel):
         return self
 
 
-def get_config_dir() -> Path:
-    """Get the configuration directory path."""
-    config_dir = Path.home() / ".config" / "kimi"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir
-
-
 def get_config_file() -> Path:
     """Get the configuration file path."""
-    return get_config_dir() / "config.json"
+    return get_share_dir() / "config.json"
 
 
 def get_default_config() -> Config:
