@@ -270,11 +270,12 @@ class ShellApp:
             raise  # re-raise unknown error
 
 
-_LOGO = """\
-[bold blue]\
-▐[on white]█▛█▛█[/on white]▌
+_KIMI_BLUE = "dodger_blue1"
+_LOGO = f"""\
+[{_KIMI_BLUE}]\
+▐█▛█▛█▌
 ▐█████▌\
-[/bold blue]\
+[{_KIMI_BLUE}]\
 """
 
 
@@ -308,7 +309,7 @@ def _print_welcome_info(name: str, model: str, info_items: dict[str, str]) -> No
     console.print(
         Panel(
             Group(*rows),
-            border_style="blue",
+            border_style=_KIMI_BLUE,
             expand=False,
             padding=(1, 2),
         )
