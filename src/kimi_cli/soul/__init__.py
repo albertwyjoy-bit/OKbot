@@ -4,8 +4,8 @@ if TYPE_CHECKING:
     from kimi_cli.soul.wire import Wire
 
 
-class ChatProviderNotSet(Exception):
-    """Raised when the chat provider is not set."""
+class LLMNotSet(Exception):
+    """Raised when the LLM is not set."""
 
     pass
 

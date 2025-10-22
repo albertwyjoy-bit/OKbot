@@ -10,7 +10,7 @@ from rich.panel import Panel
 
 import kimi_cli.prompts.metacmds as prompts
 from kimi_cli.agent import load_agents_md
-from kimi_cli.soul import ChatProviderNotSet
+from kimi_cli.soul import LLMNotSet
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.message import system
@@ -236,7 +236,7 @@ async def compact(app: "ShellApp", args: list[str]):
     logger.info("Running `/compact`")
 
     if app.soul._agent_globals.llm is None:
-        raise ChatProviderNotSet()
+        raise LLMNotSet()
 
     # Get current context history
     current_history = list(app.soul._context.history)

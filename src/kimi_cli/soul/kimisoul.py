@@ -15,7 +15,7 @@ from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wai
 
 from kimi_cli.agent import Agent, AgentGlobals
 from kimi_cli.config import LoopControl
-from kimi_cli.soul import ChatProviderNotSet, MaxStepsReached, Soul, StatusSnapshot
+from kimi_cli.soul import LLMNotSet, MaxStepsReached, Soul, StatusSnapshot
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.message import system, tool_result_to_messages
 from kimi_cli.soul.wire import StatusUpdate, StepBegin, StepInterrupted, Wire, current_wire
@@ -81,7 +81,7 @@ class KimiSoul:
 
     async def run(self, user_input: str, wire: Wire):
         if self._agent_globals.llm is None:
-            raise ChatProviderNotSet()
+            raise LLMNotSet()
 
         await self._checkpoint()  # this creates the checkpoint 0 on first run
         await self._context.append_message(Message(role="user", content=user_input))

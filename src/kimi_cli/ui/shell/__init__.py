@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from kimi_cli.soul import ChatProviderNotSet, MaxStepsReached, Soul
+from kimi_cli.soul import LLMNotSet, MaxStepsReached, Soul
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.wire import (
     ApprovalRequest,
@@ -134,7 +134,7 @@ class ShellApp:
         try:
             await run_soul(self.soul, command, self._visualize, cancel_event)
             return True
-        except ChatProviderNotSet:
+        except LLMNotSet:
             logger.error("LLM not set")
             console.print("[bold red]LLM not set, send /setup to configure[/bold red]")
         except ChatProviderError as e:
@@ -255,7 +255,7 @@ class ShellApp:
             ret = command.func(self, command_args)
             if isinstance(ret, Awaitable):
                 await ret
-        except ChatProviderNotSet:
+        except LLMNotSet:
             logger.error("LLM not set")
             console.print("[bold red]LLM not set, send /setup to configure[/bold red]")
         except ChatProviderError as e:
