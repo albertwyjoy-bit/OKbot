@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 import kimi_cli
 from kimi_cli.config import Config
+from kimi_cli.soul.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 
 
@@ -57,6 +58,9 @@ class SearchWeb(CallableTool2[Params]):
                 brief="Search service not configured",
             )
 
+        tool_call = get_current_tool_call_or_none()
+        assert tool_call is not None, "Tool call is expected to be set"
+
         async with (
             aiohttp.ClientSession() as session,
             session.post(
@@ -64,6 +68,7 @@ class SearchWeb(CallableTool2[Params]):
                 headers={
                     "User-Agent": kimi_cli.USER_AGENT,
                     "Authorization": f"Bearer {self._api_key}",
+                    "X-Msh-Tool-Call-Id": tool_call.id,
                 },
                 json={
                     "text_query": params.query,
