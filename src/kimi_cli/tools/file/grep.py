@@ -1,12 +1,20 @@
+import asyncio
 import os
+import platform
+import shutil
+import stat
+import tarfile
+import tempfile
 from pathlib import Path
 from typing import override
 
+import aiohttp
 import ripgrepy
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnType
 from pydantic import BaseModel, Field
 
 import kimi_cli
+from kimi_cli.share import get_share_dir
 from kimi_cli.utils.logging import logger
 
 
@@ -98,6 +106,117 @@ class Params(BaseModel):
     )
 
 
+RG_VERSION = "15.0.0"
+RG_BASE_URL = "http://cdn.kimi.com/binaries/kimi-cli/rg"
+_RG_DOWNLOAD_LOCK = asyncio.Lock()
+
+
+def _rg_binary_name() -> str:
+    return "rg.exe" if os.name == "nt" else "rg"
+
+
+def _find_existing_rg(bin_name: str) -> Path | None:
+    share_bin = get_share_dir() / "bin" / bin_name
+    if share_bin.is_file():
+        return share_bin
+
+    local_dep = Path(kimi_cli.__file__).parent / "deps" / "bin" / bin_name
+    if local_dep.is_file():
+        return local_dep
+
+    system_rg = shutil.which("rg")
+    if system_rg:
+        return Path(system_rg)
+
+    return None
+
+
+def _detect_target() -> str | None:
+    sys_name = platform.system()
+    mach = platform.machine().lower()
+
+    if mach in ("x86_64", "amd64"):
+        arch = "x86_64"
+    elif mach in ("arm64", "aarch64"):
+        arch = "aarch64"
+    else:
+        logger.error("Unsupported architecture for ripgrep: {mach}", mach=mach)
+        return None
+
+    if sys_name == "Darwin":
+        os_name = "apple-darwin"
+    elif sys_name == "Linux":
+        os_name = "unknown-linux-musl" if arch == "x86_64" else "unknown-linux-gnu"
+    else:
+        logger.error("Unsupported operating system for ripgrep: {sys_name}", sys_name=sys_name)
+        return None
+
+    return f"{arch}-{os_name}"
+
+
+async def _download_and_install_rg(bin_name: str) -> Path:
+    target = _detect_target()
+    if not target:
+        raise RuntimeError("Unsupported platform for ripgrep download")
+
+    filename = f"ripgrep-{RG_VERSION}-{target}.tar.gz"
+    url = f"{RG_BASE_URL}/{filename}"
+    logger.info("Downloading ripgrep from {url}", url=url)
+
+    share_bin_dir = get_share_dir() / "bin"
+    share_bin_dir.mkdir(parents=True, exist_ok=True)
+    destination = share_bin_dir / bin_name
+
+    async with aiohttp.ClientSession() as session:
+        with tempfile.TemporaryDirectory(prefix="kimi-rg-") as tmpdir:
+            tar_path = Path(tmpdir) / filename
+
+            try:
+                async with session.get(url) as resp:
+                    resp.raise_for_status()
+                    with open(tar_path, "wb") as fh:
+                        async for chunk in resp.content.iter_chunked(1024 * 64):
+                            if chunk:
+                                fh.write(chunk)
+            except (aiohttp.ClientError, TimeoutError) as exc:
+                raise RuntimeError("Failed to download ripgrep binary") from exc
+
+            try:
+                with tarfile.open(tar_path, "r:gz") as tar:
+                    member = next(
+                        (m for m in tar.getmembers() if Path(m.name).name == bin_name),
+                        None,
+                    )
+                    if not member:
+                        raise RuntimeError("Ripgrep binary not found in archive")
+                    extracted = tar.extractfile(member)
+                    if not extracted:
+                        raise RuntimeError("Failed to extract ripgrep binary")
+                    with open(destination, "wb") as dest_fh:
+                        shutil.copyfileobj(extracted, dest_fh)
+            except (tarfile.TarError, OSError) as exc:
+                raise RuntimeError("Failed to extract ripgrep archive") from exc
+
+    destination.chmod(destination.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    logger.info("Installed ripgrep to {destination}", destination=destination)
+    return destination
+
+
+async def _ensure_rg_path() -> str:
+    bin_name = _rg_binary_name()
+    existing = _find_existing_rg(bin_name)
+    if existing:
+        return str(existing)
+
+    async with _RG_DOWNLOAD_LOCK:
+        existing = _find_existing_rg(bin_name)
+        if existing:
+            return str(existing)
+
+        downloaded = await _download_and_install_rg(bin_name)
+        return str(downloaded)
+
+
 class Grep(CallableTool2[Params]):
     name: str = "Grep"
     description: str = (Path(__file__).parent / "grep.md").read_text()
@@ -107,15 +226,9 @@ class Grep(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnType:
         try:
             # Initialize ripgrep with pattern and path
-            rg_path_local = (
-                Path(kimi_cli.__file__).parent
-                / "deps"
-                / "bin"
-                / ("rg.exe" if os.name == "nt" else "rg")
-            )
-            rg_bin = str(rg_path_local) if rg_path_local.exists() else "rg"
-            logger.debug(f"Using ripgrep binary: {rg_bin}")
-            rg = ripgrepy.Ripgrepy(params.pattern, params.path, rg_path=rg_bin)
+            rg_path = await _ensure_rg_path()
+            logger.debug("Using ripgrep binary: {rg_bin}", rg_bin=rg_path)
+            rg = ripgrepy.Ripgrepy(params.pattern, params.path, rg_path=rg_path)
 
             # Apply search options
             if params.ignore_case:
