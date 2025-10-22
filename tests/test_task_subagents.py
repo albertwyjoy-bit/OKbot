@@ -20,7 +20,7 @@ def test_task_subagents(task_tool: Task, temp_work_dir: Path):
             (
                 "",
                 """\
-You are Kimi Koder. You are an interactive CLI agent specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
+You are Kimi CLI. You are an interactive CLI agent specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
 
 You are now running as a subagent. All the `user` messages are sent by the main agent. The main agent cannot see your context, it can only see your last message when you finish the task. You need to provide a comprehensive summary on what you have done and learned in your final message. If you wrote or modified any files, you must mention them in the summary.
 

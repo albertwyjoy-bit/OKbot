@@ -12,7 +12,7 @@ def test_default_agent(agent_globals: AgentGlobals):
         f"{agent_globals.builtin_args.KIMI_WORK_DIR}", "/path/to/work/dir"
     ) == snapshot(
         """\
-You are Kimi Koder. You are an interactive CLI agent specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
+You are Kimi CLI. You are an interactive CLI agent specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
 
 
 
