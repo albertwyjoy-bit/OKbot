@@ -5,6 +5,7 @@ import aiohttp
 from kosong.tooling import CallableTool2, ToolReturnType
 from pydantic import BaseModel, Field, ValidationError
 
+import kimi_cli
 from kimi_cli.config import Config
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 
@@ -60,7 +61,10 @@ class SearchWeb(CallableTool2[Params]):
             aiohttp.ClientSession() as session,
             session.post(
                 self._base_url,
-                headers={"Authorization": f"Bearer {self._api_key}"},
+                headers={
+                    "User-Agent": kimi_cli.USER_AGENT,
+                    "Authorization": f"Bearer {self._api_key}",
+                },
                 json={
                     "text_query": params.query,
                     "limit": params.limit,

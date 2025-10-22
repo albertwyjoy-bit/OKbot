@@ -38,7 +38,7 @@ def create_llm(provider: LLMProvider, model: LLMModel, stream: bool = True) -> L
                 api_key=provider.api_key.get_secret_value(),
                 stream=stream,
                 default_headers={
-                    "User-Agent": f"KimiCLI/{kimi_cli.__version__}",
+                    "User-Agent": kimi_cli.USER_AGENT,
                 },
             )
         case "openai_legacy":

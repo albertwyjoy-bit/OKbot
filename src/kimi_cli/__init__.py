@@ -41,6 +41,7 @@ from kimi_cli.utils.logging import StreamToLogger, logger
 from kimi_cli.utils.provider import augment_provider_with_env_vars, create_llm
 
 __version__ = importlib.metadata.version("kimi-cli")
+USER_AGENT = f"KimiCLI/{__version__}"
 
 UIMode = Literal["shell", "print", "acp"]
 
