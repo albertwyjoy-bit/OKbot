@@ -121,16 +121,18 @@ async def _setup() -> _SetupResult | None:
                 raise_for_status=True,
             ) as response,
         ):
-            json = await response.json()
+            resp_json = await response.json()
     except aiohttp.ClientError as e:
         console.print(f"[red]Failed to get models: {e}[/red]")
         return None
 
+    model_dict = {model["id"]: model for model in resp_json["data"]}
+
     # select the model
     if platform.allowed_models is None:
-        model_ids = [model["id"] for model in json["data"]]
+        model_ids = [model["id"] for model in resp_json["data"]]
     else:
-        id_set = set(model["id"] for model in json["data"])
+        id_set = set(model["id"] for model in resp_json["data"])
         model_ids = [model_id for model_id in platform.allowed_models if model_id in id_set]
 
     if not model_ids:
@@ -145,11 +147,13 @@ async def _setup() -> _SetupResult | None:
         console.print("[red]No model selected[/red]")
         return None
 
+    model = model_dict[model_id]
+
     return _SetupResult(
         platform=platform,
         api_key=SecretStr(api_key),
         model_id=model_id,
-        max_context_size=200_000,  # TODO: get from model data
+        max_context_size=model["context_length"],
     )
 
 
