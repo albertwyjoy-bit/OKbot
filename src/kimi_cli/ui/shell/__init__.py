@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Coroutine
 from typing import Any
 
 from kosong.base.message import ContentPart, TextPart, ToolCall, ToolCallPart
-from kosong.chat_provider import ChatProviderError
+from kosong.chat_provider import APIStatusError, ChatProviderError
 from kosong.tooling import ToolResult
 from rich.console import Group, RenderableType
 from rich.panel import Panel
@@ -139,7 +139,18 @@ class ShellApp:
             console.print("[bold red]LLM not set, send /setup to configure[/bold red]")
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
-            console.print(f"[bold red]LLM provider error: {e}[/bold red]")
+            if isinstance(e, APIStatusError) and e.status_code == 401:
+                console.print(
+                    "[bold red]Authorization failed, please check your API key[/bold red]"
+                )
+            elif isinstance(e, APIStatusError) and e.status_code == 402:
+                console.print("[bold red]Membership expired, please renew your plan[/bold red]")
+            elif isinstance(e, APIStatusError) and e.status_code == 403:
+                console.print(
+                    "[bold red]Quota exceeded, please upgrade your plan or retry later[/bold red]"
+                )
+            else:
+                console.print(f"[bold red]LLM provider error: {e}[/bold red]")
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
             console.print(f"[bold yellow]Max steps reached: {e.n_steps}[/bold yellow]")
