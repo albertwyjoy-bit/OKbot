@@ -93,16 +93,16 @@ async def _do_update(*, print: bool) -> UpdateResult:
 
     target = _detect_target()
     if not target:
-        _print("[bold red]Failed to detect target platform.[/bold red]")
+        _print("[red]Failed to detect target platform.[/red]")
         return UpdateResult.UNSUPPORTED
 
     logger.info("Checking for updates...")
-    _print("[bold]Checking for updates...[/bold]")
+    _print("Checking for updates...")
 
     async with aiohttp.ClientSession() as session:
         latest_version = await _get_latest_version(session)
         if not latest_version:
-            _print("[bold red]Failed to check for updates.[/bold red]")
+            _print("[red]Failed to check for updates.[/red]")
             return UpdateResult.FAILED
 
         logger.debug("Latest version: {latest_version}", latest_version=latest_version)
@@ -111,7 +111,7 @@ async def _do_update(*, print: bool) -> UpdateResult:
 
         if cur_t >= lat_t:
             logger.info("Already up to date: {current_version}", current_version=current_version)
-            _print("[bold green]Already up to date.[/bold green]")
+            _print("[green]Already up to date.[/green]")
             return UpdateResult.UP_TO_DATE
 
         logger.info(
@@ -119,7 +119,7 @@ async def _do_update(*, print: bool) -> UpdateResult:
             current_version=current_version,
             latest_version=latest_version,
         )
-        _print(f"[bold]Updating from {current_version} to {latest_version}...[/bold]")
+        _print(f"Updating from {current_version} to {latest_version}...")
 
         filename = f"kimi-{latest_version}-{target}.tar.gz"
         download_url = f"{BASE_URL}/{latest_version}/{filename}"
@@ -141,11 +141,11 @@ async def _do_update(*, print: bool) -> UpdateResult:
                     "Failed to download update from {download_url}",
                     download_url=download_url,
                 )
-                _print("[bold red]Failed to download.[/bold red]")
+                _print("[red]Failed to download.[/red]")
                 return UpdateResult.FAILED
             except Exception:
                 logger.exception("Failed to download:")
-                _print("[bold red]Failed to download.[/bold red]")
+                _print("[red]Failed to download.[/red]")
                 return UpdateResult.FAILED
 
             logger.info("Extracting archive {tar_path}...", tar_path=tar_path)
@@ -160,11 +160,11 @@ async def _do_update(*, print: bool) -> UpdateResult:
                         break
                 if not binary_path:
                     logger.error("Binary 'kimi' not found in archive.")
-                    _print("[bold red]Binary 'kimi' not found in archive.[/bold red]")
+                    _print("[red]Binary 'kimi' not found in archive.[/red]")
                     return UpdateResult.FAILED
             except Exception:
                 logger.exception("Failed to extract archive:")
-                _print("[bold red]Failed to extract archive.[/bold red]")
+                _print("[red]Failed to extract archive.[/red]")
                 return UpdateResult.FAILED
 
             INSTALL_DIR.mkdir(parents=True, exist_ok=True)
@@ -180,11 +180,11 @@ async def _do_update(*, print: bool) -> UpdateResult:
                 )
             except Exception:
                 logger.exception("Failed to install:")
-                _print("[bold red]Failed to install.[/bold red]")
+                _print("[red]Failed to install.[/red]")
                 return UpdateResult.FAILED
 
-    _print("[bold green]Updated successfully![/bold green]")
-    _print("[bold yellow]Restart Kimi CLI to use the new version.[/bold yellow]")
+    _print("[green]Updated successfully![/green]")
+    _print("[yellow]Restart Kimi CLI to use the new version.[/yellow]")
     return UpdateResult.UPDATED
 
 

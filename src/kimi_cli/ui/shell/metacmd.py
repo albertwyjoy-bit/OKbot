@@ -182,12 +182,12 @@ async def init(app: "ShellApp", args: list[str]):
     """Analyze the codebase and generate an `AGENTS.md` file"""
     soul_bak = app.soul
     if not isinstance(soul_bak, KimiSoul):
-        console.print("[bold red]Failed to analyze the codebase.[/bold red]")
+        console.print("[red]Failed to analyze the codebase.[/red]")
         return
 
     with tempfile.TemporaryDirectory() as temp_dir:
         logger.info("Running `/init`")
-        console.print("[bold]Analyzing the codebase...[/bold]")
+        console.print("Analyzing the codebase...")
         tmp_context = Context(file_backend=Path(temp_dir) / "context.jsonl")
         app.soul = KimiSoul(
             soul_bak._agent,
@@ -199,11 +199,11 @@ async def init(app: "ShellApp", args: list[str]):
 
         if ok:
             console.print(
-                "[bold]Codebase analyzed successfully! "
-                "An [underline]AGENTS.md[/underline] file has been created.[/bold]"
+                "Codebase analyzed successfully! "
+                "An [underline]AGENTS.md[/underline] file has been created."
             )
         else:
-            console.print("[bold red]Failed to analyze the codebase.[/bold red]")
+            console.print("[red]Failed to analyze the codebase.[/red]")
 
     app.soul = soul_bak
     agents_md = load_agents_md(soul_bak._agent_globals.builtin_args.KIMI_WORK_DIR)
@@ -221,11 +221,11 @@ async def clear(app: "ShellApp", args: list[str]):
     assert isinstance(app.soul, KimiSoul)
 
     if app.soul._context.n_checkpoints == 0:
-        console.print("[bold yellow]Context is empty.[/bold yellow]")
+        console.print("[yellow]Context is empty.[/yellow]")
         return
 
     await app.soul._context.revert_to(0)
-    console.print("[bold green]✓[/bold green] Context has been cleared.")
+    console.print("[green]✓[/green] Context has been cleared.")
 
 
 @meta_command
@@ -241,7 +241,7 @@ async def compact(app: "ShellApp", args: list[str]):
     # Get current context history
     current_history = list(app.soul._context.history)
     if len(current_history) <= 1:
-        console.print("[bold yellow]Context is too short to compact.[/bold yellow]")
+        console.print("[yellow]Context is too short to compact.[/yellow]")
         return
 
     # Convert history to string for the compact prompt
@@ -259,7 +259,7 @@ async def compact(app: "ShellApp", args: list[str]):
 
     # Call generate to get the compacted context
     try:
-        with console.status("[bold cyan]Compacting...[/bold cyan]"):
+        with console.status("[cyan]Compacting...[/cyan]"):
             compacted_msg, usage = await generate(
                 chat_provider=app.soul._agent_globals.llm.chat_provider,
                 system_prompt="You are a helpful assistant that compacts conversation context.",
@@ -279,7 +279,7 @@ async def compact(app: "ShellApp", args: list[str]):
         )
         await app.soul._context.append_message(Message(role="assistant", content=content))
 
-        console.print("[bold green]✓[/bold green] Context has been compacted.")
+        console.print("[green]✓[/green] Context has been compacted.")
         if usage:
             logger.info(
                 "Compaction used {input} input tokens and {output} output tokens",
@@ -288,7 +288,7 @@ async def compact(app: "ShellApp", args: list[str]):
             )
     except Exception as e:
         logger.error("Failed to compact context: {error}", error=e)
-        console.print(f"[bold red]Failed to compact the context: {e}[/bold red]")
+        console.print(f"[red]Failed to compact the context: {e}[/red]")
         return
 
 

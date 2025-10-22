@@ -75,7 +75,7 @@ async def setup(app: "ShellApp", args: list[str]):
         )
 
     save_config(config)
-    console.print("[bold green]✓[/bold green] Kimi CLI has been setup! Reloading...")
+    console.print("[green]✓[/green] Kimi CLI has been setup! Reloading...")
     await asyncio.sleep(1)
     console.clear()
 
@@ -98,7 +98,7 @@ async def _setup() -> _SetupResult | None:
         choices=[platform.name for platform in _PLATFORMS],
     )
     if not platform_name:
-        console.print("[bold red]No platform selected[/bold red]")
+        console.print("[red]No platform selected[/red]")
         return None
 
     platform = next(platform for platform in _PLATFORMS if platform.name == platform_name)
@@ -123,7 +123,7 @@ async def _setup() -> _SetupResult | None:
         ):
             json = await response.json()
     except aiohttp.ClientError as e:
-        console.print(f"[bold red]Failed to get models: {e}[/bold red]")
+        console.print(f"[red]Failed to get models: {e}[/red]")
         return None
 
     # select the model
@@ -134,7 +134,7 @@ async def _setup() -> _SetupResult | None:
         model_ids = [model_id for model_id in platform.allowed_models if model_id in id_set]
 
     if not model_ids:
-        console.print("[bold red]No models available for the selected platform[/bold red]")
+        console.print("[red]No models available for the selected platform[/red]")
         return None
 
     model_id = await _prompt_choice(
@@ -142,7 +142,7 @@ async def _setup() -> _SetupResult | None:
         choices=model_ids,
     )
     if not model_id:
-        console.print("[bold red]No model selected[/bold red]")
+        console.print("[red]No model selected[/red]")
         return None
 
     return _SetupResult(

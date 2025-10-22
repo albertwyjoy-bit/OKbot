@@ -19,7 +19,7 @@ class _ToolCallDisplay:
         if tool_call.function.arguments is not None:
             self._lexer.append_string(tool_call.function.arguments)
 
-        self._title_markup = f"Using [bold blue]{self._tool_name}[/bold blue]"
+        self._title_markup = f"Using [blue]{self._tool_name}[/blue]"
         self._subtitle = extract_subtitle(self._lexer, self._tool_name)
         self._finished = False
         self._spinner = Spinner("dots", text=self._spinner_markup)
@@ -54,15 +54,9 @@ class _ToolCallDisplay:
         After calling this, the `renderable` property should be re-rendered.
         """
         self._finished = True
-        sign = (
-            "[bold red]✗[/bold red]"
-            if isinstance(result, ToolError)
-            else "[bold green]✓[/bold green]"
-        )
+        sign = "[red]✗[/red]" if isinstance(result, ToolError) else "[green]✓[/green]"
         lines = [
-            Text.from_markup(
-                f"{sign} Used [bold blue]{self._tool_name}[/bold blue]" + self._subtitle_markup
-            )
+            Text.from_markup(f"{sign} Used [blue]{self._tool_name}[/blue]" + self._subtitle_markup)
         ]
         if result.brief:
             lines.append(

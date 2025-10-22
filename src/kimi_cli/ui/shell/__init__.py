@@ -111,7 +111,7 @@ class ShellApp:
             await proc.wait()
         except Exception as e:
             logger.exception("Failed to run shell command:")
-            console.print(f"[bold red]Failed to run shell command: {e}[/bold red]")
+            console.print(f"[red]Failed to run shell command: {e}[/red]")
         finally:
             loop.remove_signal_handler(signal.SIGINT)
 
@@ -136,33 +136,29 @@ class ShellApp:
             return True
         except LLMNotSet:
             logger.error("LLM not set")
-            console.print("[bold red]LLM not set, send /setup to configure[/bold red]")
+            console.print("[red]LLM not set, send /setup to configure[/red]")
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
             if isinstance(e, APIStatusError) and e.status_code == 401:
-                console.print(
-                    "[bold red]Authorization failed, please check your API key[/bold red]"
-                )
+                console.print("[red]Authorization failed, please check your API key[/red]")
             elif isinstance(e, APIStatusError) and e.status_code == 402:
-                console.print("[bold red]Membership expired, please renew your plan[/bold red]")
+                console.print("[red]Membership expired, please renew your plan[/red]")
             elif isinstance(e, APIStatusError) and e.status_code == 403:
-                console.print(
-                    "[bold red]Quota exceeded, please upgrade your plan or retry later[/bold red]"
-                )
+                console.print("[red]Quota exceeded, please upgrade your plan or retry later[/red]")
             else:
-                console.print(f"[bold red]LLM provider error: {e}[/bold red]")
+                console.print(f"[red]LLM provider error: {e}[/red]")
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
-            console.print(f"[bold yellow]Max steps reached: {e.n_steps}[/bold yellow]")
+            console.print(f"[yellow]Max steps reached: {e.n_steps}[/yellow]")
         except RunCancelled:
             logger.info("Cancelled by user")
-            console.print("[bold red]Interrupted by user[/bold red]")
+            console.print("[red]Interrupted by user[/red]")
         except Reload:
             # just propagate
             raise
         except BaseException as e:
             logger.exception("Unknown error:")
-            console.print(f"[bold red]Unknown error: {e}[/bold red]")
+            console.print(f"[red]Unknown error: {e}[/red]")
             raise  # re-raise unknown error
         finally:
             loop.remove_signal_handler(signal.SIGINT)
@@ -268,16 +264,16 @@ class ShellApp:
                 await ret
         except LLMNotSet:
             logger.error("LLM not set")
-            console.print("[bold red]LLM not set, send /setup to configure[/bold red]")
+            console.print("[red]LLM not set, send /setup to configure[/red]")
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
-            console.print(f"[bold red]LLM provider error: {e}[/bold red]")
+            console.print(f"[red]LLM provider error: {e}[/red]")
         except Reload:
             # just propagate
             raise
         except BaseException as e:
             logger.exception("Unknown error:")
-            console.print(f"[bold red]Unknown error: {e}[/bold red]")
+            console.print(f"[red]Unknown error: {e}[/red]")
             raise  # re-raise unknown error
 
 
@@ -312,8 +308,7 @@ def _print_welcome_info(name: str, model: str, info_items: dict[str, str]) -> No
     else:
         rows.append(
             Text.from_markup(
-                "[grey50]Model:[/grey50] [bold yellow]not set, "
-                "send /setup to configure[/bold yellow]"
+                "[grey50]Model:[/grey50] [yellow]not set, send /setup to configure[/yellow]"
             )
         )
 
