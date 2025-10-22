@@ -1,4 +1,5 @@
 import tempfile
+import webbrowser
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from string import Template
@@ -175,6 +176,16 @@ def release_notes(app: "ShellApp", args: list[str]):
     text = format_release_notes(CHANGELOG)
     with console.pager(styles=True):
         console.print(Panel.fit(text, border_style="wheat4", title="Release Notes"))
+
+
+@meta_command
+def feedback(app: "ShellApp", args: list[str]):
+    """Submit feedback"""
+
+    ISSUE_URL = "https://github.com/MoonshotAI/kimi-cli/issues"
+    if webbrowser.open(ISSUE_URL):
+        return
+    console.print(f"Please submit feedback at [underline]{ISSUE_URL}[/underline].")
 
 
 @meta_command
