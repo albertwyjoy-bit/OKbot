@@ -12,6 +12,9 @@ class Approval:
         self._auto_approve_actions = set()  # TODO: persist across sessions
         """Set of action names that should automatically be approved."""
 
+    def set_yolo(self, yolo: bool) -> None:
+        self._yolo = yolo
+
     async def request(self, action: str, description: str) -> bool:
         """
         Request approval for the given action. Intended to be called by tools.

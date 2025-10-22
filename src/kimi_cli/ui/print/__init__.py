@@ -34,7 +34,8 @@ class PrintApp:
         self.soul = soul
         self.input_format = input_format
         self.output_format = output_format
-        # TODO(approval): set Approval to no interactive mode
+        self.soul._approval.set_yolo(True)
+        # TODO(approval): proper approval request handling
 
     async def run(self, command: str | None = None) -> bool:
         cancel_event = asyncio.Event()
