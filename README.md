@@ -19,7 +19,7 @@ Kimi CLI is a new CLI agent that can help you with your software development tas
 
 ## Installation
 
-Kimi CLI is published as a Python package on PyPI. We highly recommend installing it with [uv](https://docs.astral.sh/uv/). If you have not installed uv yet, you can follow the instructions [here](https://docs.astral.sh/uv/getting-started/installation/) to install it first.
+Kimi CLI is published as a Python package on PyPI. We highly recommend installing it with [uv](https://docs.astral.sh/uv/). If you have not installed uv yet, please follow the instructions [here](https://docs.astral.sh/uv/getting-started/installation/) to install it first.
 
 Once uv is installed, you can install Kimi CLI with:
 
@@ -52,14 +52,14 @@ After setup is complete, Kimi CLI will be ready to use. You can send `/help` to 
 
 ### Shell mode
 
-Kimi CLI is not only a CLI agent, but also a shell. You can switch the mode by pressing `Ctrl-K`. In shell mode, you can directly run shell commands without leaving Kimi CLI.
+Kimi CLI is not only a coding agent, but also a shell. You can switch the mode by pressing `Ctrl-K`. In shell mode, you can directly run shell commands without leaving Kimi CLI.
 
 > [!NOTE]
 > Built-in shell commands like `cd` are not supported yet.
 
 ### Zsh integration
 
-You can use Kimi CLI together with Zsh, to empower your shell with AI agent capabilities.
+You can use Kimi CLI together with Zsh, to empower your shell experience with AI agent capabilities.
 
 Install the [zsh-kimi-cli](https://github.com/MoonshotAI/zsh-kimi-cli) plugin via:
 
