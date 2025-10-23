@@ -229,8 +229,13 @@ class StepLiveView:
         if not self._approval_queue:
             return
 
-        request = self._approval_queue.popleft()
-        self._current_approval = _ApprovalRequestDisplay(request)
+        while self._approval_queue:
+            request = self._approval_queue.popleft()
+            if request.resolved:
+                # skip resolved requests
+                continue
+            self._current_approval = _ApprovalRequestDisplay(request)
+            break
 
     def update_status(self, status: StatusSnapshot):
         if self._status_text is None:
@@ -252,7 +257,12 @@ class StepLiveView:
             case KeyEvent.ENTER:
                 resp = self._current_approval.get_selected_response()
                 self._current_approval.request.resolve(resp)
-                if resp == ApprovalResponse.REJECT:
+                if resp == ApprovalResponse.APPROVE_FOR_SESSION:
+                    for request in self._approval_queue:
+                        # approve all queued requests with the same action
+                        if request.action == self._current_approval.request.action:
+                            request.resolve(ApprovalResponse.APPROVE_FOR_SESSION)
+                elif resp == ApprovalResponse.REJECT:
                     # one rejection should stop the step immediately
                     while self._approval_queue:
                         self._approval_queue.popleft().resolve(ApprovalResponse.REJECT)

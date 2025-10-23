@@ -83,6 +83,11 @@ class ApprovalRequest:
         """
         self._future.set_result(response)
 
+    @property
+    def resolved(self) -> bool:
+        """Whether the request is resolved."""
+        return self._future.done()
+
 
 type WireMessage = Event | ApprovalRequest
 
