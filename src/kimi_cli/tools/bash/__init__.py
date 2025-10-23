@@ -39,7 +39,7 @@ class Bash(CallableTool2[Params]):
 
         if not await self._approval.request(
             self.name,
-            f"run command {params.command}",
+            "run shell command",
             f"Run command `{params.command}`",
         ):
             return ToolRejectedError()
