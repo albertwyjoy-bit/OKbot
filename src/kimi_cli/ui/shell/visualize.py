@@ -44,6 +44,7 @@ async def visualize(wire: Wire, *, initial_status: StatusSnapshot):
     A loop to consume agent events and visualize the agent behavior.
     This loop never raise any exception except asyncio.CancelledError.
     """
+    latest_status = initial_status
     try:
         # expect a StepBegin
         assert isinstance(await wire.receive(), StepBegin)
@@ -51,7 +52,7 @@ async def visualize(wire: Wire, *, initial_status: StatusSnapshot):
         while True:
             # TODO: Maybe we can always have a StepLiveView here.
             #       No need to recreate for each step.
-            with StepLiveViewWithMarkdown(initial_status) as step:
+            with StepLiveViewWithMarkdown(latest_status) as step:
                 async with _keyboard_listener(step):
                     # spin the moon at the beginning of each step
                     with console.status("", spinner="moon"):
@@ -82,7 +83,8 @@ async def visualize(wire: Wire, *, initial_status: StatusSnapshot):
                             case ApprovalRequest():
                                 step.request_approval(msg)
                             case StatusUpdate(status=status):
-                                step.update_status(status)
+                                latest_status = status
+                                step.update_status(latest_status)
                             case _:
                                 break  # break the step loop
                         msg = await wire.receive()
