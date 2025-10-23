@@ -24,8 +24,8 @@ class _Platform(NamedTuple):
 
 _PLATFORMS = [
     _Platform(
-        id="kimi-coding",
-        name="Kimi Coding Plan",
+        id="kimi-for-coding",
+        name="Kimi For Coding",
         base_url="https://api.kimi.com/coding/v1",
         search_url="https://api.kimi.com/coding/v1/search",
     ),
