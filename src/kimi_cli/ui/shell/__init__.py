@@ -205,7 +205,7 @@ class ShellApp:
         result = await do_update(print=False, check_only=True)
         if result == UpdateResult.UPDATE_AVAILABLE:
             while True:
-                toast("new version found, run `uv tool upgrade ikimi` to upgrade", duration=30.0)
+                toast("new version found, run `uv tool upgrade kimi-cli` to upgrade", duration=30.0)
                 await asyncio.sleep(60.0)
         elif result == UpdateResult.UPDATED:
             toast("auto updated, restart to use the new version", duration=5.0)
