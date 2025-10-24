@@ -46,7 +46,7 @@ Run `kimi` command in the directory you want to work on, then send `/setup` to s
 
 ![](./docs/images/setup.png)
 
-After setup is complete, Kimi CLI will be ready to use. You can send `/help` to get more information.
+After setup, Kimi CLI will be ready to use. You can send `/help` to get more information.
 
 ## Features
 
