@@ -11,6 +11,10 @@ Only write entries that are worth mentioning to users.
 
 ## [Unreleased]
 
+### Added
+
+- Support `ESC` key to interrupt the agent loop
+
 ### Fixed
 
 - Fix SSL certificate verification error in some rare cases
