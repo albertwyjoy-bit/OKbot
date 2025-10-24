@@ -11,6 +11,7 @@ from pathlib import Path
 
 import aiohttp
 
+from kimi_cli.share import get_share_dir
 from kimi_cli.ui.shell.console import console
 from kimi_cli.utils.logging import logger
 
@@ -30,7 +31,7 @@ class UpdateResult(Enum):
 _UPDATE_LOCK = asyncio.Lock()
 
 
-def _semver_tuple(version: str) -> tuple[int, int, int]:
+def semver_tuple(version: str) -> tuple[int, int, int]:
     v = version.strip()
     if v.startswith("v"):
         v = v[1:]
@@ -79,6 +80,9 @@ async def do_update(*, print: bool = True, check_only: bool = False) -> UpdateRe
         return await _do_update(print=print, check_only=check_only)
 
 
+LATEST_VERSION_FILE = get_share_dir() / "latest_version.txt"
+
+
 async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
     from kimi_cli import __version__ as current_version
 
@@ -100,9 +104,10 @@ async def _do_update(*, print: bool, check_only: bool) -> UpdateResult:
             return UpdateResult.FAILED
 
         logger.debug("Latest version: {latest_version}", latest_version=latest_version)
+        LATEST_VERSION_FILE.write_text(latest_version)
 
-        cur_t = _semver_tuple(current_version)
-        lat_t = _semver_tuple(latest_version)
+        cur_t = semver_tuple(current_version)
+        lat_t = semver_tuple(latest_version)
 
         if cur_t >= lat_t:
             logger.debug("Already up to date: {current_version}", current_version=current_version)

@@ -16,7 +16,7 @@ from kimi_cli.ui import RunCancelled, run_soul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.metacmd import get_meta_command
 from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode, toast
-from kimi_cli.ui.shell.update import UpdateResult, do_update
+from kimi_cli.ui.shell.update import LATEST_VERSION_FILE, UpdateResult, do_update, semver_tuple
 from kimi_cli.ui.shell.visualize import visualize
 from kimi_cli.utils.logging import logger
 
@@ -261,6 +261,18 @@ def _print_welcome_info(name: str, model: str, info_items: dict[str, str]) -> No
                 "[grey50]Model:[/grey50] [yellow]not set, send /setup to configure[/yellow]"
             )
         )
+
+    if LATEST_VERSION_FILE.exists():
+        from kimi_cli import __version__ as current_version
+
+        latest_version = LATEST_VERSION_FILE.read_text().strip()
+        if semver_tuple(latest_version) > semver_tuple(current_version):
+            rows.append(
+                Text.from_markup(
+                    f"\n[yellow]New version available: {latest_version}. "
+                    "Please run `uv tool upgrade kimi-cli` to upgrade.[/yellow]"
+                )
+            )
 
     console.print(
         Panel(
