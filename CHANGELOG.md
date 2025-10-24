@@ -9,7 +9,7 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
-## [Unreleased]
+## [0.40] - 2025-10-24
 
 ### Added
 
@@ -18,6 +18,7 @@ Only write entries that are worth mentioning to users.
 ### Fixed
 
 - Fix SSL certificate verification error in some rare cases
+- Fix possible decoding error in Bash tool
 
 ## [0.39] - 2025-10-24
 
