@@ -1,5 +1,4 @@
 import contextlib
-import importlib.metadata
 import os
 import subprocess
 import sys
@@ -19,6 +18,7 @@ from kimi_cli.agent import (
     load_agents_md,
 )
 from kimi_cli.config import Config, LLMModel, LLMProvider
+from kimi_cli.llm import augment_provider_with_env_vars, create_llm
 from kimi_cli.metadata import Session
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.context import Context
@@ -28,10 +28,6 @@ from kimi_cli.ui.acp import ACPServer
 from kimi_cli.ui.print import InputFormat, OutputFormat, PrintApp
 from kimi_cli.ui.shell import ShellApp
 from kimi_cli.utils.logging import StreamToLogger, logger
-from kimi_cli.utils.provider import augment_provider_with_env_vars, create_llm
-
-__version__ = importlib.metadata.version("kimi-cli")
-USER_AGENT = f"KimiCLI/{__version__}"
 
 UIMode = Literal["shell", "print", "acp"]
 

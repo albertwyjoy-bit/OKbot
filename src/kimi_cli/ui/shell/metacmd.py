@@ -173,9 +173,9 @@ def help(app: "ShellApp", args: list[str]):
 @meta_command
 def version(app: "ShellApp", args: list[str]):
     """Show version information"""
-    from kimi_cli import __version__
+    from kimi_cli.constant import VERSION
 
-    console.print(f"kimi, version {__version__}")
+    console.print(f"kimi, version {VERSION}")
 
 
 @meta_command(name="release-notes")
