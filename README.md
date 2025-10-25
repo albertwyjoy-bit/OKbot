@@ -128,3 +128,31 @@ Run `kimi` with `--mcp-config-file` option to connect to the specified MCP serve
 ```sh
 kimi --mcp-config-file /path/to/mcp.json
 ```
+
+## Development
+
+To develop Kimi CLI, run:
+
+```sh
+git clone https://github.com/MoonshotAI/kimi-cli.git
+cd kimi-cli
+
+make prepare  # prepare the development environment
+```
+
+Then you can start working on Kimi CLI.
+
+Refer to the following commands after you make changes:
+
+```sh
+uv run kimi  # run Kimi CLI
+
+make format  # format code
+make check  # run linting and type checking
+make test  # run tests
+make help  # show all make targets
+```
+
+## Contributing
+
+We welcome contributions to Kimi CLI! Please refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for more information.
