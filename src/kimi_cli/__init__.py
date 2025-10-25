@@ -371,7 +371,13 @@ async def kimi_run(
             with contextlib.redirect_stderr(StreamToLogger()):
                 return await app.run(command)
         elif ui == "print":
-            app = PrintApp(soul, input_format or "text", output_format or "text")
+            soul._approval.set_yolo(True)  # print mode implies yolo mode
+            app = PrintApp(
+                soul,
+                input_format or "text",
+                output_format or "text",
+                context.file_backend,
+            )
             return await app.run(command)
         elif ui == "acp":
             if command is not None:
