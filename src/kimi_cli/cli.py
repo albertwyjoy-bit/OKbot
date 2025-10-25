@@ -11,8 +11,13 @@ from kimi_cli.config import ConfigError, load_config
 from kimi_cli.metadata import continue_session, new_session
 from kimi_cli.share import get_share_dir
 from kimi_cli.ui.print import InputFormat, OutputFormat
-from kimi_cli.ui.shell import Reload
 from kimi_cli.utils.logging import logger
+
+
+class Reload(Exception):
+    """Reload configuration."""
+
+    pass
 
 
 @click.command(context_settings=dict(help_option_names=["-h", "--help"]))

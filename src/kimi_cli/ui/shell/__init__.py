@@ -9,6 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from kimi_cli.cli import Reload
 from kimi_cli.soul import LLMNotSet, MaxStepsReached, Soul
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell.console import console
@@ -18,12 +19,6 @@ from kimi_cli.ui.shell.update import LATEST_VERSION_FILE, UpdateResult, do_updat
 from kimi_cli.ui.shell.visualize import visualize
 from kimi_cli.utils.logging import logger
 from kimi_cli.wire import RunCancelled, run_soul
-
-
-class Reload(Exception):
-    """Reload configuration."""
-
-    pass
 
 
 class ShellApp:
