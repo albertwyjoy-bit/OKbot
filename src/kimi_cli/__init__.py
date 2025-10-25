@@ -7,11 +7,11 @@ from typing import Any, Literal
 import click
 from pydantic import SecretStr
 
-from kimi_cli.agent import load_agent_with_mcp
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.config import Config, LLMModel, LLMProvider
 from kimi_cli.llm import augment_provider_with_env_vars, create_llm
 from kimi_cli.metadata import Session
+from kimi_cli.soul.agent import load_agent_with_mcp
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.globals import AgentGlobals
 from kimi_cli.soul.kimisoul import KimiSoul

@@ -16,11 +16,12 @@ from kosong.chat_provider import (
 from kosong.tooling import ToolResult
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
-from kimi_cli.agent import Agent, AgentGlobals
 from kimi_cli.config import LoopControl
 from kimi_cli.soul import LLMNotSet, MaxStepsReached, Soul, StatusSnapshot, wire_send
+from kimi_cli.soul.agent import Agent
 from kimi_cli.soul.compaction import SimpleCompaction
 from kimi_cli.soul.context import Context
+from kimi_cli.soul.globals import AgentGlobals
 from kimi_cli.soul.message import system, tool_result_to_messages
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError

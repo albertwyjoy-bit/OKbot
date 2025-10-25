@@ -5,8 +5,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 import fastmcp
-from kosong.tooling import Toolset
-from kosong.tooling.simple import ToolType
+from kosong.tooling import CallableTool, CallableTool2, Toolset
 
 from kimi_cli.agentspec import ResolvedAgentSpec, load_agent_spec
 from kimi_cli.config import Config
@@ -96,6 +95,10 @@ def _load_system_prompt(
     return string.Template(system_prompt).substitute(builtin_args._asdict(), **args)
 
 
+type ToolType = CallableTool | CallableTool2[Any]
+# TODO: move this to kosong.tooling.simple
+
+
 def _load_tools(
     toolset: CustomToolset,
     tool_paths: list[str],
@@ -124,7 +127,7 @@ def _load_tool(tool_path: str, dependencies: dict[type[Any], Any]) -> ToolType |
     cls = getattr(module, class_name, None)
     if cls is None:
         return None
-    args = []
+    args: list[type[Any]] = []
     for param in inspect.signature(cls).parameters.values():
         if param.kind == inspect.Parameter.KEYWORD_ONLY:
             # once we encounter a keyword-only parameter, we stop injecting dependencies
