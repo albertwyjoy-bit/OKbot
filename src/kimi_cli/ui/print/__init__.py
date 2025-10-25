@@ -11,10 +11,10 @@ from kosong.base.message import Message
 from kosong.chat_provider import ChatProviderError
 
 from kimi_cli.soul import LLMNotSet, MaxStepsReached, Soul
-from kimi_cli.soul.wire import StepInterrupted, Wire
-from kimi_cli.ui import RunCancelled, run_soul
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import message_extract_text
+from kimi_cli.wire import RunCancelled, WireUISide, run_soul
+from kimi_cli.wire.message import StepInterrupted
 
 InputFormat = Literal["text", "stream-json"]
 OutputFormat = Literal["text", "stream-json"]
@@ -100,30 +100,6 @@ class PrintApp:
             loop.remove_signal_handler(signal.SIGINT)
         return False
 
-    # TODO: unify with `_soul_run` in `ShellApp` and `ACPAgentImpl`
-    async def _soul_run(self, user_input: str):
-        wire = Wire()
-        logger.debug("Starting visualization loop")
-
-        if self.output_format == "text":
-            vis_task = asyncio.create_task(self._visualize_text(wire))
-        else:
-            assert self.output_format == "stream-json"
-            if not self.context_file.exists():
-                self.context_file.touch()
-            start_position = self.context_file.stat().st_size
-            vis_task = asyncio.create_task(self._visualize_stream_json(wire, start_position))
-
-        try:
-            await self.soul.run(user_input, wire)
-        finally:
-            wire.shutdown()
-            # shutting down the event queue should break the visualization loop
-            try:
-                await asyncio.wait_for(vis_task, timeout=0.5)
-            except TimeoutError:
-                logger.warning("Visualization loop timed out")
-
     def _read_next_command(self) -> str | None:
         while True:
             json_line = sys.stdin.readline()
@@ -149,7 +125,7 @@ class PrintApp:
             except Exception:
                 logger.warning("Ignoring invalid user message: {json_line}", json_line=json_line)
 
-    async def _visualize_text(self, wire: Wire):
+    async def _visualize_text(self, wire: WireUISide):
         try:
             while True:
                 msg = await wire.receive()
@@ -159,7 +135,7 @@ class PrintApp:
         except asyncio.QueueShutDown:
             logger.debug("Visualization loop shutting down")
 
-    async def _visualize_stream_json(self, wire: Wire, start_position: int):
+    async def _visualize_stream_json(self, wire: WireUISide, start_position: int):
         # TODO: be aware of context compaction
         try:
             async with aiofiles.open(self.context_file, encoding="utf-8") as f:
