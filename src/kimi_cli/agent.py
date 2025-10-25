@@ -186,7 +186,7 @@ def _load_system_prompt(
     path: Path, args: dict[str, str], builtin_args: BuiltinSystemPromptArgs
 ) -> str:
     logger.info("Loading system prompt: {path}", path=path)
-    system_prompt = path.read_text().strip()
+    system_prompt = path.read_text(encoding="utf-8").strip()
     logger.debug(
         "Substituting system prompt with builtin args: {builtin_args}, spec args: {spec_args}",
         builtin_args=builtin_args,
@@ -261,6 +261,6 @@ def load_agents_md(work_dir: Path) -> str | None:
     for path in paths:
         if path.is_file():
             logger.info("Loaded agents.md: {path}", path=path)
-            return path.read_text().strip()
+            return path.read_text(encoding="utf-8").strip()
     logger.info("No AGENTS.md found in {work_dir}", work_dir=work_dir)
     return None
