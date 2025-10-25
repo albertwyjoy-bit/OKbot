@@ -10,8 +10,6 @@ from kimi_cli.llm import LLM
 from kimi_cli.soul.message import system
 from kimi_cli.utils.logging import logger
 
-MAX_PRESERVED_MESSAGES = 2
-
 
 @runtime_checkable
 class Compaction(Protocol):
@@ -33,6 +31,8 @@ class Compaction(Protocol):
 
 
 class SimpleCompaction(Compaction):
+    MAX_PRESERVED_MESSAGES = 2
+
     async def compact(self, messages: Sequence[Message], llm: LLM) -> Sequence[Message]:
         history = list(messages)
         if not history:
@@ -43,11 +43,11 @@ class SimpleCompaction(Compaction):
         for index in range(len(history) - 1, -1, -1):
             if history[index].role in {"user", "assistant"}:
                 n_preserved += 1
-                if n_preserved == MAX_PRESERVED_MESSAGES:
+                if n_preserved == self.MAX_PRESERVED_MESSAGES:
                     preserve_start_index = index
                     break
 
-        if n_preserved < MAX_PRESERVED_MESSAGES:
+        if n_preserved < self.MAX_PRESERVED_MESSAGES:
             return history
 
         to_compact = history[:preserve_start_index]
