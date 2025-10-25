@@ -3,7 +3,6 @@ import importlib.metadata
 import os
 import subprocess
 import sys
-import textwrap
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -45,7 +44,6 @@ async def kimi_run(
     session: Session,
     command: str | None = None,
     agent_file: Path = DEFAULT_AGENT_FILE,
-    verbose: bool = True,
     ui: UIMode = "shell",
     input_format: InputFormat | None = None,
     output_format: OutputFormat | None = None,
@@ -53,8 +51,6 @@ async def kimi_run(
     yolo: bool = False,
 ) -> bool:
     """Run Kimi CLI."""
-    print_ = print if verbose else lambda *args, **kwargs: None
-
     model: LLMModel | None = None
     provider: LLMProvider | None = None
 
@@ -80,8 +76,8 @@ async def kimi_run(
     if not provider.base_url or not model.model:
         llm = None
     else:
-        print_(f"✓ Using LLM provider: {provider}")
-        print_(f"✓ Using LLM model: {model}")
+        logger.info("Using LLM provider: {provider}", provider=provider)
+        logger.info("Using LLM model: {model}", model=model)
         stream = ui != "print"  # use non-streaming mode only for print UI
         llm = create_llm(provider, model, stream=stream, session_id=session.id)
 
@@ -93,8 +89,6 @@ async def kimi_run(
     else:
         ls = subprocess.run(["ls", "-la"], capture_output=True, text=True)
     agents_md = load_agents_md(work_dir) or ""
-    if agents_md:
-        print_(f"✓ Loaded agents.md: {textwrap.shorten(agents_md, width=100)}")
 
     agent_globals = AgentGlobals(
         config=config,
@@ -113,9 +107,6 @@ async def kimi_run(
         agent = await load_agent_with_mcp(agent_file, agent_globals, mcp_configs or [])
     except ValueError as e:
         raise click.BadParameter(f"Failed to load agent: {e}") from e
-    print_(f"✓ Loaded agent: {agent.name}")
-    print_(f"✓ Loaded system prompt: {textwrap.shorten(agent.system_prompt, width=100)}")
-    print_(f"✓ Loaded tools: {[tool.name for tool in agent.toolset.tools]}")
 
     if command is not None:
         command = command.strip()
@@ -123,9 +114,7 @@ async def kimi_run(
             raise click.BadParameter("Command cannot be empty")
 
     context = Context(session.history_file)
-    restored = await context.restore()
-    if restored:
-        print_(f"✓ Restored history from {session.history_file}")
+    await context.restore()
 
     soul = KimiSoul(
         agent,
@@ -141,7 +130,6 @@ async def kimi_run(
         if ui == "shell":
             if command is None and not sys.stdin.isatty():
                 command = sys.stdin.read().strip()
-                print_(f"✓ Read command from stdin: {command}")
 
             app = ShellApp(
                 soul,

@@ -207,7 +207,6 @@ def kimi(
                     session=session,
                     command=command,
                     agent_file=agent_file,
-                    verbose=verbose,
                     ui=ui,
                     input_format=input_format,
                     output_format=output_format,
