@@ -5,11 +5,10 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 import fastmcp
-import yaml
 from kosong.tooling import Toolset
 from kosong.tooling.simple import ToolType
-from pydantic import BaseModel, Field
 
+from kimi_cli.agentspec import ResolvedAgentSpec, load_agent_spec
 from kimi_cli.config import Config
 from kimi_cli.metadata import Session
 from kimi_cli.soul.approval import Approval
@@ -20,42 +19,12 @@ from kimi_cli.tools.mcp import MCPTool
 from kimi_cli.utils.logging import logger
 
 
-class AgentSpec(BaseModel):
-    """Agent specification."""
-
-    extend: str | None = Field(default=None, description="Agent file to extend")
-    name: str | None = Field(default=None, description="Agent name")  # required
-    system_prompt_path: Path | None = Field(
-        default=None, description="System prompt path"
-    )  # required
-    system_prompt_args: dict[str, str] = Field(
-        default_factory=dict, description="System prompt arguments"
-    )
-    tools: list[str] | None = Field(default=None, description="Tools")  # required
-    exclude_tools: list[str] | None = Field(default=None, description="Tools to exclude")
-    subagents: dict[str, "SubagentSpec"] | None = Field(default=None, description="Subagents")
-
-
-class SubagentSpec(BaseModel):
-    """Subagent specification."""
-
-    path: Path = Field(description="Subagent file path")
-    description: str = Field(description="Subagent description")
-
-
 class Agent(NamedTuple):
     """The loaded agent."""
 
     name: str
     system_prompt: str
     toolset: Toolset
-
-
-def get_agents_dir() -> Path:
-    return Path(__file__).parent / "agents"
-
-
-DEFAULT_AGENT_FILE = get_agents_dir() / "koder" / "agent.yaml"
 
 
 async def load_agent_with_mcp(
@@ -81,14 +50,7 @@ def load_agent(
         ValueError: If the agent spec is not valid.
     """
     logger.info("Loading agent: {agent_file}", agent_file=agent_file)
-    agent_spec = _load_agent_spec(agent_file)
-    assert agent_spec.extend is None, "agent extension should be recursively resolved"
-    if agent_spec.name is None:
-        raise ValueError("Agent name is required")
-    if agent_spec.system_prompt_path is None:
-        raise ValueError("System prompt path is required")
-    if agent_spec.tools is None:
-        raise ValueError("Tools are required")
+    agent_spec = load_agent_spec(agent_file)
 
     system_prompt = _load_system_prompt(
         agent_spec.system_prompt_path,
@@ -97,7 +59,7 @@ def load_agent(
     )
 
     tool_deps = {
-        AgentSpec: agent_spec,
+        ResolvedAgentSpec: agent_spec,
         AgentGlobals: globals_,
         Config: globals_.config,
         BuiltinSystemPromptArgs: globals_.builtin_args,
@@ -119,43 +81,6 @@ def load_agent(
         system_prompt=system_prompt,
         toolset=toolset,
     )
-
-
-def _load_agent_spec(agent_file: Path) -> AgentSpec:
-    assert agent_file.is_file(), "expect agent file to exist"
-    with open(agent_file, encoding="utf-8") as f:
-        data: dict[str, Any] = yaml.safe_load(f)
-
-    version = data.get("version", 1)
-    if version != 1:
-        raise ValueError(f"Unsupported agent spec version: {version}")
-
-    agent_spec = AgentSpec(**data.get("agent", {}))
-    if agent_spec.system_prompt_path is not None:
-        agent_spec.system_prompt_path = agent_file.parent / agent_spec.system_prompt_path
-    if agent_spec.subagents is not None:
-        for v in agent_spec.subagents.values():
-            v.path = agent_file.parent / v.path
-    if agent_spec.extend:
-        if agent_spec.extend == "default":
-            base_agent_file = DEFAULT_AGENT_FILE
-        else:
-            base_agent_file = agent_file.parent / agent_spec.extend
-        base_agent_spec = _load_agent_spec(base_agent_file)
-        if agent_spec.name is not None:
-            base_agent_spec.name = agent_spec.name
-        if agent_spec.system_prompt_path is not None:
-            base_agent_spec.system_prompt_path = agent_spec.system_prompt_path
-        for k, v in agent_spec.system_prompt_args.items():
-            base_agent_spec.system_prompt_args[k] = v
-        if agent_spec.tools is not None:
-            base_agent_spec.tools = agent_spec.tools
-        if agent_spec.exclude_tools is not None:
-            base_agent_spec.exclude_tools = agent_spec.exclude_tools
-        if agent_spec.subagents is not None:
-            base_agent_spec.subagents = agent_spec.subagents
-        agent_spec = base_agent_spec
-    return agent_spec
 
 
 def _load_system_prompt(
