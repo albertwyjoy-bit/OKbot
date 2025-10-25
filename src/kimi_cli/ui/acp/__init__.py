@@ -63,7 +63,7 @@ class _RunState:
         self.cancel_event = asyncio.Event()
 
 
-class ACPAgentImpl:
+class ACPAgent:
     """Implementation of the ACP Agent protocol."""
 
     def __init__(self, soul: Soul, connection: acp.AgentSideConnection):
@@ -427,7 +427,7 @@ class ACPServer:
 
         # Create connection - the library handles all JSON-RPC details!
         _ = acp.AgentSideConnection(
-            lambda conn: ACPAgentImpl(self.soul, conn),
+            lambda conn: ACPAgent(self.soul, conn),
             writer,
             reader,
         )
