@@ -128,9 +128,6 @@ async def kimi_run(
 
     try:
         if ui == "shell":
-            if command is None and not sys.stdin.isatty():
-                command = sys.stdin.read().strip()
-
             app = ShellApp(
                 soul,
                 welcome_info={

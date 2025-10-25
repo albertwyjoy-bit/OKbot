@@ -28,6 +28,7 @@ class PrintApp:
         soul (Soul): The soul to run.
         input_format (InputFormat): The input format to use.
         output_format (OutputFormat): The output format to use.
+        context_file (Path): The file to store the context.
     """
 
     def __init__(
