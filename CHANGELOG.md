@@ -9,6 +9,16 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [Unreleased]
+
+### Added
+
+- Support Ctrl-J or Alt-Enter to insert a new line
+
+### Changed
+
+- Change mode switch shortcut from Ctrl-K to Ctrl-X
+
 ## [0.41] - 2025-10-26
 
 ### Fixed
