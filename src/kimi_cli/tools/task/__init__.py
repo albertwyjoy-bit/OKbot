@@ -129,12 +129,7 @@ class Task(CallableTool2[Params]):
 
         subagent_history_file = await self._get_subagent_history_file()
         context = Context(file_backend=subagent_history_file)
-        soul = KimiSoul(
-            agent,
-            runtime=self._runtime,
-            context=context,
-            loop_control=self._runtime.config.loop_control,
-        )
+        soul = KimiSoul(agent, runtime=self._runtime, context=context)
 
         try:
             await run_soul(soul, prompt, _ui_loop_fn, asyncio.Event())

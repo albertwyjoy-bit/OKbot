@@ -16,7 +16,6 @@ from kosong.chat_provider import (
 from kosong.tooling import ToolResult
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
-from kimi_cli.config import LoopControl
 from kimi_cli.soul import LLMNotSet, MaxStepsReached, Soul, StatusSnapshot, wire_send
 from kimi_cli.soul.agent import Agent
 from kimi_cli.soul.compaction import SimpleCompaction
@@ -46,7 +45,6 @@ class KimiSoul(Soul):
         runtime: Runtime,
         *,
         context: Context,
-        loop_control: LoopControl,
     ):
         """
         Initialize the soul.
@@ -62,7 +60,7 @@ class KimiSoul(Soul):
         self._denwa_renji = runtime.denwa_renji
         self._approval = runtime.approval
         self._context = context
-        self._loop_control = loop_control
+        self._loop_control = runtime.config.loop_control
         self._compaction = SimpleCompaction()  # TODO: maybe configurable and composable
         self._reserved_tokens = RESERVED_TOKENS
         if self._runtime.llm is not None:

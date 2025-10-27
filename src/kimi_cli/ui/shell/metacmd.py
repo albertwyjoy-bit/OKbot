@@ -206,12 +206,7 @@ async def init(app: "ShellApp", args: list[str]):
         logger.info("Running `/init`")
         console.print("Analyzing the codebase...")
         tmp_context = Context(file_backend=Path(temp_dir) / "context.jsonl")
-        app.soul = KimiSoul(
-            soul_bak._agent,
-            soul_bak._runtime,
-            context=tmp_context,
-            loop_control=soul_bak._loop_control,
-        )
+        app.soul = KimiSoul(soul_bak._agent, soul_bak._runtime, context=tmp_context)
         ok = await app._run_soul_command(prompts.INIT)
 
         if ok:
