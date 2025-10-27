@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from kimi_cli.config import Config
-from kimi_cli.metadata import Session
+from kimi_cli.session import Session
 from kimi_cli.soul.agent import _load_system_prompt, _load_tools, load_agent
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji

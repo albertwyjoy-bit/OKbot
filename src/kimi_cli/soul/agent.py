@@ -9,7 +9,7 @@ from kosong.tooling import CallableTool, CallableTool2, Toolset
 
 from kimi_cli.agentspec import ResolvedAgentSpec, load_agent_spec
 from kimi_cli.config import Config
-from kimi_cli.metadata import Session
+from kimi_cli.session import Session
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.globals import AgentGlobals, BuiltinSystemPromptArgs

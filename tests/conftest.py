@@ -11,7 +11,7 @@ from kosong.chat_provider import MockChatProvider
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE, ResolvedAgentSpec, load_agent_spec
 from kimi_cli.config import Config, get_default_config
 from kimi_cli.llm import LLM
-from kimi_cli.metadata import Session, WorkDirMeta
+from kimi_cli.session import Session
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.globals import AgentGlobals, BuiltinSystemPromptArgs
@@ -78,7 +78,7 @@ def session(temp_work_dir: Path, temp_share_dir: Path) -> Session:
     """Create a Session instance."""
     return Session(
         id="test",
-        work_dir=WorkDirMeta(path=str(temp_work_dir)),
+        work_dir=temp_work_dir,
         history_file=temp_share_dir / "history.jsonl",
     )
 

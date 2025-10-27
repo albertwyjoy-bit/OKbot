@@ -10,7 +10,7 @@ from pydantic import SecretStr
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.config import Config, LLMModel, LLMProvider
 from kimi_cli.llm import augment_provider_with_env_vars, create_llm
-from kimi_cli.metadata import Session
+from kimi_cli.session import Session
 from kimi_cli.soul.agent import load_agent
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.globals import AgentGlobals
@@ -111,7 +111,7 @@ async def kimi_run(
                 soul,
                 input_format or "text",
                 output_format or "text",
-                context.file_backend,
+                session.history_file,
             )
             return await app.run(command)
         elif ui == "acp":

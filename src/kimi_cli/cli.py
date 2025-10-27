@@ -11,7 +11,7 @@ from kimi_cli import UIMode, kimi_run
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.config import ConfigError, load_config
 from kimi_cli.constant import VERSION
-from kimi_cli.metadata import continue_session, new_session
+from kimi_cli.session import Session
 from kimi_cli.share import get_share_dir
 from kimi_cli.ui.print import InputFormat, OutputFormat
 from kimi_cli.utils.logging import logger
@@ -171,14 +171,14 @@ def kimi(
     work_dir = work_dir.absolute()
 
     if continue_:
-        session = continue_session(work_dir)
+        session = Session.continue_(work_dir)
         if session is None:
             raise click.BadOptionUsage(
                 "--continue", "No previous session found for the working directory"
             )
         echo(f"✓ Continuing previous session: {session.id}")
     else:
-        session = new_session(work_dir)
+        session = Session.create(work_dir)
         echo(f"✓ Created new session: {session.id}")
     echo(f"✓ Session history file: {session.history_file}")
 
