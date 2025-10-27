@@ -9,8 +9,8 @@ from kimi_cli.agentspec import ResolvedAgentSpec, SubagentSpec
 from kimi_cli.soul import MaxStepsReached, get_wire_or_none, run_soul
 from kimi_cli.soul.agent import Agent, load_agent
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.globals import AgentGlobals
 from kimi_cli.soul.kimisoul import KimiSoul
+from kimi_cli.soul.runtime import Runtime
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.message import message_extract_text
 from kimi_cli.utils.path import next_available_rotation
@@ -49,7 +49,7 @@ class Task(CallableTool2[Params]):
     name: str = "Task"
     params: type[Params] = Params
 
-    def __init__(self, agent_spec: ResolvedAgentSpec, agent_globals: AgentGlobals, **kwargs):
+    def __init__(self, agent_spec: ResolvedAgentSpec, runtime: Runtime, **kwargs):
         super().__init__(
             description=load_desc(
                 Path(__file__).parent / "task.md",
@@ -63,8 +63,8 @@ class Task(CallableTool2[Params]):
             **kwargs,
         )
 
-        self._agent_globals = agent_globals
-        self._session = agent_globals.session
+        self._runtime = runtime
+        self._session = runtime.session
         self._subagents: dict[str, Agent] = {}
 
         try:
@@ -77,7 +77,7 @@ class Task(CallableTool2[Params]):
     async def _load_subagents(self, subagent_specs: dict[str, SubagentSpec]) -> None:
         """Load all subagents specified in the agent spec."""
         for name, spec in subagent_specs.items():
-            agent = await load_agent(spec.path, self._agent_globals, mcp_configs=[])
+            agent = await load_agent(spec.path, self._runtime, mcp_configs=[])
             self._subagents[name] = agent
 
     async def _get_subagent_history_file(self) -> Path:
@@ -131,9 +131,9 @@ class Task(CallableTool2[Params]):
         context = Context(file_backend=subagent_history_file)
         soul = KimiSoul(
             agent,
-            agent_globals=self._agent_globals,
+            runtime=self._runtime,
             context=context,
-            loop_control=self._agent_globals.config.loop_control,
+            loop_control=self._runtime.config.loop_control,
         )
 
         try:

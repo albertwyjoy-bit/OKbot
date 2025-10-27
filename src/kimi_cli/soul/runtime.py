@@ -58,7 +58,7 @@ def _list_work_dir(work_dir: Path) -> str:
     return ls.stdout.strip()
 
 
-class AgentGlobals(NamedTuple):
+class Runtime(NamedTuple):
     """Agent globals."""
 
     config: Config
@@ -74,12 +74,12 @@ class AgentGlobals(NamedTuple):
         llm: LLM | None,
         session: Session,
         yolo: bool,
-    ) -> "AgentGlobals":
+    ) -> "Runtime":
         # FIXME: do these asynchronously
         ls_output = _list_work_dir(session.work_dir)
         agents_md = load_agents_md(session.work_dir) or ""
 
-        return AgentGlobals(
+        return Runtime(
             config=config,
             llm=llm,
             session=session,

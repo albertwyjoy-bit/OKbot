@@ -14,7 +14,7 @@ from kimi_cli.llm import LLM
 from kimi_cli.session import Session
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
-from kimi_cli.soul.globals import AgentGlobals, BuiltinSystemPromptArgs
+from kimi_cli.soul.runtime import BuiltinSystemPromptArgs, Runtime
 from kimi_cli.tools.bash import Bash
 from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
@@ -90,16 +90,16 @@ def approval() -> Approval:
 
 
 @pytest.fixture
-def agent_globals(
+def runtime(
     config: Config,
     llm: LLM,
     builtin_args: BuiltinSystemPromptArgs,
     denwa_renji: DenwaRenji,
     session: Session,
     approval: Approval,
-) -> AgentGlobals:
-    """Create a AgentGlobals instance."""
-    return AgentGlobals(
+) -> Runtime:
+    """Create a Runtime instance."""
+    return Runtime(
         config=config,
         llm=llm,
         builtin_args=builtin_args,
@@ -132,9 +132,9 @@ def tool_call_context(tool_name: str) -> Generator[None]:
 
 
 @pytest.fixture
-def task_tool(agent_spec: ResolvedAgentSpec, agent_globals: AgentGlobals) -> Task:
+def task_tool(agent_spec: ResolvedAgentSpec, runtime: Runtime) -> Task:
     """Create a Task tool instance."""
-    return Task(agent_spec, agent_globals)
+    return Task(agent_spec, runtime)
 
 
 @pytest.fixture

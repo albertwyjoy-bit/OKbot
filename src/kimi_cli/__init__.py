@@ -13,8 +13,8 @@ from kimi_cli.llm import augment_provider_with_env_vars, create_llm
 from kimi_cli.session import Session
 from kimi_cli.soul.agent import load_agent
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.globals import AgentGlobals
 from kimi_cli.soul.kimisoul import KimiSoul
+from kimi_cli.soul.runtime import Runtime
 from kimi_cli.ui.acp import ACPServer
 from kimi_cli.ui.print import InputFormat, OutputFormat, PrintApp
 from kimi_cli.ui.shell import ShellApp
@@ -69,9 +69,9 @@ async def kimi_run(
         llm = create_llm(provider, model, stream=stream, session_id=session.id)
 
     yolo = yolo or (ui == "print")  # print mode implies yolo
-    agent_globals = await AgentGlobals.create(config, llm, session, yolo)
+    runtime = await Runtime.create(config, llm, session, yolo)
     try:
-        agent = await load_agent(agent_file, agent_globals, mcp_configs=mcp_configs or [])
+        agent = await load_agent(agent_file, runtime, mcp_configs=mcp_configs or [])
     except ValueError as e:
         raise click.BadParameter(f"Failed to load agent: {e}") from e
 
@@ -85,7 +85,7 @@ async def kimi_run(
 
     soul = KimiSoul(
         agent,
-        agent_globals,
+        runtime,
         context=context,
         loop_control=config.loop_control,
     )
