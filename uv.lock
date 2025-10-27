@@ -837,7 +837,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-client-protocol", specifier = ">=0.4.9" },
+    { name = "agent-client-protocol", specifier = ">=0.4.9,<0.5.0" },
     { name = "aiofiles", specifier = ">=25.1.0" },
     { name = "aiohttp", specifier = ">=3.13.1" },
     { name = "click", specifier = ">=8.3.0" },
