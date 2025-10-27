@@ -4,7 +4,6 @@ import warnings
 from pathlib import Path
 from typing import Any, Literal
 
-import click
 from pydantic import SecretStr
 
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
@@ -74,15 +73,7 @@ async def kimi_run(
 
     yolo = yolo or (ui == "print")  # print mode implies yolo
     runtime = await Runtime.create(config, llm, session, yolo)
-    try:
-        agent = await load_agent(agent_file, runtime, mcp_configs=mcp_configs or [])
-    except ValueError as e:
-        raise click.BadParameter(f"Failed to load agent: {e}") from e
-
-    if command is not None:
-        command = command.strip()
-        if not command:
-            raise click.BadParameter("Command cannot be empty")
+    agent = await load_agent(agent_file, runtime, mcp_configs=mcp_configs or [])
 
     context = Context(session.history_file)
     await context.restore()
@@ -98,32 +89,31 @@ async def kimi_run(
     os.chdir(session.work_dir)
 
     try:
-        if ui == "shell":
-            app = ShellApp(
-                soul,
-                welcome_info={
-                    "Directory": str(session.work_dir),
-                    "Session": session.id,
-                },
-            )
-            # to ignore possible warnings from dateparser
-            warnings.filterwarnings("ignore", category=DeprecationWarning)
-            with contextlib.redirect_stderr(StreamToLogger()):
+        match ui:
+            case "shell":
+                app = ShellApp(
+                    soul,
+                    welcome_info={
+                        "Directory": str(session.work_dir),
+                        "Session": session.id,
+                    },
+                )
+                # to ignore possible warnings from dateparser
+                warnings.filterwarnings("ignore", category=DeprecationWarning)
+                with contextlib.redirect_stderr(StreamToLogger()):
+                    return await app.run(command)
+            case "print":
+                app = PrintApp(
+                    soul,
+                    input_format or "text",
+                    output_format or "text",
+                    session.history_file,
+                )
                 return await app.run(command)
-        elif ui == "print":
-            app = PrintApp(
-                soul,
-                input_format or "text",
-                output_format or "text",
-                session.history_file,
-            )
-            return await app.run(command)
-        elif ui == "acp":
-            if command is not None:
-                logger.warning("ACP server ignores command argument")
-            app = ACPServer(soul)
-            return await app.run()
-        else:
-            raise click.BadParameter(f"Invalid UI mode: {ui}")
+            case "acp":
+                if command is not None:
+                    logger.warning("ACP server ignores command argument")
+                app = ACPServer(soul)
+                return await app.run()
     finally:
         os.chdir(original_cwd)

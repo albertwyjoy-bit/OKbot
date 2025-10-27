@@ -181,6 +181,11 @@ def kimi(
         echo(f"✓ Created new session: {session.id}")
     echo(f"✓ Session history file: {session.history_file}")
 
+    if command is not None:
+        command = command.strip()
+        if not command:
+            raise click.BadOptionUsage("--command", "Command cannot be empty")
+
     if input_format is not None and ui != "print":
         raise click.BadOptionUsage(
             "--input-format",
