@@ -169,7 +169,6 @@ def kimi(
     )
 
     work_dir = work_dir.absolute()
-
     if continue_:
         session = Session.continue_(work_dir)
         if session is None:
@@ -194,7 +193,7 @@ def kimi(
         )
 
     try:
-        mcp_configs = [json.loads(conf.read_text()) for conf in mcp_config_file]
+        mcp_configs = [json.loads(conf.read_text(encoding="utf-8")) for conf in mcp_config_file]
     except json.JSONDecodeError as e:
         raise click.BadOptionUsage("--mcp-config-file", f"Invalid JSON: {e}") from e
 
@@ -215,7 +214,6 @@ def kimi(
                 kimi_run(
                     config=config,
                     model_name=model_name,
-                    work_dir=work_dir,
                     session=session,
                     command=command,
                     agent_file=agent_file,

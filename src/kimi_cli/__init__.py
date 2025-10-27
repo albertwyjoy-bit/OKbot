@@ -27,7 +27,6 @@ async def kimi_run(
     *,
     config: Config,
     model_name: str | None,
-    work_dir: Path,
     session: Session,
     command: str | None = None,
     agent_file: Path = DEFAULT_AGENT_FILE,
@@ -37,7 +36,12 @@ async def kimi_run(
     mcp_configs: list[dict[str, Any]] | None = None,
     yolo: bool = False,
 ) -> bool:
-    """Run Kimi CLI."""
+    """
+    Run Kimi CLI.
+
+    Returns:
+        bool: True if the run succeeded, False otherwise.
+    """
     model: LLMModel | None = None
     provider: LLMProvider | None = None
 
@@ -91,14 +95,14 @@ async def kimi_run(
     )
 
     original_cwd = Path.cwd()
-    os.chdir(work_dir)
+    os.chdir(session.work_dir)
 
     try:
         if ui == "shell":
             app = ShellApp(
                 soul,
                 welcome_info={
-                    "Directory": str(work_dir),
+                    "Directory": str(session.work_dir),
                     "Session": session.id,
                 },
             )
