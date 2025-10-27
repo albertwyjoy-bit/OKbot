@@ -36,6 +36,7 @@ async def load_agent(
     Load agent from specification file.
 
     Raises:
+        FileNotFoundError: If the agent spec file does not exist.
         ValueError: If the agent spec is not valid.
     """
     logger.info("Loading agent: {agent_file}", agent_file=agent_file)
