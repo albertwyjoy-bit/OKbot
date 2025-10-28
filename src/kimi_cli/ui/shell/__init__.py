@@ -1,5 +1,4 @@
 import asyncio
-import signal
 from collections.abc import Awaitable, Coroutine
 from typing import Any
 
@@ -16,6 +15,7 @@ from kimi_cli.ui.shell.metacmd import get_meta_command
 from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode, toast
 from kimi_cli.ui.shell.update import LATEST_VERSION_FILE, UpdateResult, do_update, semver_tuple
 from kimi_cli.ui.shell.visualize import visualize
+from kimi_cli.ui.signals import install_sigint_handler
 from kimi_cli.utils.logging import logger
 
 
@@ -79,24 +79,26 @@ class ShellApp:
             return
 
         logger.info("Running shell command: {cmd}", cmd=command)
+
+        proc: asyncio.subprocess.Process | None = None
+
+        def _handler():
+            logger.debug("SIGINT received.")
+            if proc:
+                proc.terminate()
+
         loop = asyncio.get_running_loop()
+        remove_sigint = install_sigint_handler(loop, _handler)
         try:
             # TODO: For the sake of simplicity, we now use `create_subprocess_shell`.
             # Later we should consider making this behave like a real shell.
             proc = await asyncio.create_subprocess_shell(command)
-
-            def _handler():
-                logger.debug("SIGINT received.")
-                proc.terminate()
-
-            loop.add_signal_handler(signal.SIGINT, _handler)
-
             await proc.wait()
         except Exception as e:
             logger.exception("Failed to run shell command:")
             console.print(f"[red]Failed to run shell command: {e}[/red]")
         finally:
-            loop.remove_signal_handler(signal.SIGINT)
+            remove_sigint()
 
     async def _run_meta_command(self, command_str: str):
         from kimi_cli.cli import Reload
@@ -151,7 +153,7 @@ class ShellApp:
             cancel_event.set()
 
         loop = asyncio.get_running_loop()
-        loop.add_signal_handler(signal.SIGINT, _handler)
+        remove_sigint = install_sigint_handler(loop, _handler)
 
         try:
             # Use lambda to pass cancel_event via closure
@@ -188,7 +190,7 @@ class ShellApp:
             console.print(f"[red]Unknown error: {e}[/red]")
             raise  # re-raise unknown error
         finally:
-            loop.remove_signal_handler(signal.SIGINT)
+            remove_sigint()
         return False
 
     async def _auto_update(self) -> None:

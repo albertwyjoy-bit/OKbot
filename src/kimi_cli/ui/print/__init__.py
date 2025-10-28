@@ -1,6 +1,5 @@
 import asyncio
 import json
-import signal
 import sys
 from functools import partial
 from pathlib import Path
@@ -11,6 +10,7 @@ from kosong.base.message import Message
 from kosong.chat_provider import ChatProviderError
 
 from kimi_cli.soul import LLMNotSet, MaxStepsReached, RunCancelled, Soul, run_soul
+from kimi_cli.ui.signals import install_sigint_handler
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import message_extract_text
 from kimi_cli.wire import WireUISide
@@ -51,7 +51,7 @@ class PrintApp:
             cancel_event.set()
 
         loop = asyncio.get_running_loop()
-        loop.add_signal_handler(signal.SIGINT, _handler)
+        remove_sigint = install_sigint_handler(loop, _handler)
 
         if command is None and not sys.stdin.isatty() and self.input_format == "text":
             command = sys.stdin.read().strip()
@@ -98,7 +98,7 @@ class PrintApp:
             print(f"Unknown error: {e}")
             raise
         finally:
-            loop.remove_signal_handler(signal.SIGINT)
+            remove_sigint()
         return False
 
     def _read_next_command(self) -> str | None:
