@@ -68,7 +68,8 @@ class Task(CallableTool2[Params]):
         self._subagents: dict[str, Agent] = {}
 
         try:
-            self._load_task = asyncio.create_task(self._load_subagents(agent_spec.subagents))
+            loop = asyncio.get_running_loop()
+            self._load_task = loop.create_task(self._load_subagents(agent_spec.subagents))
         except RuntimeError:
             # In case there's no running event loop, e.g., during synchronous tests
             self._load_task = None
