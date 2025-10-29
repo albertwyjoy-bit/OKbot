@@ -17,8 +17,8 @@ from kimi_cli.ui.shell.metacmd import get_meta_command
 from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode, ensure_new_line, toast
 from kimi_cli.ui.shell.update import LATEST_VERSION_FILE, UpdateResult, do_update, semver_tuple
 from kimi_cli.ui.shell.visualize import visualize
-from kimi_cli.ui.signals import install_sigint_handler
 from kimi_cli.utils.logging import logger
+from kimi_cli.utils.signals import install_sigint_handler
 
 
 class ShellApp:
