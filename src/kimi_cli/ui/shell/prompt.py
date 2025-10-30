@@ -41,6 +41,8 @@ from kimi_cli.ui.shell.metacmd import get_meta_commands
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.string import random_string
 
+PROMPT_SYMBOL = "✨"
+
 
 class MetaCommandCompleter(Completer):
     """A completer that:
@@ -457,7 +459,7 @@ class CustomPromptSession:
 
         self._session = PromptSession(
             message=self._render_message,
-            prompt_continuation=FormattedText([("fg:#4d4d4d", "... ")]),
+            # prompt_continuation=FormattedText([("fg:#4d4d4d", "... ")]),
             completer=self._agent_mode_completer,
             complete_while_typing=True,
             key_bindings=_kb,
@@ -470,7 +472,7 @@ class CustomPromptSession:
         self._current_toast_duration: float = 0.0
 
     def _render_message(self) -> FormattedText:
-        symbol = "✨" if self._mode == PromptMode.AGENT else "$"
+        symbol = PROMPT_SYMBOL if self._mode == PromptMode.AGENT else "$"
         return FormattedText([("bold", f"{getpass.getuser()}{symbol} ")])
 
     def _apply_mode(self, event: KeyPressEvent | None = None) -> None:
