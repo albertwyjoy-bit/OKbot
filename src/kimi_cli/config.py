@@ -18,7 +18,7 @@ class LLMProvider(BaseModel):
     """API base URL"""
     api_key: SecretStr
     """API key"""
-    custom_headers: dict[str, str] = Field(default_factory=dict)
+    custom_headers: dict[str, str] | None = None
     """Custom headers to include in API requests"""
 
     @field_serializer("api_key", when_used="json")
@@ -53,7 +53,7 @@ class MoonshotSearchConfig(BaseModel):
     """Base URL for Moonshot Search service."""
     api_key: SecretStr
     """API key for Moonshot Search service."""
-    custom_headers: dict[str, str] = Field(default_factory=dict)
+    custom_headers: dict[str, str] | None = None
     """Custom headers to include in API requests."""
 
     @field_serializer("api_key", when_used="json")
