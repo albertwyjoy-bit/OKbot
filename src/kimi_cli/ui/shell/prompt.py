@@ -19,6 +19,7 @@ from kosong.base.message import ContentPart, ImageURLPart, TextPart
 from PIL import Image, ImageGrab
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application.current import get_app_or_none
+from prompt_toolkit.clipboard.pyperclip import PyperclipClipboard
 from prompt_toolkit.completion import (
     Completer,
     Completion,
@@ -455,7 +456,8 @@ class CustomPromptSession:
         def _paste(event: KeyPressEvent) -> None:
             if self._try_paste_image(event):
                 return
-            event.current_buffer.paste_clipboard_data(event.app.clipboard.get_data())
+            clipboard_data = event.app.clipboard.get_data()
+            event.current_buffer.paste_clipboard_data(clipboard_data)
 
         self._session = PromptSession(
             message=self._render_message,
@@ -463,6 +465,7 @@ class CustomPromptSession:
             completer=self._agent_mode_completer,
             complete_while_typing=True,
             key_bindings=_kb,
+            clipboard=PyperclipClipboard(),
             history=history,
             bottom_toolbar=self._render_bottom_toolbar,
         )
