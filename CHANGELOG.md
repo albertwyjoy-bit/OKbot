@@ -9,6 +9,16 @@ Internal builds may append content to the Unreleased section.
 Only write entries that are worth mentioning to users.
 -->
 
+## [0.44] - 2025-10-30
+
+### Changed
+
+- Improve startup time
+
+### Fixed
+
+- Fix potential invalid bytes in user input
+
 ## [0.43] - 2025-10-30
 
 ### Added
