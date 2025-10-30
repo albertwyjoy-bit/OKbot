@@ -844,7 +844,7 @@ requires-dist = [
     { name = "click", specifier = "==8.3.0" },
     { name = "fastmcp", specifier = "==2.12.5" },
     { name = "httpx", extras = ["socks"], specifier = "==0.28.1" },
-    { name = "kosong", specifier = "==0.16.0" },
+    { name = "kosong", specifier = "==0.16.1" },
     { name = "loguru", specifier = "==0.7.3" },
     { name = "patch-ng", specifier = "==1.19.0" },
     { name = "pillow", specifier = "==12.0.0" },
@@ -870,7 +870,7 @@ dev = [
 
 [[package]]
 name = "kosong"
-version = "0.16.0"
+version = "0.16.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dotenv" },
@@ -878,9 +878,9 @@ dependencies = [
     { name = "openai" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b7/f5/96f04e5e464091d0bf079b872299f368c100fcf67fdbee7e619be8612adb/kosong-0.16.0.tar.gz", hash = "sha256:b88c8e7a2be6f2a66e813be68d7db41dc9c3bc2499a3bac428f69cf4c3425f7f", size = 15599, upload-time = "2025-10-28T13:02:36.174Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/01/b304165febf77506b488032ff6e2b8ad68fe95f677cc131df56ada3d5562/kosong-0.16.1.tar.gz", hash = "sha256:a0ab85024b7ea0bc79f3db583eaafb6cf3d552e1059d9b75a60d8894a9275b2b", size = 15631, upload-time = "2025-10-30T07:10:47.641Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/31/db/f5e4bf1ab775943c2d99b1c66544e7daaa33fc3c9a1329bbc79eb7d31fc8/kosong-0.16.0-py3-none-any.whl", hash = "sha256:1161747135a20bdd394248082fcb111c1cf1e25172c4d0f39adc83c2b9687e5b", size = 24728, upload-time = "2025-10-28T13:02:35.23Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/9e/cb31b21411b838638db2f9ebfeec5a929112fa0f0326cb668ef1f826ce26/kosong-0.16.1-py3-none-any.whl", hash = "sha256:2e90b4d93593dd3ac2d9c0be4c1c4563d479a8a033373fce18df8360f2480526", size = 24742, upload-time = "2025-10-30T07:10:46.375Z" },
 ]
 
 [[package]]
