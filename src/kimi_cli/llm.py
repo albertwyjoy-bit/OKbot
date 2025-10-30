@@ -7,13 +7,23 @@ from kosong.chat_provider.kimi import Kimi
 from kosong.chat_provider.openai_legacy import OpenAILegacy
 from pydantic import SecretStr
 
-from kimi_cli.config import LLMModel, LLMProvider
+from kimi_cli.config import LLMModel, LLMModelCapability, LLMProvider
 from kimi_cli.constant import USER_AGENT
 
 
 class LLM(NamedTuple):
     chat_provider: ChatProvider
     max_context_size: int
+    capabilities: set[LLMModelCapability]
+    # TODO: these additional fields should be moved to ChatProvider
+
+    @property
+    def model_name(self) -> str:
+        return self.chat_provider.model_name
+
+    @property
+    def supports_image_in(self) -> bool:
+        return "image_in" in self.capabilities
 
 
 def augment_provider_with_env_vars(provider: LLMProvider, model: LLMModel) -> dict[str, str]:
@@ -88,4 +98,8 @@ def create_llm(
                 ),
             )
 
-    return LLM(chat_provider=chat_provider, max_context_size=model.max_context_size)
+    return LLM(
+        chat_provider=chat_provider,
+        max_context_size=model.max_context_size,
+        capabilities=model.capabilities or set(),
+    )

@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from kimi_cli.soul import LLMNotSet, MaxStepsReached, RunCancelled, Soul, run_soul
+from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, Soul, run_soul
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.metacmd import get_meta_command
@@ -176,6 +176,13 @@ class ShellApp:
         except LLMNotSet:
             logger.error("LLM not set")
             console.print("[red]LLM not set, send /setup to configure[/red]")
+        except LLMNotSupported as e:
+            logger.error(
+                "LLM model '{model_name}' does not support required capabilities: {capabilities}",
+                model_name=e.llm.model_name,
+                capabilities=", ".join(e.capabilities),
+            )
+            console.print(f"[red]{e}[/red]")
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
             if isinstance(e, APIStatusError) and e.status_code == 401:

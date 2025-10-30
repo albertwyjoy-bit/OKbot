@@ -26,6 +26,9 @@ class LLMProvider(BaseModel):
         return v.get_secret_value()
 
 
+LLMModelCapability = Literal["image_in"]
+
+
 class LLMModel(BaseModel):
     """LLM model configuration."""
 
@@ -35,6 +38,8 @@ class LLMModel(BaseModel):
     """Model name"""
     max_context_size: int
     """Maximum context size (unit: tokens)"""
+    capabilities: set[LLMModelCapability] | None = None
+    """Model capabilities"""
 
 
 class LoopControl(BaseModel):
