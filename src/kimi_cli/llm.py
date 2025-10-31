@@ -53,7 +53,7 @@ def augment_provider_with_env_vars(provider: LLMProvider, model: LLMModel) -> di
                     if cap in get_args(LLMModelCapability)
                 )
                 applied["KIMI_MODEL_CAPABILITIES"] = capabilities
-        case "openai_legacy":
+        case "openai_legacy" | "openai_responses":
             if base_url := os.getenv("OPENAI_BASE_URL"):
                 provider.base_url = base_url
             if api_key := os.getenv("OPENAI_API_KEY"):
@@ -91,6 +91,15 @@ def create_llm(
             from kosong.chat_provider.openai_legacy import OpenAILegacy
 
             chat_provider = OpenAILegacy(
+                model=model.model,
+                base_url=provider.base_url,
+                api_key=provider.api_key.get_secret_value(),
+                stream=stream,
+            )
+        case "openai_responses":
+            from kosong.chat_provider.openai_responses import OpenAIResponses
+
+            chat_provider = OpenAIResponses(
                 model=model.model,
                 base_url=provider.base_url,
                 api_key=provider.api_key.get_secret_value(),

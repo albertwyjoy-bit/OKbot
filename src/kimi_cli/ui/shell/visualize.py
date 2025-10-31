@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
 
-from kosong.base.message import ContentPart, TextPart, ToolCall, ToolCallPart
+from kosong.base.message import ContentPart, TextPart, ThinkPart, ToolCall, ToolCallPart
 from kosong.tooling import ToolResult
 
 from kimi_cli.soul import StatusSnapshot
@@ -80,7 +80,9 @@ async def visualize(
                 while True:
                     match msg:
                         case TextPart(text=text):
-                            step.append_text(text)
+                            step.append_text(text, mode="text")
+                        case ThinkPart(think=think):
+                            step.append_text(think, mode="think")
                         case ContentPart():
                             # TODO: support more content parts
                             step.append_text(f"[{msg.__class__.__name__}]")
