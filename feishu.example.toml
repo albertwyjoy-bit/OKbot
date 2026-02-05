@@ -1,0 +1,37 @@
+# OKbot 飞书配置文件示例
+# 复制此文件到 ~/.kimi/feishu.toml 并填入你的实际配置
+
+# 服务器配置
+host = "127.0.0.1"
+port = 18789
+default_account = "bot"
+
+# 工作目录 (可选，会话默认工作目录)
+# work_dir = "/path/to/workdir"
+
+# 账号配置
+[accounts.bot]
+# 飞书应用凭证
+app_id = "cli_xxxxxxxx"
+app_secret = "xxxxxxxx"
+
+# 加密密钥 (可选)
+# encrypt_key = ""
+
+# 验证令牌 (可选)
+# verification_token = ""
+
+# 访问控制 (可选)
+# allowed_users = ["user_open_id_1", "user_open_id_2"]
+# allowed_chats = ["chat_id_1", "chat_id_2"]
+
+# 行为设置
+auto_approve = false
+show_tool_calls = true
+show_thinking = true
+
+# 更多账号示例
+# [accounts.another_bot]
+# app_id = "cli_yyyyyyyy"
+# app_secret = "yyyyyyyy"
+# auto_approve = true

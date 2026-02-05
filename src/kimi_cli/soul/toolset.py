@@ -362,8 +362,11 @@ class MCPTool[T: ClientTransport](CallableTool):
         runtime: Runtime,
         **kwargs: Any,
     ):
+        # Use server_name__tool_name format to avoid conflicts between different MCP servers
+        # Note: Tool names must start with a letter and can only contain letters, numbers, underscores, and dashes
+        tool_name = f"{server_name}__{mcp_tool.name}"
         super().__init__(
-            name=mcp_tool.name,
+            name=tool_name,
             description=(
                 f"This is an MCP (Model Context Protocol) tool from MCP server `{server_name}`.\n\n"
                 f"{mcp_tool.description or 'No description provided.'}"
@@ -371,14 +374,15 @@ class MCPTool[T: ClientTransport](CallableTool):
             parameters=mcp_tool.inputSchema,
             **kwargs,
         )
+        self._server_name = server_name
         self._mcp_tool = mcp_tool
         self._client = client
         self._runtime = runtime
         self._timeout = timedelta(milliseconds=runtime.config.mcp.client.tool_call_timeout_ms)
-        self._action_name = f"mcp:{mcp_tool.name}"
+        self._action_name = f"mcp:{server_name}__{mcp_tool.name}"
 
     async def __call__(self, *args: Any, **kwargs: Any) -> ToolReturnValue:
-        description = f"Call MCP tool `{self._mcp_tool.name}`."
+        description = f"Call MCP tool `{self._mcp_tool.name}` from server `{self._server_name}`."
         if not await self._runtime.approval.request(self.name, self._action_name, description):
             return ToolRejectedError()
 
