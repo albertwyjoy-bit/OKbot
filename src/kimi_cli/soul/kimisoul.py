@@ -179,6 +179,31 @@ class KimiSoul:
     def available_slash_commands(self) -> list[SlashCommand[Any]]:
         return self._slash_commands
 
+    async def reload_skills(self) -> tuple[int, str]:
+        """Reload skills from disk and update slash commands and system prompt.
+        
+        Returns:
+            Tuple of (number of skills loaded, formatted skills string)
+        """
+        # Reload skills in runtime
+        count, skills_formatted = await self._runtime.reload_skills()
+        
+        # Rebuild slash commands with new skills
+        self._slash_commands = self._build_slash_commands()
+        self._slash_command_map = self._index_slash_commands(self._slash_commands)
+        
+        # Refresh system prompt with new skills info
+        try:
+            self._agent.refresh_system_prompt()
+            logger.info("System prompt refreshed with new skills")
+        except Exception as e:
+            logger.warning("Failed to refresh system prompt: {e}")
+        
+        logger.info("KimiSoul reloaded {count} skills, {slash_count} slash commands", 
+                   count=count, slash_count=len(self._slash_commands))
+        
+        return count, skills_formatted
+
     async def run(self, user_input: str | list[ContentPart]):
         # Refresh OAuth tokens on each turn to avoid idle-time expirations.
         await self._runtime.oauth.ensure_fresh(self._runtime)

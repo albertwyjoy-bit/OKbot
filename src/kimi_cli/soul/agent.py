@@ -74,6 +74,53 @@ class Runtime:
     labor_market: LaborMarket
     environment: Environment
     skills: dict[str, Skill]
+    _skills_dir_override: KaosPath | None = None  # Store for reload
+
+    async def reload_skills(self) -> tuple[int, str]:
+        """Reload skills from disk and update builtin_args.
+        
+        Returns:
+            Tuple of (number of skills loaded, formatted skills string)
+        """
+        from kimi_cli.skill import resolve_skills_roots, discover_skills_from_roots, index_skills
+        
+        # Discover skills again
+        skills_roots = await resolve_skills_roots(
+            self.session.work_dir, 
+            skills_dir_override=self._skills_dir_override
+        )
+        skills = await discover_skills_from_roots(skills_roots)
+        skills_by_name = index_skills(skills)
+        
+        # Update skills dict
+        self.skills.clear()
+        self.skills.update(skills_by_name)
+        
+        # Format skills for system prompt
+        skills_formatted = "\n".join(
+            (
+                f"- {skill.name}\n"
+                f"  - Path: {skill.skill_md_file}\n"
+                f"  - Description: {skill.description}"
+            )
+            for skill in skills
+        ) or "No skills found."
+        
+        # Update builtin_args - create new instance since dataclass is frozen
+        object.__setattr__(
+            self, 
+            'builtin_args', 
+            BuiltinSystemPromptArgs(
+                KIMI_NOW=datetime.now().astimezone().isoformat(),
+                KIMI_WORK_DIR=self.builtin_args.KIMI_WORK_DIR,
+                KIMI_WORK_DIR_LS=self.builtin_args.KIMI_WORK_DIR_LS,
+                KIMI_AGENTS_MD=self.builtin_args.KIMI_AGENTS_MD,
+                KIMI_SKILLS=skills_formatted,
+            )
+        )
+        
+        logger.info("Reloaded {count} skill(s)", count=len(skills))
+        return len(skills), skills_formatted
 
     @staticmethod
     async def create(
@@ -121,6 +168,7 @@ class Runtime:
             labor_market=LaborMarket(),
             environment=environment,
             skills=skills_by_name,
+            _skills_dir_override=skills_dir,
         )
 
     def copy_for_fixed_subagent(self) -> Runtime:
@@ -136,6 +184,7 @@ class Runtime:
             labor_market=LaborMarket(),  # fixed subagent has its own LaborMarket
             environment=self.environment,
             skills=self.skills,
+            _skills_dir_override=self._skills_dir_override,
         )
 
     def copy_for_dynamic_subagent(self) -> Runtime:
@@ -151,6 +200,7 @@ class Runtime:
             labor_market=self.labor_market,  # dynamic subagent shares LaborMarket with main agent
             environment=self.environment,
             skills=self.skills,
+            _skills_dir_override=self._skills_dir_override,
         )
 
 
@@ -163,6 +213,27 @@ class Agent:
     toolset: Toolset
     runtime: Runtime
     """Each agent has its own runtime, which should be derived from its main agent."""
+    
+    # Store for refreshing system prompt
+    _system_prompt_path: Path = None  # type: ignore
+    _system_prompt_args: dict[str, str] = None  # type: ignore
+    
+    def refresh_system_prompt(self) -> str:
+        """Reload system prompt with updated builtin_args from runtime.
+        
+        Returns:
+            The refreshed system prompt string.
+        """
+        if self._system_prompt_path is None:
+            raise ValueError("Agent was not created with system prompt path stored")
+        
+        new_prompt = _load_system_prompt(
+            self._system_prompt_path,
+            self._system_prompt_args,
+            self.runtime.builtin_args,
+        )
+        object.__setattr__(self, "system_prompt", new_prompt)
+        return new_prompt
 
 
 class LaborMarket:
@@ -263,6 +334,8 @@ async def load_agent(
         system_prompt=system_prompt,
         toolset=toolset,
         runtime=runtime,
+        _system_prompt_path=agent_spec.system_prompt_path,
+        _system_prompt_args=agent_spec.system_prompt_args,
     )
 
 

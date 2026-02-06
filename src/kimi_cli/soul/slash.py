@@ -80,3 +80,40 @@ async def yolo(soul: KimiSoul, args: str):
     else:
         soul.runtime.approval.set_yolo(True)
         wire_send(TextPart(text="You only live once! All actions will be auto-approved."))
+
+
+@registry.command(name="update-skill")
+async def update_skill(soul: KimiSoul, args: str):
+    """Reload skills from disk and update system prompt.
+    
+    Use this command after adding, removing, or modifying skills.
+    The new skills will be available immediately via /skill:name commands.
+    """
+    logger.info("Running `/update-skill`")
+    wire_send(TextPart(text="🔄 Reloading skills from disk..."))
+    
+    try:
+        count, skills_formatted = await soul.reload_skills()
+        
+        # Build summary message
+        skill_names = list(soul.runtime.skills.keys())
+        skills_list = ", ".join(f"`{name}`" for name in skill_names[:10])
+        if len(skill_names) > 10:
+            skills_list += f", and {len(skill_names) - 10} more"
+        
+        message = f"""✅ Skills reloaded successfully!
+
+**Loaded {count} skills:**
+{skills_list}
+
+**New skills are now available via:**
+• `/skill:name` - Use a specific skill
+• Direct mention in conversation
+
+The system prompt has been updated with new skill metadata."""
+        
+        wire_send(TextPart(text=message))
+        
+    except Exception as e:
+        logger.exception("Failed to reload skills")
+        wire_send(TextPart(text=f"❌ Failed to reload skills: {e}"))

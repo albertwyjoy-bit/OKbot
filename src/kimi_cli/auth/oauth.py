@@ -50,7 +50,7 @@ KIMI_CODE_OAUTH_KEY = "oauth/kimi-code"
 DEFAULT_OAUTH_HOST = "https://auth.kimi.com"
 KEYRING_SERVICE = "kimi-code"
 REFRESH_INTERVAL_SECONDS = 60
-REFRESH_THRESHOLD_SECONDS = 300
+REFRESH_THRESHOLD_SECONDS = 600  # 10 minutes before expiration
 
 
 class OAuthError(RuntimeError):
@@ -647,6 +647,14 @@ class OAuthManager:
                 if token:
                     self._tokens[oauth.key] = token
             if token and token.access_token:
+                # Log warning if token is about to expire (less than 2 minutes)
+                if token.expires_at:
+                    time_left = token.expires_at - time.time()
+                    if time_left < 120:  # Less than 2 minutes
+                        logger.warning(
+                            "OAuth token expires in {seconds:.0f}s, may cause 401 errors",
+                            seconds=time_left,
+                        )
                 return token.access_token
         return api_key.get_secret_value()
 

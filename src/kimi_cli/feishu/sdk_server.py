@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import threading
+from pathlib import Path
 from typing import Any
 
 import lark_oapi as lark
@@ -94,11 +95,15 @@ class SDKChatSession:
         # Set current chat ID for tool calls
         self.client.set_current_chat_id(self.chat_id)
         
-        # Handle /clear command first (before lock) to allow interruption
+        # Handle interruption commands first (before lock) to allow stopping running tasks
         stripped = message_text.strip()
         if stripped == "/clear":
             logger.info("[SESSION] /clear command (pre-lock)")
             await self._handle_clear()
+            return
+        elif stripped == "/stop":
+            logger.info("[SESSION] /stop command (pre-lock)")
+            await self._handle_stop()
             return
         
         async with self._lock:
@@ -115,6 +120,18 @@ class SDKChatSession:
             self._cancel_event = asyncio.Event()
         
         try:
+            # Handle session management commands (should be caught by handler, but check here as fallback)
+            normalized = ' '.join(stripped.split()).lower()
+            if normalized == "/sessions":
+                await self._send_fallback_message("请使用 `/sessions` 命令（不要在对话中）")
+                return
+            elif normalized.startswith("/continue ") or normalized.startswith("/session "):
+                await self._send_fallback_message("请使用 `/continue <id>` 命令（不要在对话中）")
+                return
+            elif normalized == "/link" or normalized == "/id":
+                await self._send_fallback_message("请使用 `/link` 或 `/id` 命令（不要在对话中）")
+                return
+            
             # Handle local commands
             if stripped == "/help":
                 logger.info("[SESSION] /help command")
@@ -156,18 +173,33 @@ class SDKChatSession:
 **本地命令：**
 • /help - 显示此帮助
 • /reset - 重置对话
+• /stop - 打断当前操作（保留上下文，类似 Ctrl+C）
 • /clear - 中断当前处理并清空上下文
 • /mcp - 显示 MCP 服务器状态
 
+**跨端接续（CLI ↔ Feishu）：**
+• /sessions - 列出电脑端 CLI 的所有 sessions
+• /continue <id> - 接续指定的 CLI session
+• /link - 查看当前关联的 session
+• /id - 查看当前 session ID（用于 CLI 接续）
+
+**打断操作：**
+当我在处理长任务时，发送 `/stop` 即可立即打断，类似 CLI 中的 Ctrl+C。
+
+**YOLO 模式：**
+• 当前为 **YOLO 模式**，工具调用自动批准（强制开启）
+
 **Soul 命令 (由KimiSoul处理)：**
 • /compact - 压缩上下文
-• /yolo - 切换自动批准模式
 • /init - 生成 AGENTS.md
+• /update-skill - 重新加载 skills
 • ... 以及其他 Soul 级别命令
 
 **不支持的命令：**
 • /model - 请使用 --model 参数启动
-• /skill - 请使用 --skills-dir 参数启动
+
+**Skills：**
+• /skill - 使用 skill（需先在 feishu.toml 中配置 skills_dir）
 
 **文件传输：**
 • 📥 发送文件给我 - 我会保存到当前目录
@@ -197,6 +229,38 @@ class SDKChatSession:
             self.chat_id,
             "🔄 对话已重置。让我们重新开始！",
         )
+    
+    async def _handle_stop(self) -> None:
+        """Handle /stop command: cancel current operation without clearing context.
+        
+        This is like Ctrl+C in CLI - it stops the current operation but preserves context.
+        """
+        # Check if there's a running operation
+        was_running = False
+        async with self._lock:
+            if self._running and self._cancel_event:
+                was_running = True
+                logger.info("[SESSION] Cancelling current operation due to /stop")
+                # Set the cancel event to stop the current operation
+                self._cancel_event.set()
+        
+        if was_running:
+            # Wait a bit for the operation to cancel
+            await asyncio.sleep(0.3)
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                self.chat_id,
+                "⏹️ 已中断当前操作。上下文已保留，可以继续对话。",
+            )
+            logger.info("[SESSION] Operation stopped, context preserved")
+        else:
+            # No running operation
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                self.chat_id,
+                "ℹ️ 当前没有正在进行的操作。",
+            )
+            logger.info("[SESSION] /stop called but no operation was running")
     
     async def _handle_clear(self) -> None:
         """Handle /clear command: cancel current operation and clear context."""
@@ -311,39 +375,74 @@ class SDKChatSession:
         self._current_thinking_buffer: list[str] = []
         self._current_text_buffer: list[str] = []
         
-        # Switch to session's work_dir for file operations
-        original_cwd = os.getcwd()
+        # Note: We no longer switch working directory here.
+        # The work_dir is managed by the soul's session and tools use absolute paths.
+        # This allows starting the server from any directory without polluting it.
         work_dir = None
-        try:
-            # Get work_dir from soul's runtime session
+        if hasattr(self.soul, '_runtime') and self.soul._runtime.session:
+            work_dir = str(self.soul._runtime.session.work_dir)
+            print(f"[_process_message] Using work_dir: {work_dir}")
+            logger.info(f"Using work_dir: {work_dir}")
+        
+        async def _run_with_retry(max_retries: int = 1):
+            """Run soul with automatic token refresh retry on 401."""
+            # Get wire_file from soul's session for persistence
+            wire_file = None
             if hasattr(self.soul, '_runtime') and self.soul._runtime.session:
-                work_dir = str(self.soul._runtime.session.work_dir)
-                if os.path.isdir(work_dir):
-                    os.chdir(work_dir)
-                    print(f"[_process_message] Switched to work_dir: {work_dir}")
-                    logger.info(f"Switched to work_dir: {work_dir}")
-        except Exception as e:
-            logger.warning(f"Failed to switch work_dir: {e}")
+                wire_file = self.soul._runtime.session.wire_file
+                logger.debug(f"[SESSION] Using wire_file: {wire_file}")
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    # Use refreshing context manager to auto-refresh OAuth token during long operations
+                    if hasattr(self.soul, '_runtime') and self.soul._runtime.oauth:
+                        async with self.soul._runtime.oauth.refreshing(self.soul._runtime):
+                            await run_soul(
+                                self.soul,
+                                message_text,
+                                self._wire_loop_text_parts,
+                                self._cancel_event,
+                                wire_file=wire_file,  # ← 传递 wire_file 实现持久化
+                            )
+                    else:
+                        await run_soul(
+                            self.soul,
+                            message_text,
+                            self._wire_loop_text_parts,
+                            self._cancel_event,
+                            wire_file=wire_file,  # ← 传递 wire_file 实现持久化
+                        )
+                    return  # Success
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    is_auth_error = (
+                        "401" in error_msg 
+                        or "invalid_authentication" in error_msg 
+                        or "API Key appears to be invalid" in error_msg
+                    )
+                    
+                    if is_auth_error and attempt < max_retries:
+                        print(f"[_process_message] OAuth token expired (attempt {attempt + 1}), refreshing...")
+                        logger.warning(f"OAuth token expired, attempting refresh (attempt {attempt + 1})")
+                        
+                        # Force token refresh
+                        if hasattr(self.soul, '_runtime') and self.soul._runtime.oauth:
+                            try:
+                                await self.soul._runtime.oauth.ensure_fresh(self.soul._runtime)
+                                print("[_process_message] Token refreshed, retrying...")
+                                logger.info("Token refreshed, retrying request")
+                                continue  # Retry
+                            except Exception as refresh_error:
+                                print(f"[_process_message] Token refresh failed: {refresh_error}")
+                                logger.error(f"Token refresh failed: {refresh_error}")
+                                raise  # Re-raise the original error
+                    
+                    raise  # Re-raise if not auth error or no retries left
         
         try:
             print("[_process_message] Starting run_soul...")
-            
-            # Use refreshing context manager to auto-refresh OAuth token during long operations
-            if hasattr(self.soul, '_runtime') and self.soul._runtime.oauth:
-                async with self.soul._runtime.oauth.refreshing(self.soul._runtime):
-                    await run_soul(
-                        self.soul,
-                        message_text,
-                        self._wire_loop_text_parts,
-                        self._cancel_event,
-                    )
-            else:
-                await run_soul(
-                    self.soul,
-                    message_text,
-                    self._wire_loop_text_parts,
-                    self._cancel_event,
-                )
+            await _run_with_retry(max_retries=1)
             print("[_process_message] run_soul completed successfully")
             
             # Flush any remaining content
@@ -377,12 +476,8 @@ class SDKChatSession:
                 user_friendly_msg,
             )
         finally:
-            # Restore original working directory
-            try:
-                os.chdir(original_cwd)
-                print(f"[_process_message] Restored cwd: {original_cwd}")
-            except Exception as e:
-                logger.warning(f"Failed to restore cwd: {e}")
+            # Cleanup is handled automatically since we don't change working directory
+            pass
     
     def _get_user_friendly_error(self, error_type: str, error_msg: str) -> str:
         """Convert technical error to user-friendly message."""
@@ -551,10 +646,8 @@ class SDKChatSession:
                         print(f"[_wire_loop] Unhandled subagent event: {type(subagent_msg).__name__}")
                 
                 elif isinstance(msg, ApprovalRequest):
-                    if self.config.auto_approve:
-                        msg.resolve("approve")
-                    else:
-                        msg.resolve("approve")
+                    # YOLO mode: auto approve all tool calls
+                    msg.resolve("approve")
                         
         except Exception as e:
             error_msg = str(e)
@@ -820,17 +913,21 @@ class SDKChatSession:
                 content = "".join(self._current_thinking_buffer).strip()
                 if content:
                     print(f"[_wire_loop_text_parts] Sending thinking: {len(content)} chars")
-                    # Split into chunks if too long
-                    max_len = 1500
-                    prefix = "💭 [思考过程]\n"
-                    for i in range(0, len(content), max_len):
-                        chunk = content[i:i+max_len]
-                        msg_id = await asyncio.to_thread(
-                            self.client.send_text_message,
-                            self.chat_id,
-                            prefix + chunk if i == 0 else chunk,
-                        )
-                        print(f"[_wire_loop_text_parts] Thinking chunk sent: {msg_id}")
+                    try:
+                        # Split into chunks if too long
+                        max_len = 1500
+                        prefix = "💭 [思考过程]\n"
+                        for i in range(0, len(content), max_len):
+                            chunk = content[i:i+max_len]
+                            msg_id = await asyncio.to_thread(
+                                self.client.send_text_message,
+                                self.chat_id,
+                                prefix + chunk if i == 0 else chunk,
+                            )
+                            print(f"[_wire_loop_text_parts] Thinking chunk sent: {msg_id}")
+                    except Exception as e:
+                        print(f"[_wire_loop_text_parts] Error sending thinking: {e}")
+                        logger.exception(f"Error sending thinking to Feishu: {e}")
                 self._current_thinking_buffer = []
         
         async def send_text():
@@ -838,17 +935,21 @@ class SDKChatSession:
                 content = "".join(self._current_text_buffer).strip()
                 if content:
                     print(f"[_wire_loop_text_parts] Sending text: {len(content)} chars")
-                    # Split into chunks if too long
-                    max_len = 1500
-                    prefix = "🤖 [回复内容]\n"
-                    for i in range(0, len(content), max_len):
-                        chunk = content[i:i+max_len]
-                        msg_id = await asyncio.to_thread(
-                            self.client.send_text_message,
-                            self.chat_id,
-                            prefix + chunk if i == 0 else f"(续){chunk}",
-                        )
-                        print(f"[_wire_loop_text_parts] Text chunk sent: {msg_id}")
+                    try:
+                        # Split into chunks if too long
+                        max_len = 1500
+                        prefix = "🤖 [回复内容]\n"
+                        for i in range(0, len(content), max_len):
+                            chunk = content[i:i+max_len]
+                            msg_id = await asyncio.to_thread(
+                                self.client.send_text_message,
+                                self.chat_id,
+                                prefix + chunk if i == 0 else f"(续){chunk}",
+                            )
+                            print(f"[_wire_loop_text_parts] Text chunk sent: {msg_id}")
+                    except Exception as e:
+                        print(f"[_wire_loop_text_parts] Error sending text: {e}")
+                        logger.exception(f"Error sending text to Feishu: {e}")
                 self._current_text_buffer = []
         
         try:
@@ -871,7 +972,9 @@ class SDKChatSession:
                         )
                         if not has_thinking:
                             total_chars = sum(len(t) for t in self._current_text_buffer)
-                            if total_chars > 1000:
+                            # Lower threshold for slash command responses (usually short)
+                            # to ensure they are sent immediately
+                            if total_chars > 100:
                                 await send_text()
                         
                 elif isinstance(msg, ThinkPart):
@@ -1113,6 +1216,18 @@ class SDKChatSession:
             return "Token 超限，请使用 /compact 压缩上下文"
         return f"{error_type}: {error_msg[:100]}"
     
+    async def _send_fallback_message(self, msg: str) -> None:
+        """Send a fallback message for commands that should be handled by SDKMessageHandler."""
+        await asyncio.to_thread(
+            self.client.send_text_message,
+            self.chat_id,
+            f"⚠️ {msg}\n\n"
+            f"如果此命令持续无效，请检查：\n"
+            f"1. 命令拼写是否正确\n"
+            f"2. 是否有多余空格\n"
+            f"3. 重新发送 `/help` 查看可用命令",
+        )
+    
     async def cancel(self) -> None:
         """Cancel the current operation."""
         if self._cancel_event:
@@ -1133,6 +1248,8 @@ class SDKMessageHandler:
         self.feishu_config = feishu_config
         self._sessions: dict[str, SDKChatSession] = {}
         self._lock = asyncio.Lock()
+        # Track linked CLI sessions: session_key -> session_id
+        self._linked_sessions: dict[str, str] = {}
     
     def _get_session_key(self, chat_id: str, user_id: str) -> str:
         """Get unique session key."""
@@ -1164,15 +1281,205 @@ class SDKMessageHandler:
             Path to working directory (guaranteed to exist)
         """
         import os
+        from pathlib import Path
+        
         if self.feishu_config and self.feishu_config.work_dir:
             work_dir = self.feishu_config.work_dir
         else:
-            # Use the directory where kimi feishu was started
+            # Use current working directory where kimi feishu was started
             work_dir = os.getcwd()
         
         # Ensure directory exists
         os.makedirs(work_dir, exist_ok=True)
         return work_dir
+    
+    def _get_work_dir_kaos(self) -> KaosPath:
+        """Get the working directory as KaosPath."""
+        import os
+        
+        if self.feishu_config and self.feishu_config.work_dir:
+            work_dir = KaosPath(self.feishu_config.work_dir)
+        else:
+            work_dir = KaosPath(os.getcwd())
+        
+        os.makedirs(str(work_dir), exist_ok=True)
+        return work_dir
+    
+    async def _list_user_sessions(self) -> list[dict]:
+        """List all available CLI sessions for the user.
+        
+        Returns:
+            List of session info dicts with id, title, updated_at, work_dir
+        """
+        from kimi_cli.metadata import load_metadata
+        from datetime import datetime
+        
+        sessions = []
+        metadata = load_metadata()
+        
+        # Get work directories from metadata
+        for wd_meta in metadata.work_dirs:
+            sessions_dir = wd_meta.sessions_dir
+            if not sessions_dir.exists():
+                continue
+            
+            # List all session directories
+            for session_dir in sessions_dir.iterdir():
+                if not session_dir.is_dir():
+                    continue
+                
+                session_id = session_dir.name
+                context_file = session_dir / "context.jsonl"
+                metadata_file = session_dir / "metadata.json"
+                
+                # Skip sessions without context
+                if not context_file.exists():
+                    continue
+                
+                # Load metadata if exists
+                title = "Untitled"
+                if metadata_file.exists():
+                    try:
+                        import json
+                        meta = json.loads(metadata_file.read_text())
+                        title = meta.get("title", "Untitled")
+                    except:
+                        pass
+                
+                # Get last modified time
+                try:
+                    updated_at = datetime.fromtimestamp(
+                        context_file.stat().st_mtime
+                    ).strftime("%Y-%m-%d %H:%M")
+                except:
+                    updated_at = "Unknown"
+                
+                # Get message count from context file
+                msg_count = 0
+                try:
+                    with open(context_file) as f:
+                        for line in f:
+                            if line.strip():
+                                msg_count += 1
+                except:
+                    pass
+                
+                sessions.append({
+                    "id": session_id,
+                    "short_id": session_id[:8],
+                    "title": title,
+                    "updated_at": updated_at,
+                    "work_dir": wd_meta.path,
+                    "message_count": msg_count,
+                })
+        
+        # Sort by updated_at descending
+        sessions.sort(key=lambda x: x["updated_at"], reverse=True)
+        return sessions
+    
+    async def _create_soul_from_session_id(self, session_id: str) -> KimiSoul | None:
+        """Create a KimiSoul from an existing CLI session ID.
+        
+        Args:
+            session_id: The CLI session ID to load
+            
+        Returns:
+            KimiSoul if successful, None if session not found
+        """
+        import os
+        from kimi_cli.llm import augment_provider_with_env_vars, create_llm
+        from kimi_cli.auth.oauth import OAuthManager
+        
+        kimi_config = load_config()
+        work_dir = self._get_work_dir_kaos()
+        
+        # Try to find the session
+        existing_session = await Session.find(work_dir, session_id)
+        
+        if existing_session is None:
+            # Try searching in all work directories
+            from kimi_cli.metadata import load_metadata
+            metadata = load_metadata()
+            for wd_meta in metadata.work_dirs:
+                existing_session = await Session.find(KaosPath(wd_meta.path), session_id)
+                if existing_session:
+                    work_dir = KaosPath(wd_meta.path)
+                    break
+        
+        if existing_session is None:
+            return None
+        
+        logger.info(f"[HANDLER] Loading existing session: {session_id}")
+        
+        # Use the existing session
+        session = existing_session
+        oauth = OAuthManager(kimi_config)
+        
+        model = None
+        provider = None
+        
+        if kimi_config.default_model and kimi_config.default_model in kimi_config.models:
+            model = kimi_config.models[kimi_config.default_model]
+            provider = kimi_config.providers[model.provider]
+        
+        if model is None:
+            from kimi_cli.config import LLMModel, LLMProvider
+            model = LLMModel(provider="", model="", max_context_size=100_000)
+            provider = LLMProvider(type="kimi", base_url="", api_key=SecretStr(""))
+        
+        augment_provider_with_env_vars(provider, model)
+        
+        llm = create_llm(
+            provider,
+            model,
+            thinking=kimi_config.default_thinking,
+            session_id=session.id,
+            oauth=oauth,
+        )
+        
+        # Determine skills_dir from feishu config
+        skills_dir = None
+        if self.feishu_config and self.feishu_config.skills_dir:
+            skills_dir = KaosPath(self.feishu_config.skills_dir)
+        
+        runtime = await Runtime.create(
+            config=kimi_config,
+            oauth=oauth,
+            llm=llm,
+            session=session,
+            yolo=True,  # YOLO mode: always auto-approve
+            skills_dir=skills_dir,
+        )
+        
+        # Load MCP configs from global mcp.json
+        mcp_configs = self._load_mcp_configs()
+        
+        agent = await load_agent(DEFAULT_AGENT_FILE, runtime, mcp_configs=mcp_configs)
+        
+        # Wait for MCP tools to be fully connected
+        if mcp_configs and hasattr(agent.toolset, 'wait_for_mcp_tools'):
+            logger.info("[HANDLER] Waiting for MCP tools to connect...")
+            try:
+                await asyncio.wait_for(
+                    agent.toolset.wait_for_mcp_tools(),
+                    timeout=30.0
+                )
+                logger.info("[HANDLER] MCP tools connected")
+            except asyncio.TimeoutError:
+                logger.warning("[HANDLER] Timeout waiting for MCP tools, continuing...")
+            except Exception as e:
+                logger.warning(f"[HANDLER] Error waiting for MCP tools: {e}")
+        
+        # Restore context from existing session
+        context = Context(session.context_file)
+        await context.restore()
+        
+        soul = KimiSoul(agent, context=context)
+        
+        # Set work_dir on client for tools to use
+        self.client.set_work_dir(str(work_dir))
+        
+        return soul
     
     async def _create_soul_for_session(self, session_key: str) -> KimiSoul:
         """Create a new KimiSoul for a chat session."""
@@ -1183,14 +1490,15 @@ class SDKMessageHandler:
         kimi_config = load_config()
         
         # Create work directory for this session
-        # Use configured work_dir if available, otherwise use directory where kimi feishu was started
+        # Use configured work_dir if available, otherwise use default workspace
         if self.feishu_config and self.feishu_config.work_dir:
             work_dir = KaosPath(self.feishu_config.work_dir)
             # Ensure the directory exists
             os.makedirs(str(work_dir), exist_ok=True)
         else:
-            # Use the directory where kimi feishu was started (not current process cwd)
+            # Use current working directory where kimi feishu was started
             work_dir = KaosPath(os.getcwd())
+            os.makedirs(str(work_dir), exist_ok=True)
         
         session = await Session.create(work_dir)
         oauth = OAuthManager(kimi_config)
@@ -1217,12 +1525,18 @@ class SDKMessageHandler:
             oauth=oauth,
         )
         
+        # Determine skills_dir from feishu config
+        skills_dir = None
+        if self.feishu_config and self.feishu_config.skills_dir:
+            skills_dir = KaosPath(self.feishu_config.skills_dir)
+        
         runtime = await Runtime.create(
             config=kimi_config,
             oauth=oauth,
             llm=llm,
             session=session,
-            yolo=self.config.auto_approve,
+            yolo=True,  # YOLO mode: always auto-approve
+            skills_dir=skills_dir,
         )
         
         # Load MCP configs from global mcp.json
@@ -1254,6 +1568,208 @@ class SDKMessageHandler:
         self.client.set_work_dir(str(work_dir))
         
         return soul
+    
+    async def _handle_sessions_command(self, chat_id: str) -> None:
+        """Handle /sessions command to list available CLI sessions."""
+        await asyncio.to_thread(
+            self.client.send_text_message,
+            chat_id,
+            "📋 正在获取您的 CLI sessions...",
+        )
+        
+        try:
+            sessions = await self._list_user_sessions()
+            
+            if not sessions:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    "📭 暂无 CLI sessions\n\n"
+                    "在电脑端使用 `kimi chat` 开始对话后，\n"
+                    "您可以在这里用 `/continue <session_id>` 接续。",
+                )
+                return
+            
+            # Format sessions list
+            lines = [f"📚 找到 {len(sessions)} 个 CLI sessions：\n"]
+            
+            for i, s in enumerate(sessions[:10], 1):  # Show top 10
+                title = s['title'] if s['title'] != 'Untitled' else '(无标题)'
+                lines.append(
+                    f"{i}. `{s['short_id']}` - {title}\n"
+                    f"   📁 {s['work_dir'][:40]}...\n"
+                    f"   🕐 {s['updated_at']} | 💬 {s['message_count']} 条消息\n"
+                )
+            
+            if len(sessions) > 10:
+                lines.append(f"\n... 还有 {len(sessions) - 10} 个 sessions")
+            
+            lines.append("\n💡 使用 `/continue <session_id>` 接续指定会话")
+            lines.append("💡 例如：`/continue abc123`")
+            
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                chat_id,
+                "\n".join(lines),
+            )
+            
+        except Exception as e:
+            logger.exception(f"[HANDLER] Failed to list sessions: {e}")
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                chat_id,
+                f"❌ 获取 sessions 失败: {str(e)[:100]}",
+            )
+    
+    async def _handle_continue_command(
+        self, 
+        chat_id: str, 
+        user_id: str, 
+        session_key: str, 
+        session_id: str
+    ) -> None:
+        """Handle /continue command to attach to an existing CLI session."""
+        await asyncio.to_thread(
+            self.client.send_text_message,
+            chat_id,
+            f"🔗 正在接续 session `{session_id[:8]}`...",
+        )
+        
+        try:
+            # Close existing session if any
+            async with self._lock:
+                existing_session = self._sessions.get(session_key)
+                if existing_session:
+                    del self._sessions[session_key]
+                    logger.info(f"[HANDLER] Closed existing session for {session_key}")
+            
+            # Try to find the full session ID (support short ID matching)
+            sessions = await self._list_user_sessions()
+            full_session_id = None
+            session_info = None
+            
+            for s in sessions:
+                if s['id'].startswith(session_id) or s['short_id'] == session_id:
+                    full_session_id = s['id']
+                    session_info = s
+                    break
+            
+            if not full_session_id:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    f"❌ 未找到 session `{session_id}`\n\n"
+                    f"使用 `/sessions` 查看可用 sessions",
+                )
+                return
+            
+            # Create soul from existing session
+            soul = await self._create_soul_from_session_id(full_session_id)
+            
+            if not soul:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    f"❌ 无法加载 session `{session_id}`\n"
+                    f"可能已被删除或损坏。",
+                )
+                return
+            
+            # Create new SDKChatSession with loaded soul
+            session = SDKChatSession(
+                chat_id=chat_id,
+                user_id=user_id,
+                client=self.client,
+                config=self.config,
+                soul=soul,
+            )
+            
+            # Store the session
+            async with self._lock:
+                self._sessions[session_key] = session
+                self._linked_sessions[session_key] = full_session_id
+            
+            # Send success message
+            title = session_info['title'] if session_info['title'] != 'Untitled' else '(无标题)'
+            msg_count = session_info['message_count']
+            
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                chat_id,
+                f"✅ 已成功接续 session！\n\n"
+                f"📝 {title}\n"
+                f"🆔 `{full_session_id[:8]}`\n"
+                f"💬 历史消息: {msg_count} 条\n"
+                f"🕐 最后更新: {session_info['updated_at']}\n\n"
+                f"现在可以继续对话了！",
+            )
+            
+            logger.info(f"[HANDLER] Successfully attached to session {full_session_id}")
+            
+        except Exception as e:
+            logger.exception(f"[HANDLER] Failed to continue session: {e}")
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                chat_id,
+                f"❌ 接续 session 失败: {str(e)[:100]}",
+            )
+    
+    async def _handle_link_command(self, chat_id: str, user_id: str, session_key: str) -> None:
+        """Handle /link command to show current linked session."""
+        linked_id = self._linked_sessions.get(session_key)
+        
+        if linked_id:
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                chat_id,
+                f"🔗 当前已关联 CLI session:\n"
+                f"🆔 `{linked_id}`\n\n"
+                f"在 CLI 中使用:\n"
+                f"`kimi --session {linked_id}`",
+            )
+        else:
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                chat_id,
+                "ℹ️ 当前未关联 CLI session\n\n"
+                "使用 `/sessions` 查看可用 sessions\n"
+                "使用 `/continue <id>` 关联并接续",
+            )
+    
+    async def _handle_id_command(self, chat_id: str, session_key: str) -> None:
+        """Handle /id command to show current session ID."""
+        async with self._lock:
+            session = self._sessions.get(session_key)
+            
+            if session and hasattr(session.soul, '_runtime') and session.soul._runtime.session:
+                session_id = session.soul._runtime.session.id
+                work_dir = str(session.soul._runtime.session.work_dir)
+                session_dir = str(session.soul._runtime.session.dir)
+                
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    f"🆔 **当前 Session**\n\n"
+                    f"**ID**: `{session_id}`\n"
+                    f"**工作目录**: `{work_dir}`\n\n"
+                    f"✅ **在 CLI 中接续（方式一 - 推荐）**:\n"
+                    f"```\n"
+                    f"cd {work_dir}\n"
+                    f"kimi --session {session_id}\n"
+                    f"```\n\n"
+                    f"✅ **在 CLI 中接续（方式二 - 任意目录）**:\n"
+                    f"```\n"
+                    f"kimi --session {session_id} --work-dir {work_dir}\n"
+                    f"```\n\n"
+                    f"💡 **提示**: Session 文件存储在 `{session_dir}`",
+                )
+            else:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    "ℹ️ 当前没有活跃的 session\n\n"
+                    "发送任意消息开始对话",
+                )
     
     def _load_mcp_configs(self) -> list[dict[str, Any]]:
         """Load MCP configs from global mcp.json file.
@@ -1315,9 +1831,17 @@ class SDKMessageHandler:
             content = {}
         
         # Check access
+        print(f"[DEBUG] Checking access for user {user_id} in chat {chat_id}")
         if not self._check_access(user_id, chat_id):
+            print(f"[DEBUG] Access denied for user {user_id} in chat {chat_id}")
             logger.warning(f"Access denied for user {user_id} in chat {chat_id}")
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                chat_id,
+                "❌ 访问被拒绝：您不在允许的用户列表中",
+            )
             return
+        print(f"[DEBUG] Access granted")
         
         # Add OK reaction to the user's message
         message_id = message.message_id if hasattr(message, 'message_id') else None
@@ -1458,25 +1982,102 @@ class SDKMessageHandler:
             return
         
         # Clean up @ mentions
+        print(f"[DEBUG] Text before clean: '{text}'")
         text = self._clean_mentions(text)
+        print(f"[DEBUG] Text after clean: '{text}'")
         
         if not text.strip():
+            print(f"[DEBUG] Empty text after cleaning, returning")
             return
         
         logger.info(f"[HANDLER] Received message from {user_id} in {chat_id} ({chat_type}): {text[:100]}")
         
-        # Get or create session
+        # Get session key
         session_key = self._get_session_key(chat_id, user_id)
         logger.info(f"[HANDLER] Session key: {session_key}")
         
+        # Handle session management commands (before creating session)
+        # Use original text for command matching to handle edge cases
+        stripped = text.strip()
+        
+        # Normalize command: remove extra spaces and convert to lowercase for comparison
+        normalized_cmd = ' '.join(stripped.split()).lower()
+        
+        logger.info(f"[HANDLER] Checking command: '{stripped}' (normalized: '{normalized_cmd}')")
+        print(f"[HANDLER] Checking command: '{stripped}' (normalized: '{normalized_cmd}')")
+        
+        # Check for session management commands (case insensitive)
+        if normalized_cmd == "/sessions":
+            logger.info("[HANDLER] Matched /sessions command")
+            print("[HANDLER] Matched /sessions command")
+            await self._handle_sessions_command(chat_id)
+            return
+        elif normalized_cmd.startswith("/continue "):
+            parts = stripped.split(maxsplit=1)  # Use original for session_id
+            if len(parts) == 2:
+                session_id = parts[1].strip()
+                logger.info(f"[HANDLER] Matched /continue command with ID: {session_id}")
+                print(f"[HANDLER] Matched /continue command with ID: {session_id}")
+                await self._handle_continue_command(chat_id, user_id, session_key, session_id)
+                return
+            else:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    "❌ 请提供 session ID，例如：`/continue abc123`",
+                )
+                return
+        elif normalized_cmd.startswith("/session "):
+            parts = stripped.split(maxsplit=1)  # Use original for session_id
+            if len(parts) == 2:
+                session_id = parts[1].strip()
+                logger.info(f"[HANDLER] Matched /session command with ID: {session_id}")
+                print(f"[HANDLER] Matched /session command with ID: {session_id}")
+                await self._handle_continue_command(chat_id, user_id, session_key, session_id)
+                return
+            else:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    "❌ 请提供 session ID，例如：`/session abc123`",
+                )
+                return
+        elif normalized_cmd == "/link":
+            logger.info("[HANDLER] Matched /link command")
+            print("[HANDLER] Matched /link command")
+            await self._handle_link_command(chat_id, user_id, session_key)
+            return
+        elif normalized_cmd == "/id":
+            logger.info("[HANDLER] Matched /id command")
+            print("[HANDLER] Matched /id command")
+            await self._handle_id_command(chat_id, session_key)
+            return
+        
+        # Get or create session
         async with self._lock:
             session = self._sessions.get(session_key)
             if session is None:
                 print(f"[HANDLER] Creating new session for {session_key}")
                 logger.info(f"[HANDLER] Creating new session for {session_key}")
-                # Create new soul for this chat session
+                
+                # Check if there's a linked CLI session
+                linked_session_id = self._linked_sessions.get(session_key)
+                
                 try:
-                    soul = await self._create_soul_for_session(session_key)
+                    if linked_session_id:
+                        # Try to load existing CLI session
+                        soul = await self._create_soul_from_session_id(linked_session_id)
+                        if soul:
+                            print(f"[HANDLER] Loaded CLI session: {linked_session_id}")
+                            logger.info(f"[HANDLER] Loaded CLI session: {linked_session_id}")
+                        else:
+                            # Fall back to new session
+                            print(f"[HANDLER] Failed to load session {linked_session_id}, creating new")
+                            soul = await self._create_soul_for_session(session_key)
+                    else:
+                        # Create new soul for this chat session
+                        soul = await self._create_soul_for_session(session_key)
+                    
                     print(f"[HANDLER] Soul created successfully")
                 except Exception as e:
                     print(f"[HANDLER ERROR] Failed to create soul: {e}")
