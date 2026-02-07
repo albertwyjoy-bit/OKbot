@@ -11,14 +11,27 @@ Usage:
 
 from __future__ import annotations
 
+# NOTE: We no longer use nest_asyncio due to compatibility issues with Python 3.12
+# (causes "cannot enter context" errors with contextvars).
+# Instead, we ensure complete event loop isolation in WebSocket threads.
+
 import asyncio
 import json
 import os
 import threading
+import warnings
 from pathlib import Path
 from typing import Any
 
 import lark_oapi as lark
+
+# Suppress RuntimeWarning about unawaited coroutines from the Lark SDK internals
+# These warnings are from the SDK's internal async methods and are not our bugs
+warnings.filterwarnings(
+    "ignore",
+    message=r"coroutine 'Client\._(connect|disconnect)' was never awaited",
+    category=RuntimeWarning,
+)
 from loguru import logger
 
 from kimi_cli.feishu.config import FeishuAccountConfig, FeishuConfig
@@ -33,15 +46,6 @@ from kimi_cli.session import Session
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kaos.path import KaosPath
 from pydantic import SecretStr
-
-
-# Exit code for restart signal
-RESTART_EXIT_CODE = 42
-
-
-class RestartRequested(Exception):
-    """Exception raised when restart is requested via /restart command."""
-    pass
 
 
 class SDKChatSession:
@@ -186,7 +190,6 @@ class SDKChatSession:
 • /stop - 打断当前操作（保留上下文，类似 Ctrl+C）
 • /clear - 中断当前处理并清空上下文
 • /mcp - 显示 MCP 服务器状态
-• /restart - **重启 OKbot**（代码修改后生效）
 
 **跨端接续（CLI ↔ Feishu）：**
 • /sessions - 列出电脑端 CLI 的所有 sessions
@@ -1790,38 +1793,6 @@ class SDKMessageHandler:
                     "发送任意消息开始对话",
                 )
     
-    async def _handle_restart_command(self, chat_id: str, user_id: str) -> None:
-        """Handle /restart command to restart the bot.
-        
-        This will restart the OKbot service to apply any code changes.
-        """
-        # Check if user is allowed to restart
-        if not self._check_access(user_id, chat_id):
-            await asyncio.to_thread(
-                self.client.send_text_message,
-                chat_id,
-                "❌ 您没有权限执行重启操作",
-            )
-            return
-        
-        await asyncio.to_thread(
-            self.client.send_text_message,
-            chat_id,
-            "🔄 **正在重启 OKbot...**\n\n"
-            "⏳ 请等待约 5-10 秒\n"
-            "✅ 重启后代码修改将生效",
-        )
-        
-        logger.info(f"[HANDLER] Restart requested by user {user_id}")
-        print(f"[HANDLER] Restart requested by user {user_id}")
-        
-        # Request server restart
-        if self._server:
-            # Schedule restart after sending message
-            asyncio.get_event_loop().call_later(2, self._server.request_restart)
-        else:
-            logger.warning("[HANDLER] Server reference not available, cannot restart")
-    
     def _load_mcp_configs(self) -> list[dict[str, Any]]:
         """Load MCP configs from global mcp.json file.
         
@@ -2201,11 +2172,6 @@ class SDKMessageHandler:
             print("[HANDLER] Matched /id command")
             await self._handle_id_command(chat_id, session_key)
             return
-        elif normalized_cmd == "/restart":
-            logger.info("[HANDLER] Matched /restart command")
-            print("[HANDLER] Matched /restart command")
-            await self._handle_restart_command(chat_id, user_id)
-            return
         
         # Get or create session
         async with self._lock:
@@ -2301,6 +2267,10 @@ class SDKMessageHandler:
 class FeishuSDKServer:
     """Feishu server using SDK long connection (WebSocket)."""
     
+    # Class-level ID to identify the current active server instance
+    # This helps old WebSocket threads detect when they should stop processing
+    _current_instance_id: int = 0
+    
     def __init__(self, config: FeishuConfig):
         self.config = config
         self._running = False
@@ -2308,26 +2278,40 @@ class FeishuSDKServer:
         self._handlers: dict[str, SDKMessageHandler] = {}
         self._ws_clients: dict[str, Any] = {}  # WebSocket clients
         self._ws_threads: dict[str, threading.Thread] = {}
-        self._restart_requested = False
+        # Instance ID to identify this specific server instance
+        self._instance_id = FeishuSDKServer._get_next_instance_id()
     
-    def request_restart(self) -> None:
-        """Request a server restart."""
-        self._restart_requested = True
-        self._running = False
-        logger.info("Restart requested")
+    @classmethod
+    def _get_next_instance_id(cls) -> int:
+        """Get the next instance ID."""
+        cls._current_instance_id += 1
+        return cls._current_instance_id
+    
+    @property
+    def is_current_instance(self) -> bool:
+        """Check if this is the current active server instance."""
+        return self._instance_id == FeishuSDKServer._current_instance_id
     
     async def start(self) -> None:
         """Start the Feishu SDK server."""
         if self._running:
+            logger.warning(f"[START] Instance {self._instance_id} already running")
             return
+        
+        logger.info(f"[START] Starting Feishu SDK server instance {self._instance_id}...")
+        print(f"[START] Starting server instance {self._instance_id}")
         
         self._running = True
         
         # Initialize all accounts
         await self._init_accounts()
         
-        logger.info("Feishu SDK server started successfully")
-        print(f"✅ Feishu SDK server is running")
+        # Give WebSocket clients time to establish connections
+        logger.info(f"[START] Waiting for WebSocket connections to establish...")
+        await asyncio.sleep(1.5)
+        
+        logger.info(f"[START] Feishu SDK server instance {self._instance_id} started successfully")
+        print(f"✅ Feishu SDK server is running (instance {self._instance_id})")
         print(f"   Use Ctrl+C to stop")
     
     async def stop(self) -> None:
@@ -2336,35 +2320,68 @@ class FeishuSDKServer:
             return
         
         self._running = False
+        # Mark this instance as "old" so WebSocket threads stop processing
+        FeishuSDKServer._current_instance_id += 1
+        logger.info(f"Stopping Feishu SDK server (instance {self._instance_id})...")
+        print(f"[STOP] Stopping instance {self._instance_id}, new current instance will be {FeishuSDKServer._current_instance_id}")
         
-        # Stop all WebSocket clients
-        for name, ws_client in self._ws_clients.items():
-            logger.info(f"Stopping WebSocket client for {name}")
+        # Stop all WebSocket clients first (with timeout)
+        for name, ws_client in list(self._ws_clients.items()):
+            logger.info(f"[STOP] Stopping WebSocket client for {name}")
+            print(f"[STOP] Stopping WebSocket client for {name}")
             try:
-                # Attempt to stop the WebSocket client
-                ws_client.stop()
+                # Use a timeout to avoid blocking indefinitely
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(ws_client.stop)
+                    try:
+                        future.result(timeout=3.0)
+                    except concurrent.futures.TimeoutError:
+                        print(f"[STOP] WebSocket client {name} stop timed out, continuing...")
             except Exception as e:
-                logger.warning(f"Error stopping WebSocket client for {name}: {e}")
+                logger.warning(f"[STOP] Error stopping WebSocket client for {name}: {e}")
         
-        # Wait for WebSocket threads to finish (with timeout)
-        for name, thread in self._ws_threads.items():
-            logger.info(f"Waiting for WebSocket thread {name} to finish...")
+        # Wait for WebSocket threads to finish with longer timeout
+        for name, thread in list(self._ws_threads.items()):
+            logger.info(f"[STOP] Waiting for WebSocket thread {name} to finish...")
+            print(f"[STOP] Waiting for WebSocket thread {name}...")
             try:
-                thread.join(timeout=2.0)
+                thread.join(timeout=5.0)  # Increased timeout
+                if thread.is_alive():
+                    logger.warning(f"[STOP] WebSocket thread {name} did not stop in time")
+                    print(f"[STOP] WARNING: Thread {name} still alive (will be cleaned up on restart)")
             except Exception as e:
-                logger.warning(f"Error joining thread {name}: {e}")
+                logger.warning(f"[STOP] Error joining thread {name}: {e}")
         
         self._ws_clients.clear()
         self._ws_threads.clear()
         self._handlers.clear()
         self._clients.clear()
         
-        logger.info("Feishu SDK server stopped")
+        # Give extra time for connections to fully close
+        logger.info(f"[STOP] Waiting for connections to close...")
+        await asyncio.sleep(2.0)  # Increased delay
+        
+        logger.info(f"[STOP] Feishu SDK server stopped (instance {self._instance_id})")
+        print(f"[STOP] Instance {self._instance_id} fully stopped")
     
     async def _init_accounts(self) -> None:
         """Initialize Feishu SDK clients for all accounts."""
+        # Get the running event loop (this is safe in async context)
+        try:
+            main_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.error("[INIT] No running event loop found")
+            return
+        
+        logger.info(f"[INIT] Initializing accounts for instance {self._instance_id}")
+        print(f"[INIT] Initializing accounts for instance {self._instance_id}")
+        
         for account_name, account_config in self.config.accounts.items():
             try:
+                logger.info(f"[INIT] Setting up account: {account_name}")
+                print(f"[INIT] Setting up account: {account_name}")
+                
                 # Create SDK client for API calls
                 client = FeishuSDKClient(account_config)
                 self._clients[account_name] = client
@@ -2372,84 +2389,166 @@ class FeishuSDKServer:
                 # Test authentication by getting bot info
                 bot_info = client.get_bot_info()
                 if bot_info:
-                    logger.info(
-                        f"Feishu account '{account_name}' authenticated: "
-                        f"{bot_info.get('app_name')}"
-                    )
+                    logger.info(f"[INIT] Account '{account_name}' authenticated: {bot_info.get('app_name')}")
                 else:
-                    logger.warning(f"Could not get bot info for account '{account_name}'")
+                    logger.warning(f"[INIT] Could not get bot info for account '{account_name}'")
                 
                 # Create message handler (each handler manages its own sessions with isolated souls)
                 handler = SDKMessageHandler(client, account_config, self.config, self)
                 self._handlers[account_name] = handler
                 
-                # Start WebSocket client for event receiving
-                self._start_ws_client(account_name, account_config, handler)
+                # Start WebSocket client for event receiving (pass main_loop)
+                self._start_ws_client(account_name, account_config, handler, main_loop)
+                
+                # Small delay to ensure WebSocket client is fully started before next account
+                await asyncio.sleep(0.5)
                 
             except Exception as e:
-                logger.error(f"Failed to initialize account '{account_name}': {e}")
+                logger.error(f"[INIT] Failed to initialize account '{account_name}': {e}")
+                print(f"[INIT] ERROR: Failed to initialize account '{account_name}': {e}")
+        
+        logger.info(f"[INIT] Accounts initialization complete for instance {self._instance_id}")
     
     def _start_ws_client(
         self,
         account_name: str,
         account_config: FeishuAccountConfig,
         handler: SDKMessageHandler,
+        main_loop: asyncio.AbstractEventLoop,
     ) -> None:
         """Start WebSocket client for event receiving.
         
         This runs in a separate thread since the SDK's start() blocks.
+        CRITICAL: All Lark SDK objects must be created inside the thread to avoid
+        event loop conflicts with the main thread.
         """
-        # Create event dispatcher first
-        event_handler = self._create_event_handler(handler)
-        
-        # Create WebSocket client (stored before starting thread)
-        ws_client = lark.ws.Client(
-            app_id=account_config.app_id,
-            app_secret=account_config.app_secret.get_secret_value(),
-            event_handler=event_handler,
-            log_level=lark.LogLevel.INFO,  # Normal logging
-        )
-        
-        self._ws_clients[account_name] = ws_client
+        # Store references needed in the thread (do NOT create SDK objects here)
+        # The event_handler must be created inside the thread to avoid capturing
+        # the main event loop
         
         def run_ws_client():
-            """Run WebSocket client in a thread."""
+            """Run WebSocket client in a thread with isolated event loop."""
+            import asyncio
+            
+            # CRITICAL: Create a completely new event loop for this thread
+            # This isolates the SDK's asyncio from the main event loop
+            
+            # First, ensure no event loop is set for this thread
             try:
-                logger.info(f"Starting WebSocket client for account: {account_name}")
+                old_loop = asyncio.get_event_loop()
+                if old_loop and not old_loop.is_closed():
+                    try:
+                        # Cancel all pending tasks
+                        pending = asyncio.all_tasks(old_loop)
+                        for task in pending:
+                            task.cancel()
+                        if pending:
+                            old_loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                    except Exception:
+                        pass
+                    old_loop.close()
+            except RuntimeError:
+                # No event loop set for this thread yet, which is expected
+                pass
+            
+            # Create and set a fresh event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # CRITICAL: Create event handler INSIDE the thread to avoid capturing main event loop
+            event_handler = self._create_event_handler(handler, main_loop)
+            
+            # CRITICAL: Create WebSocket client INSIDE the thread to avoid capturing main event loop
+            ws_client = lark.ws.Client(
+                app_id=account_config.app_id,
+                app_secret=account_config.app_secret.get_secret_value(),
+                event_handler=event_handler,
+                log_level=lark.LogLevel.INFO,  # Normal logging
+            )
+            
+            # Store reference for cleanup
+            self._ws_clients[account_name] = ws_client
+            
+            try:
+                logger.info(f"[WS-{account_name}] Starting WebSocket client for instance {self._instance_id}")
+                print(f"[WS-{account_name}] Starting WebSocket client for instance {self._instance_id}")
                 ws_client.start()
             except Exception as e:
-                # Only log error if server is still running
-                if self._running:
-                    logger.error(f"WebSocket client error for {account_name}: {e}")
+                error_msg = str(e)
+                # Only log error if this is still the current instance
+                if self.is_current_instance and self._running:
+                    logger.error(f"[WS-{account_name}] WebSocket client error: {e}")
+                    print(f"[WS-{account_name}] ERROR: {e}")
                 else:
-                    logger.info(f"WebSocket client for {account_name} stopped (server shutting down)")
+                    logger.info(f"[WS-{account_name}] WebSocket client stopped (expected on shutdown)")
+            finally:
+                # Clean up the event loop
+                try:
+                    if not loop.is_closed():
+                        # Cancel all pending tasks
+                        pending = asyncio.all_tasks(loop)
+                        for task in pending:
+                            task.cancel()
+                        # Run the event loop briefly to let tasks process cancellation
+                        if pending:
+                            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                        loop.close()
+                except Exception:
+                    pass
         
-        # Start in a daemon thread
-        thread = threading.Thread(target=run_ws_client, daemon=True)
+        # Start in a daemon thread with a unique name for easier debugging
+        thread = threading.Thread(
+            target=run_ws_client, 
+            daemon=True,
+            name=f"FeishuWS-{account_name}-{self._instance_id}"
+        )
         thread.start()
         self._ws_threads[account_name] = thread
         
-        logger.info(f"WebSocket client thread started for: {account_name}")
+        logger.info(f"[WS-{account_name}] WebSocket client thread started for instance {self._instance_id}")
     
     def _create_event_handler(
         self,
         handler: SDKMessageHandler,
+        main_loop: asyncio.AbstractEventLoop,
     ) -> lark.EventDispatcherHandler:
-        """Create event dispatcher handler with all event callbacks."""
+        """Create event dispatcher handler with all event callbacks.
         
-        # Store reference to the main event loop
-        main_loop = asyncio.get_event_loop()
+        NOTE: main_loop is captured at creation time. If the server restarts,
+        a new event handler will be created with the new event loop.
+        """
         
-        def _schedule_async(coro, name: str = "task"):
-            """Schedule async coroutine in main loop, non-blocking."""
-            # Check if server is still running
+        def _schedule_async(coro_factory, name: str = "task"):
+            """Schedule async coroutine in main loop, non-blocking.
+            
+            Args:
+                coro_factory: A callable that returns a coroutine when called.
+                             This avoids creating the coroutine if we can't schedule it.
+                name: Name for logging purposes.
+            """
+            # Check if this is still the current active server instance
+            # (prevents old WebSocket threads from processing events after restart)
+            if not self.is_current_instance:
+                print(f"[SCHEDULE] Old server instance (id={self._instance_id}), ignoring {name}")
+                return None
+            
+            # Check server running state
             if not self._running:
-                print(f"[SCHEDULE] Server not running, ignoring {name}")
+                print(f"[SCHEDULE] Server not running (instance {self._instance_id}), ignoring {name}")
                 return None
             
             # Check if event loop is closed
             if main_loop.is_closed():
-                print(f"[SCHEDULE] Event loop closed, ignoring {name}")
+                print(f"[SCHEDULE] Event loop closed (instance {self._instance_id}), ignoring {name}")
+                return None
+            
+            # Create the coroutine only when we're going to schedule it
+            try:
+                coro = coro_factory()
+            except Exception as e:
+                print(f"[SCHEDULE ERROR] Failed to create coroutine for {name}: {e}")
+                import traceback
+                traceback.print_exc()
                 return None
             
             def on_done(fut):
@@ -2490,21 +2589,22 @@ class FeishuSDKServer:
                 print(f"  (content not available)")
             
             # Schedule in main event loop (non-blocking)
+            # Use lambda to defer coroutine creation until we're sure we can schedule it
             print(f"[EVENT] Scheduling handler in main loop...")
-            _schedule_async(handler.handle_message_event(data), "message_handler")
+            _schedule_async(lambda: handler.handle_message_event(data), "message_handler")
             print(f"[EVENT] Handler scheduled (non-blocking)")
         
         def on_p2_im_chat_member_bot_added_v1(data: lark.im.v1.P2ImChatMemberBotAddedV1) -> None:
             """Handle bot added to chat."""
-            _schedule_async(handler.handle_add_bot_event(data), "bot_added")
+            _schedule_async(lambda: handler.handle_add_bot_event(data), "bot_added")
         
         def on_p2_im_chat_member_bot_deleted_v1(data: lark.im.v1.P2ImChatMemberBotDeletedV1) -> None:
             """Handle bot removed from chat."""
-            _schedule_async(handler.handle_remove_bot_event(data), "bot_removed")
+            _schedule_async(lambda: handler.handle_remove_bot_event(data), "bot_removed")
         
         def on_p2_im_chat_access_event_v1(data: lark.im.v1.P2ImChatAccessEventBotP2pChatEnteredV1) -> None:
             """Handle P2P chat access event."""
-            _schedule_async(handler.handle_p2p_chat_create(data), "p2p_chat")
+            _schedule_async(lambda: handler.handle_p2p_chat_create(data), "p2p_chat")
         
         def on_p2_im_message_message_read_v1(data: lark.im.v1.P2ImMessageMessageReadV1) -> None:
             """Handle message read event (ignore)."""
@@ -2536,14 +2636,10 @@ class FeishuSDKServer:
         }
     
     async def run_forever(self) -> None:
-        """Run the server until stopped or restart requested."""
+        """Run the server until stopped."""
         try:
             while self._running:
                 await asyncio.sleep(1)
-                if self._restart_requested:
-                    raise RestartRequested("Restart requested via command")
-        except RestartRequested:
-            raise
         except asyncio.CancelledError:
             pass
 
@@ -2564,8 +2660,12 @@ async def run_sdk_server(
         port: Override port from config.
     
     Returns:
-        Exit code: 0 for normal exit, RESTART_EXIT_CODE for restart requested.
+        Exit code: 0 for normal exit, non-zero for error.
     """
+    # NOTE: We no longer use nest_asyncio due to compatibility issues with Python 3.12
+    # (causes "cannot enter context" errors with contextvars).
+    logger.debug("Starting run_sdk_server without nest_asyncio")
+    
     if config is None:
         config = FeishuConfig.load()
     
@@ -2581,6 +2681,14 @@ async def run_sdk_server(
         print("\nFor setup guide: kimi feishu setup")
         return 1
     
+    # Verify we're running in the expected event loop context
+    try:
+        current_loop = asyncio.get_running_loop()
+        logger.debug(f"Running in event loop: {id(current_loop)}")
+    except RuntimeError:
+        logger.error("No running event loop - this should not happen when called via asyncio.run()")
+        return 1
+    
     server = FeishuSDKServer(config)
     
     try:
@@ -2592,15 +2700,10 @@ async def run_sdk_server(
         print("✅ No tunnel/穿透 tools required!")
         print("✅ Events received via WebSocket directly from Feishu")
         print("✅ Each chat has isolated context")
-        print("✅ Send /restart to reload after code changes")
         
         await server.run_forever()
         return 0
         
-    except RestartRequested:
-        logger.info("Server restarting...")
-        print("\n🔄 Restarting server...")
-        return RESTART_EXIT_CODE
     except asyncio.CancelledError:
         return 0
     finally:
