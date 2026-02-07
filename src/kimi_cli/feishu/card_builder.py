@@ -5,6 +5,9 @@ This module provides various card templates for different message types:
 - Tool call cards for function invocations
 - Tool result cards for execution results
 - Search result cards for web/file search results
+
+Uses Feishu Message Card format (schema 2.0).
+Reference: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-overview
 """
 
 from __future__ import annotations
@@ -15,14 +18,25 @@ from typing import Any, Literal, TypeAlias
 # Card color schemes matching Feishu design
 CardColor: TypeAlias = Literal["blue", "green", "red", "orange", "purple", "grey", "default"]
 
-CARD_COLORS: dict[CardColor, dict[str, str]] = {
-    "blue": {"bg": "#E8F1FF", "border": "#3370FF", "text": "#3370FF", "icon": "🔵"},
-    "green": {"bg": "#E8F8F0", "border": "#34D399", "text": "#059669", "icon": "🟢"},
-    "red": {"bg": "#FEE2E2", "border": "#F87171", "text": "#DC2626", "icon": "🔴"},
-    "orange": {"bg": "#FFF3E0", "border": "#FB923C", "text": "#EA580C", "icon": "🟠"},
-    "purple": {"bg": "#F3E8FF", "border": "#A855F7", "text": "#7C3AED", "icon": "🟣"},
-    "grey": {"bg": "#F5F5F5", "border": "#9CA3AF", "text": "#6B7280", "icon": "⚪"},
-    "default": {"bg": "#FFFFFF", "border": "#E5E7EB", "text": "#374151", "icon": "⚪"},
+# Feishu template colors
+TEMPLATE_COLORS: dict[CardColor, str] = {
+    "blue": "blue",
+    "green": "green",
+    "red": "red",
+    "orange": "orange",
+    "purple": "purple",
+    "grey": "grey",
+    "default": "default",
+}
+
+CARD_ICONS: dict[str, str] = {
+    "thought": "💭",
+    "tool_call": "🔧",
+    "tool_result": "📊",
+    "search": "🔍",
+    "response": "🤖",
+    "error": "❌",
+    "success": "✅",
 }
 
 
@@ -33,132 +47,68 @@ def _truncate_text(text: str, max_length: int = 500) -> str:
     return text[:max_length - 3] + "..."
 
 
-def _create_header(title: str, color: CardColor = "default") -> dict[str, Any]:
-    """Create card header element."""
-    colors = CARD_COLORS[color]
+def _plain_text_element(content: str) -> dict[str, Any]:
+    """Create a plain text element."""
     return {
-        "tag": "div",
-        "text": {
-            "tag": "plain_text",
-            "content": f"{colors['icon']} {title}",
-        },
-        "icon": {
-            "tag": "standard_icon",
-            "token": "robot_outlined" if color == "blue" else "info_outlined",
-        },
-        "padding": "12px 16px",
-        "background_style": colors["bg"],
-        "border_radius": {"top_left": 8, "top_right": 8, "bottom_left": 0, "bottom_right": 0},
+        "tag": "plain_text",
+        "content": content,
     }
 
 
-def _create_code_block(content: str, language: str = "json") -> dict[str, Any]:
-    """Create a code block element."""
-    # Truncate if too long
-    display_content = _truncate_text(content, 2000)
+def _markdown_element(content: str) -> dict[str, Any]:
+    """Create a markdown text element."""
     return {
-        "tag": "div",
-        "text": {
-            "tag": "plain_text",
-            "content": f"```{language}\n{display_content}\n```",
-        },
-        "padding": "8px 12px",
-        "background_style": "#1F2937",
-        "border_radius": 6,
+        "tag": "lark_md",
+        "content": content,
     }
 
 
-def _create_text_section(content: str, is_markdown: bool = False) -> dict[str, Any]:
-    """Create a text section element."""
-    return {
-        "tag": "div",
-        "text": {
-            "tag": "lark_md" if is_markdown else "plain_text",
-            "content": _truncate_text(content, 3000),
-        },
-        "padding": "8px 0",
-    }
-
-
-def _create_divider() -> dict[str, Any]:
+def _divider() -> dict[str, Any]:
     """Create a divider element."""
     return {"tag": "hr"}
 
 
-def build_thought_card(thought: str, is_collapsed: bool = True) -> dict[str, Any]:
+def _note_element(content: str, icon: str = "") -> dict[str, Any]:
+    """Create a note element."""
+    text = f"{icon} {content}" if icon else content
+    return {
+        "tag": "note",
+        "elements": [_plain_text_element(text)],
+    }
+
+
+def build_thought_card(thought: str) -> dict[str, Any]:
     """Build a card for AI thought/reasoning.
     
     Args:
         thought: The thought content
-        is_collapsed: Whether to collapse the content initially
         
     Returns:
         Interactive card JSON
     """
-    colors = CARD_COLORS["grey"]
-    truncated = _truncate_text(thought, 800)
+    truncated = _truncate_text(thought, 3000)
     
     elements: list[dict[str, Any]] = [
         {
             "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": "🧠 思考过程",
-            },
-            "icon": {
-                "tag": "standard_icon",
-                "token": "brain_outlined",
-            },
-            "padding": "12px 16px",
-            "background_style": colors["bg"],
+            "text": _plain_text_element(truncated),
         },
     ]
     
-    if is_collapsed and len(thought) > 200:
-        elements.append({
-            "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": truncated[:200] + "...",
-            },
-            "padding": "8px 16px",
-        })
-        elements.append({
-            "tag": "action",
-            "actions": [
-                {
-                    "tag": "button",
-                    "text": {
-                        "tag": "plain_text",
-                        "content": "展开完整思考",
-                    },
-                    "type": "primary",
-                    "value": {"action": "expand_thought"},
-                }
-            ],
-            "padding": "8px 16px",
-        })
-    else:
-        elements.append({
-            "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": thought,
-            },
-            "padding": "8px 16px",
-        })
+    # Add note if truncated
+    if len(thought) > 3000:
+        elements.append(_note_element("思考内容已截断"))
     
     return {
-        "schema": "2.0",
-        "config": {"width_mode": "compact"},
-        "body": {
-            "direction": "vertical",
-            "elements": elements,
-            "border": {
-                "style": {"color": colors["border"], "width": 1},
-                "radius": {"top_left": 8, "top_right": 8, "bottom_left": 8, "bottom_right": 8},
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "grey",
+            "title": {
+                "tag": "plain_text",
+                "content": f"{CARD_ICONS['thought']} 思考过程",
             },
         },
+        "elements": elements,
     }
 
 
@@ -177,8 +127,6 @@ def build_tool_call_card(
     Returns:
         Interactive card JSON
     """
-    colors = CARD_COLORS["blue"]
-    
     # Format arguments
     if isinstance(arguments, dict):
         args_str = json.dumps(arguments, indent=2, ensure_ascii=False)
@@ -189,49 +137,35 @@ def build_tool_call_card(
         except (json.JSONDecodeError, TypeError):
             args_str = str(arguments)
     
+    # Truncate if too long
+    display_args = _truncate_text(args_str, 2000)
+    
     elements: list[dict[str, Any]] = [
         {
             "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": f"🔧 调用工具: {tool_name}",
-            },
-            "icon": {
-                "tag": "standard_icon",
-                "token": "tool_outlined",
-            },
-            "padding": "12px 16px",
-            "background_style": colors["bg"],
+            "text": _plain_text_element(f"**工具**: `{tool_name}`"),
+        },
+        _divider(),
+        {
+            "tag": "div",
+            "text": _plain_text_element("**参数:**"),
         },
         {
             "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": "📋 参数:",
-            },
-            "padding": "8px 16px 0 16px",
-        },
-        {
-            "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": f"```json\n{_truncate_text(args_str, 1500)}\n```",
-            },
-            "padding": "0 16px 12px 16px",
+            "text": _markdown_element(f"```json\n{display_args}\n```"),
         },
     ]
     
     return {
-        "schema": "2.0",
-        "config": {"width_mode": "compact"},
-        "body": {
-            "direction": "vertical",
-            "elements": elements,
-            "border": {
-                "style": {"color": colors["border"], "width": 1},
-                "radius": {"top_left": 8, "top_right": 8, "bottom_left": 8, "bottom_right": 8},
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "blue",
+            "title": {
+                "tag": "plain_text",
+                "content": f"{CARD_ICONS['tool_call']} 工具调用",
             },
         },
+        "elements": elements,
     }
 
 
@@ -252,9 +186,8 @@ def build_tool_result_card(
     Returns:
         Interactive card JSON
     """
-    color: CardColor = "red" if is_error else "green"
-    colors = CARD_COLORS[color]
-    status_icon = "❌" if is_error else "✅"
+    template: CardColor = "red" if is_error else "green"
+    status_icon = CARD_ICONS["error"] if is_error else CARD_ICONS["success"]
     status_text = "执行失败" if is_error else "执行成功"
     
     # Format result
@@ -270,69 +203,40 @@ def build_tool_result_card(
     else:
         result_str = str(result)
     
-    # Header with execution time
-    header_text = f"{status_icon} {status_text} - {tool_name}"
+    # Build header content
+    header_content = f"{status_icon} {status_text}"
     if execution_time is not None:
-        header_text += f" ({execution_time:.2f}s)"
+        header_content += f" ({execution_time:.2f}s)"
+    
+    # Truncate result if too long
+    display_result = _truncate_text(result_str, 3000)
     
     elements: list[dict[str, Any]] = [
         {
             "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": header_text,
-            },
-            "icon": {
-                "tag": "standard_icon",
-                "token": "error_outlined" if is_error else "check_circle_outlined",
-            },
-            "padding": "12px 16px",
-            "background_style": colors["bg"],
+            "text": _plain_text_element(f"**工具**: `{tool_name}`"),
+        },
+        _divider(),
+        {
+            "tag": "div",
+            "text": _markdown_element(f"```\n{display_result}\n```"),
         },
     ]
     
-    # Add result content (collapsible for large results)
-    if len(result_str) > 500:
-        elements.extend([
-            {
-                "tag": "div",
-                "text": {
-                    "tag": "plain_text",
-                    "content": _truncate_text(result_str, 500),
-                },
-                "padding": "8px 16px",
-            },
-            {
-                "tag": "div",
-                "text": {
-                    "tag": "plain_text",
-                    "content": f"... ({len(result_str) - 500} 字符已折叠)",
-                },
-                "text_align": "center",
-                "padding": "4px 16px",
-            },
-        ])
-    else:
-        elements.append({
-            "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": f"```\n{result_str}\n```" if "\n" in result_str else result_str,
-            },
-            "padding": "8px 16px",
-        })
+    # Add note if truncated
+    if len(result_str) > 3000:
+        elements.append(_note_element("结果内容已截断"))
     
     return {
-        "schema": "2.0",
-        "config": {"width_mode": "compact"},
-        "body": {
-            "direction": "vertical",
-            "elements": elements,
-            "border": {
-                "style": {"color": colors["border"], "width": 1},
-                "radius": {"top_left": 8, "top_right": 8, "bottom_left": 8, "bottom_right": 8},
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": template,
+            "title": {
+                "tag": "plain_text",
+                "content": header_content,
             },
         },
+        "elements": elements,
     }
 
 
@@ -353,7 +257,6 @@ def build_search_result_card(
     Returns:
         Interactive card JSON
     """
-    colors = CARD_COLORS["purple"]
     type_icon = "🌐" if search_type == "web" else "📁"
     type_text = "网页搜索" if search_type == "web" else "文件搜索"
     
@@ -362,25 +265,9 @@ def build_search_result_card(
     elements: list[dict[str, Any]] = [
         {
             "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": f"{type_icon} {type_text} - {count_text}",
-            },
-            "icon": {
-                "tag": "standard_icon",
-                "token": "search_outlined",
-            },
-            "padding": "12px 16px",
-            "background_style": colors["bg"],
+            "text": _plain_text_element(f"**查询**: {query}"),
         },
-        {
-            "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": f"🔍 查询: {query}",
-            },
-            "padding": "4px 16px 8px 16px",
-        },
+        _divider(),
     ]
     
     # Add each result
@@ -390,44 +277,38 @@ def build_search_result_card(
         snippet = result.get("snippet", result.get("content", ""))
         
         # Result header with number and title
-        elements.append({
-            "tag": "div",
-            "text": {
-                "tag": "lark_md",
-                "content": f"**{i}.** [{title}]({url})" if url else f"**{i}.** {title}",
-            },
-            "padding": "8px 16px 0 16px",
-        })
+        if url:
+            elements.append({
+                "tag": "div",
+                "text": _markdown_element(f"**{i}.** [{title}]({url})"),
+            })
+        else:
+            elements.append({
+                "tag": "div",
+                "text": _plain_text_element(f"{i}. {title}"),
+            })
         
         # Snippet
         if snippet:
             elements.append({
                 "tag": "div",
-                "text": {
-                    "tag": "plain_text",
-                    "content": _truncate_text(snippet, 200),
-                },
-                "padding": "2px 16px 0 24px",
+                "text": _plain_text_element(_truncate_text(snippet, 150)),
             })
         
         # Add divider between results (except last)
         if i < len(results[:10]):
-            elements.append({
-                "tag": "hr",
-                "margin": "8px 16px",
-            })
+            elements.append(_divider())
     
     return {
-        "schema": "2.0",
-        "config": {"width_mode": "compact"},
-        "body": {
-            "direction": "vertical",
-            "elements": elements,
-            "border": {
-                "style": {"color": colors["border"], "width": 1},
-                "radius": {"top_left": 8, "top_right": 8, "bottom_left": 8, "bottom_right": 8},
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "purple",
+            "title": {
+                "tag": "plain_text",
+                "content": f"{type_icon} {type_text} - {count_text}",
             },
         },
+        "elements": elements,
     }
 
 
@@ -451,69 +332,13 @@ def build_response_card(
         content = content[:max_length - 100] + "\n\n... (内容已截断)"
     
     return {
-        "schema": "2.0",
-        "config": {"width_mode": "default"},
-        "body": {
-            "direction": "vertical",
-            "elements": [
-                {
-                    "tag": "div",
-                    "text": {
-                        "tag": "lark_md" if is_markdown else "plain_text",
-                        "content": content,
-                    },
-                    "padding": "12px 16px",
-                },
-            ],
-        },
-    }
-
-
-def build_multi_element_card(
-    elements: list[dict[str, Any]],
-    title: str | None = None,
-    color: CardColor = "default",
-) -> dict[str, Any]:
-    """Build a card with multiple elements.
-    
-    Useful for combining multiple cards into one message.
-    
-    Args:
-        elements: List of pre-built card elements
-        title: Optional card title
-        color: Color theme
-        
-    Returns:
-        Interactive card JSON
-    """
-    colors = CARD_COLORS[color]
-    
-    card_elements: list[dict[str, Any]] = []
-    
-    if title:
-        card_elements.append({
-            "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": title,
+        "config": {"wide_screen_mode": True},
+        "elements": [
+            {
+                "tag": "div",
+                "text": _markdown_element(content) if is_markdown else _plain_text_element(content),
             },
-            "padding": "12px 16px",
-            "background_style": colors["bg"],
-        })
-    
-    card_elements.extend(elements)
-    
-    return {
-        "schema": "2.0",
-        "config": {"width_mode": "compact"},
-        "body": {
-            "direction": "vertical",
-            "elements": card_elements,
-            "border": {
-                "style": {"color": colors["border"], "width": 1},
-                "radius": {"top_left": 8, "top_right": 8, "bottom_left": 8, "bottom_right": 8},
-            },
-        },
+        ],
     }
 
 
@@ -532,53 +357,30 @@ def build_error_card(
     Returns:
         Interactive card JSON
     """
-    colors = CARD_COLORS["red"]
-    
     elements: list[dict[str, Any]] = [
         {
             "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": f"❌ {error_type}",
-            },
-            "icon": {
-                "tag": "standard_icon",
-                "token": "error_outlined",
-            },
-            "padding": "12px 16px",
-            "background_style": colors["bg"],
-        },
-        {
-            "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": error_message,
-            },
-            "padding": "8px 16px",
+            "text": _plain_text_element(error_message),
         },
     ]
     
     if suggestion:
+        elements.append(_divider())
         elements.append({
             "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": f"💡 建议: {suggestion}",
-            },
-            "padding": "8px 16px 12px 16px",
+            "text": _plain_text_element(f"💡 建议: {suggestion}"),
         })
     
     return {
-        "schema": "2.0",
-        "config": {"width_mode": "compact"},
-        "body": {
-            "direction": "vertical",
-            "elements": elements,
-            "border": {
-                "style": {"color": colors["border"], "width": 1},
-                "radius": {"top_left": 8, "top_right": 8, "bottom_left": 8, "bottom_right": 8},
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "red",
+            "title": {
+                "tag": "plain_text",
+                "content": f"{CARD_ICONS['error']} {error_type}",
             },
         },
+        "elements": elements,
     }
 
 
@@ -602,29 +404,24 @@ def build_status_card(
     elements: list[dict[str, Any]] = [
         {
             "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": f"{icon} {status}",
-            },
-            "padding": "12px 16px",
+            "text": _plain_text_element(f"{icon} {status}"),
         },
     ]
     
     if detail:
         elements.append({
             "tag": "div",
-            "text": {
-                "tag": "plain_text",
-                "content": detail,
-            },
-            "padding": "4px 16px 12px 16px",
+            "text": _plain_text_element(detail),
         })
     
     return {
-        "schema": "2.0",
-        "config": {"width_mode": "compact"},
-        "body": {
-            "direction": "vertical",
-            "elements": elements,
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "orange",
+            "title": {
+                "tag": "plain_text",
+                "content": status,
+            },
         },
+        "elements": elements,
     }
