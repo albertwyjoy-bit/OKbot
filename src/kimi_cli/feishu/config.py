@@ -25,6 +25,9 @@ class FeishuAccountConfig(BaseModel):
     show_tool_calls: bool = Field(True, description="Show tool calls in messages")
     show_thinking: bool = Field(True, description="Show thinking process")
     
+    # ASR (Speech Recognition) settings - GLM-ASR-2512 only
+    asr_api_key: SecretStr | None = Field(None, description="Zhipu AI API key for GLM-ASR-2512 (defaults to ZHIPU_API_KEY env var)")
+    
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -32,6 +35,7 @@ class FeishuAccountConfig(BaseModel):
                     "app_id": "cli_xxxxxxxx",
                     "app_secret": "xxxxxxxx",
                     "show_tool_calls": True,
+                    "asr_provider": "auto",
                 }
             ]
         }
@@ -94,13 +98,8 @@ class FeishuConfig(BaseModel):
         
         path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Convert to dict and remove None values for TOML compatibility
-        try:
-            # Use model_dump with context to handle SecretStr
-            data = self.model_dump(mode="json")
-        except PydanticSerializationError:
-            # Fallback to regular dump
-            data = self.model_dump()
+        # Build dict with actual secret values (not masked)
+        data = self._build_save_dict()
         
         def remove_nulls(obj):
             if isinstance(obj, dict):
@@ -108,6 +107,45 @@ class FeishuConfig(BaseModel):
             elif isinstance(obj, list):
                 return [remove_nulls(v) for v in obj]
             return obj
+        
+        clean_data = remove_nulls(data)
+        path.write_text(tomlkit.dumps(clean_data), encoding="utf-8")
+    
+    def _build_save_dict(self) -> dict:
+        """Build a dict representation with actual secret values (not masked)."""
+        from pydantic import SecretStr
+        
+        def extract_value(v):
+            """Extract value, handling SecretStr."""
+            if isinstance(v, SecretStr):
+                return v.get_secret_value() if v else None
+            elif isinstance(v, dict):
+                return {kk: extract_value(vv) for kk, vv in v.items()}
+            elif hasattr(v, '__dict__') and hasattr(v, 'model_fields'):
+                # It's a Pydantic model
+                return extract_model(v)
+            return v
+        
+        def extract_model(model):
+            """Extract dict from Pydantic model."""
+            result = {}
+            for key, value in model:
+                result[key] = extract_value(value)
+            return result
+        
+        # Build the data dict
+        data = {
+            "host": self.host,
+            "port": self.port,
+            "work_dir": self.work_dir,
+            "skills_dir": self.skills_dir,
+            "default_account": self.default_account,
+            "accounts": {
+                name: extract_model(account)
+                for name, account in self.accounts.items()
+            }
+        }
+        return data
         
         clean_data = remove_nulls(data)
         path.write_text(tomlkit.dumps(clean_data), encoding="utf-8")

@@ -490,6 +490,103 @@ class FeishuSDKClient:
             traceback.print_exc()
             return None
     
+    def download_audio(self, file_key: str, message_id: str | None = None) -> tuple[bytes, str] | None:
+        """Download an audio/voice file from Feishu.
+        
+        Voice messages in Feishu are treated as files with audio type.
+        
+        Args:
+            file_key: The file key from message content
+            message_id: Optional message ID for user-sent files
+            
+        Returns:
+            Tuple of (audio_content, file_name) or None if failed
+        """
+        try:
+            print(f"[SDK] Downloading audio: {file_key}")
+            
+            # Use direct HTTP request for binary data
+            if not self._token:
+                if not self._refresh_token():
+                    return None
+            
+            # Try message resources API first if message_id is available
+            if message_id:
+                url = f"https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/resources/{file_key}?type=file"
+                headers = {"Authorization": f"Bearer {self._token}"}
+                
+                import requests
+                resp = requests.get(url, headers=headers, timeout=30)
+                
+                # Check for token expiration and retry
+                if resp.status_code == 400:
+                    try:
+                        data = resp.json()
+                        if data.get("code") == 99991663:  # Token expired
+                            print("[SDK] Token expired, refreshing...")
+                            if self._refresh_token():
+                                headers["Authorization"] = f"Bearer {self._token}"
+                                resp = requests.get(url, headers=headers, timeout=30)
+                            else:
+                                print("[SDK] Failed to refresh token")
+                                return None
+                    except:
+                        pass
+                
+                if resp.status_code == 200:
+                    # Check if response is JSON (error) or binary (audio)
+                    content_type = resp.headers.get('Content-Type', '')
+                    if 'application/json' in content_type:
+                        # Error response
+                        data = resp.json()
+                        error_code = data.get("code", "unknown")
+                        error_msg = data.get("msg", "Unknown error")
+                        print(f"[SDK] ❌ Message API returned error: {error_code} - {error_msg}")
+                        return None
+                    else:
+                        # Binary audio content
+                        audio_content = resp.content
+                        # Try to determine extension from content type
+                        ext = self._get_audio_extension(content_type)
+                        file_name = f"audio_{file_key[:20]}{ext}"
+                        print(f"[SDK] ✅ Audio downloaded via message API: {len(audio_content)} bytes")
+                        return (audio_content, file_name)
+                else:
+                    print(f"[SDK] ❌ Message API HTTP error: {resp.status_code}")
+                    try:
+                        data = resp.json()
+                        print(f"[SDK] Error details: {data}")
+                    except:
+                        pass
+                    return None
+            
+            # Fallback: try SDK file download method
+            print(f"[SDK] Trying SDK file download method...")
+            return self.download_file(file_key, message_id)
+                
+        except Exception as e:
+            print(f"[SDK] ❌ Exception downloading audio: {e}")
+            logger.exception(f"Exception downloading audio: {e}")
+            return None
+    
+    def _get_audio_extension(self, content_type: str) -> str:
+        """Get file extension from content type for audio files."""
+        content_type = content_type.lower()
+        if 'mp3' in content_type or 'mpeg' in content_type:
+            return '.mp3'
+        elif 'wav' in content_type or 'wave' in content_type:
+            return '.wav'
+        elif 'ogg' in content_type:
+            return '.ogg'
+        elif 'aac' in content_type:
+            return '.aac'
+        elif 'm4a' in content_type or 'mp4' in content_type:
+            return '.m4a'
+        elif 'amr' in content_type:
+            return '.amr'  # Common for voice messages
+        else:
+            return '.mp3'  # Default to mp3
+    
     def upload_image(self, image_content: bytes, image_name: str = "image.png") -> str | None:
         """Upload an image to Feishu.
         

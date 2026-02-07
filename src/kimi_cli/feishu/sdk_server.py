@@ -23,6 +23,7 @@ from loguru import logger
 
 from kimi_cli.feishu.config import FeishuAccountConfig, FeishuConfig
 from kimi_cli.feishu.sdk_client import FeishuSDKClient
+from kimi_cli.utils.asr import transcribe_audio
 # Gateway removed - using SDK long connection only
 from kimi_cli.soul.agent import Runtime, load_agent
 from kimi_cli.soul.context import Context
@@ -32,6 +33,15 @@ from kimi_cli.session import Session
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kaos.path import KaosPath
 from pydantic import SecretStr
+
+
+# Exit code for restart signal
+RESTART_EXIT_CODE = 42
+
+
+class RestartRequested(Exception):
+    """Exception raised when restart is requested via /restart command."""
+    pass
 
 
 class SDKChatSession:
@@ -176,6 +186,7 @@ class SDKChatSession:
 • /stop - 打断当前操作（保留上下文，类似 Ctrl+C）
 • /clear - 中断当前处理并清空上下文
 • /mcp - 显示 MCP 服务器状态
+• /restart - **重启 OKbot**（代码修改后生效）
 
 **跨端接续（CLI ↔ Feishu）：**
 • /sessions - 列出电脑端 CLI 的所有 sessions
@@ -200,6 +211,10 @@ class SDKChatSession:
 
 **Skills：**
 • /skill - 使用 skill（需先在 feishu.toml 中配置 skills_dir）
+
+**语音消息：**
+• 🎤 按住说话 - 我会自动识别语音并回复
+• 使用智谱 GLM-ASR-2512 进行语音识别（中文识别效果优秀）
 
 **文件传输：**
 • 📥 发送文件给我 - 我会保存到当前目录
@@ -1242,10 +1257,12 @@ class SDKMessageHandler:
         client: FeishuSDKClient,
         config: FeishuAccountConfig,
         feishu_config: FeishuConfig | None = None,
+        server: FeishuSDKServer | None = None,
     ):
         self.client = client
         self.config = config
         self.feishu_config = feishu_config
+        self._server = server
         self._sessions: dict[str, SDKChatSession] = {}
         self._lock = asyncio.Lock()
         # Track linked CLI sessions: session_key -> session_id
@@ -1771,6 +1788,38 @@ class SDKMessageHandler:
                     "发送任意消息开始对话",
                 )
     
+    async def _handle_restart_command(self, chat_id: str, user_id: str) -> None:
+        """Handle /restart command to restart the bot.
+        
+        This will restart the OKbot service to apply any code changes.
+        """
+        # Check if user is allowed to restart
+        if not self._check_access(user_id, chat_id):
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                chat_id,
+                "❌ 您没有权限执行重启操作",
+            )
+            return
+        
+        await asyncio.to_thread(
+            self.client.send_text_message,
+            chat_id,
+            "🔄 **正在重启 OKbot...**\n\n"
+            "⏳ 请等待约 5-10 秒\n"
+            "✅ 重启后代码修改将生效",
+        )
+        
+        logger.info(f"[HANDLER] Restart requested by user {user_id}")
+        print(f"[HANDLER] Restart requested by user {user_id}")
+        
+        # Request server restart
+        if self._server:
+            # Schedule restart after sending message
+            asyncio.get_event_loop().call_later(2, self._server.request_restart)
+        else:
+            logger.warning("[HANDLER] Server reference not available, cannot restart")
+    
     def _load_mcp_configs(self) -> list[dict[str, Any]]:
         """Load MCP configs from global mcp.json file.
         
@@ -1973,11 +2022,109 @@ class SDKMessageHandler:
                     return
             else:
                 text = f"[File uploaded: {file_name}]"
+        elif msg_type == "audio":
+            # Handle voice/audio message
+            file_key = content.get("file_key")
+            
+            if file_key:
+                print(f"[HANDLER] Received audio message: {file_key}")
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    "🎤 收到语音消息\n正在下载并识别...",
+                )
+                
+                # Download the audio file
+                message_id = message.message_id if hasattr(message, 'message_id') else None
+                result = await asyncio.to_thread(
+                    self.client.download_audio,
+                    file_key,
+                    message_id,
+                )
+                
+                if result:
+                    audio_content, audio_name = result
+                    # Save to work directory
+                    work_dir = self._get_work_dir()
+                    save_path = os.path.join(work_dir, f"received_{audio_name}")
+                    try:
+                        with open(save_path, "wb") as f:
+                            f.write(audio_content)
+                        print(f"[HANDLER] Audio saved to: {save_path}")
+                        
+                        # Perform ASR using GLM-ASR-2512
+                        await asyncio.to_thread(
+                            self.client.send_text_message,
+                            chat_id,
+                            "📝 正在进行语音识别 (GLM-ASR-2512)...",
+                        )
+                        
+                        try:
+                            # Use GLM-ASR-2512 for transcription
+                            # Get API key from config or env var
+                            api_key = None
+                            if self.config.asr_api_key:
+                                api_key = self.config.asr_api_key.get_secret_value()
+                            
+                            transcribed_text = await asyncio.to_thread(
+                                transcribe_audio,
+                                save_path,
+                                api_key=api_key,
+                            )
+                            
+                            if transcribed_text.strip():
+                                await asyncio.to_thread(
+                                    self.client.send_text_message,
+                                    chat_id,
+                                    f"✅ 语音识别完成！\n🎯 识别结果：\n{transcribed_text}",
+                                )
+                                # Pass transcribed text to Kimi
+                                text = f"[语音消息转文字] {transcribed_text}"
+                            else:
+                                await asyncio.to_thread(
+                                    self.client.send_text_message,
+                                    chat_id,
+                                    "⚠️ 未能识别到语音内容，请重试或发送文字消息",
+                                )
+                                return
+                                
+                        except Exception as e:
+                            print(f"[HANDLER ERROR] GLM-ASR-2512 failed: {e}")
+                            await asyncio.to_thread(
+                                self.client.send_text_message,
+                                chat_id,
+                                f"❌ 语音识别失败 (GLM-ASR-2512): {str(e)[:100]}\n请检查 ZHIPU_API_KEY 环境变量或发送文字消息",
+                            )
+                            return
+                            
+                    except Exception as e:
+                        print(f"[HANDLER ERROR] Failed to save audio: {e}")
+                        await asyncio.to_thread(
+                            self.client.send_text_message,
+                            chat_id,
+                            f"❌ 保存音频失败: {str(e)[:100]}",
+                        )
+                        return
+                else:
+                    print(f"[HANDLER ERROR] Failed to download audio")
+                    await asyncio.to_thread(
+                        self.client.send_text_message,
+                        chat_id,
+                        f"❌ 下载语音消息失败",
+                    )
+                    return
+            else:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    "🎤 收到语音消息，但无法获取音频信息",
+                )
+                return
         else:
             await asyncio.to_thread(
                 self.client.send_text_message,
                 chat_id,
-                f"Unsupported message type: {msg_type}. Please send text messages only.",
+                f"Unsupported message type: {msg_type}. Please send text, image, file, or audio messages only.",
             )
             return
         
@@ -2051,6 +2198,11 @@ class SDKMessageHandler:
             logger.info("[HANDLER] Matched /id command")
             print("[HANDLER] Matched /id command")
             await self._handle_id_command(chat_id, session_key)
+            return
+        elif normalized_cmd == "/restart":
+            logger.info("[HANDLER] Matched /restart command")
+            print("[HANDLER] Matched /restart command")
+            await self._handle_restart_command(chat_id, user_id)
             return
         
         # Get or create session
@@ -2154,6 +2306,13 @@ class FeishuSDKServer:
         self._handlers: dict[str, SDKMessageHandler] = {}
         self._ws_clients: dict[str, Any] = {}  # WebSocket clients
         self._ws_threads: dict[str, threading.Thread] = {}
+        self._restart_requested = False
+    
+    def request_restart(self) -> None:
+        """Request a server restart."""
+        self._restart_requested = True
+        self._running = False
+        logger.info("Restart requested")
     
     async def start(self) -> None:
         """Start the Feishu SDK server."""
@@ -2205,7 +2364,7 @@ class FeishuSDKServer:
                     logger.warning(f"Could not get bot info for account '{account_name}'")
                 
                 # Create message handler (each handler manages its own sessions with isolated souls)
-                handler = SDKMessageHandler(client, account_config, self.config)
+                handler = SDKMessageHandler(client, account_config, self.config, self)
                 self._handlers[account_name] = handler
                 
                 # Start WebSocket client for event receiving
@@ -2339,10 +2498,14 @@ class FeishuSDKServer:
         }
     
     async def run_forever(self) -> None:
-        """Run the server until stopped."""
+        """Run the server until stopped or restart requested."""
         try:
             while self._running:
                 await asyncio.sleep(1)
+                if self._restart_requested:
+                    raise RestartRequested("Restart requested via command")
+        except RestartRequested:
+            raise
         except asyncio.CancelledError:
             pass
 
@@ -2351,7 +2514,7 @@ async def run_sdk_server(
     config: FeishuConfig | None = None,
     host: str | None = None,
     port: int | None = None,
-) -> None:
+) -> int:
     """Run the Feishu SDK server.
     
     This uses the official Feishu SDK's long connection (WebSocket) feature,
@@ -2361,6 +2524,9 @@ async def run_sdk_server(
         config: Feishu configuration. If None, loads from default location.
         host: Override host from config.
         port: Override port from config.
+    
+    Returns:
+        Exit code: 0 for normal exit, RESTART_EXIT_CODE for restart requested.
     """
     if config is None:
         config = FeishuConfig.load()
@@ -2375,7 +2541,7 @@ async def run_sdk_server(
         print("No Feishu accounts configured.")
         print("Please run 'kimi feishu config' to set up your Feishu integration.")
         print("\nFor setup guide: kimi feishu setup")
-        return
+        return 1
     
     server = FeishuSDKServer(config)
     
@@ -2388,10 +2554,16 @@ async def run_sdk_server(
         print("✅ No tunnel/穿透 tools required!")
         print("✅ Events received via WebSocket directly from Feishu")
         print("✅ Each chat has isolated context")
+        print("✅ Send /restart to reload after code changes")
         
         await server.run_forever()
+        return 0
         
+    except RestartRequested:
+        logger.info("Server restarting...")
+        print("\n🔄 Restarting server...")
+        return RESTART_EXIT_CODE
     except asyncio.CancelledError:
-        pass
+        return 0
     finally:
         await server.stop()

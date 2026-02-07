@@ -33,7 +33,14 @@ app_secret = "xxxxxxxx"
 show_tool_calls = true         # 在消息中显示工具调用
 show_thinking = true           # 在消息中显示思考过程
 
+# 语音识别设置 (GLM-ASR-2512)
+# GLM-ASR-2512 是智谱新一代语音识别模型，中文识别效果优秀
+# 需要先设置环境变量: export ZHIPU_API_KEY="your-api-key"
+# 获取 API Key: https://open.bigmodel.cn/
+# asr_api_key = ""              # 可选，如未设置则使用 ZHIPU_API_KEY 环境变量
+
 # 更多账号示例
 # [accounts.another_bot]
 # app_id = "cli_yyyyyyyy"
 # app_secret = "yyyyyyyy"
+# asr_api_key = "your-zhipu-api-key"

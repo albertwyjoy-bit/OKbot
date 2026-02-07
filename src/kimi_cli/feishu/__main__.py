@@ -11,6 +11,7 @@ import asyncio
 import sys
 
 from kimi_cli.feishu import FeishuConfig, run_sdk_server
+from kimi_cli.feishu.sdk_server import RESTART_EXIT_CODE
 
 
 def main() -> int:
@@ -18,6 +19,9 @@ def main() -> int:
     
     Runs Feishu integration using SDK mode (long connection/WebSocket).
     This is the recommended mode that doesn't require webhook URL or tunneling.
+    
+    Returns:
+        Exit code: 0 for normal exit, RESTART_EXIT_CODE (42) for restart requested.
     """
     config = FeishuConfig.load()
     
@@ -30,11 +34,11 @@ def main() -> int:
     try:
         print("🔌 Starting Feishu integration in SDK mode (long connection)...")
         print("   No webhook URL needed! Events received via WebSocket.\n")
-        asyncio.run(run_sdk_server(config))
+        exit_code = asyncio.run(run_sdk_server(config))
+        return exit_code
     except KeyboardInterrupt:
         print("\nShutting down...")
-    
-    return 0
+        return 0
 
 
 if __name__ == "__main__":

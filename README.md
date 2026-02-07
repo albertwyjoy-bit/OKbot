@@ -421,6 +421,7 @@ skills_dir = "~/.claude/skills"
 | `/session <id>` | **跨端接续** - 同 `/continue` |
 | `/id` | **跨端接续** - 查看当前 session ID（用于 CLI 接续） |
 | `/link` | **跨端接续** - 查看当前关联的 session |
+| `/restart` | **重启 OKbot**（代码自我修复后使其生效） |
 | `/mcp` | 查看当前可用的 MCP 工具列表 |
 | `/help` | 显示帮助信息 |
 | `/reset` | 重置当前会话（同 `/clear`） |
@@ -433,6 +434,51 @@ skills_dir = "~/.claude/skills"
 - `/sessions`, `/continue`, `/session`, `/id`, `/link` 等跨端接续命令由 Feishu 端直接处理
 - `/yolo` 命令：OKbot 强制开启 YOLO 模式，此命令在 Feishu 端无效（仅影响 CLI 端）
 - 其他 slash 命令（如 `/compact` 等）会透传给 Kimi CLI 处理
+
+#### 自主重启（代码自我修复后生效）
+
+OKbot 支持**自主重启**功能。当 OKbot 通过代码自我修复（self-healing）修改了自身代码后，可以通过以下步骤使修改生效：
+
+**方法一：使用启动脚本（推荐）**
+
+使用提供的 `start-feishu.sh` 脚本启动服务，它会自动监控进程状态并在收到重启信号后自动重启：
+
+```bash
+./start-feishu.sh
+```
+
+脚本特点：
+- 自动检测进程退出状态
+- 当收到重启信号时（如 `/restart` 命令），自动在 3 秒后重启
+- 最多重试 10 次，防止无限循环
+- 自动清理端口占用
+
+**方法二：在飞书中发送 `/restart` 命令**
+
+当 OKbot 完成代码自我修复后，直接在飞书对话中发送：
+
+```
+/restart
+```
+
+OKbot 会：
+1. 发送确认消息
+2. 等待 2 秒确保消息发送完成
+3. 优雅地停止服务
+4. 退出并返回特殊退出码（42）
+5. 由启动脚本自动重新启动
+6. 重启后加载最新代码
+
+**典型工作流程**：
+
+```
+用户：帮我修复 src/kimi_cli/feishu/sdk_server.py 中的错误
+OKbot：✅ 代码已修复并保存
+用户：/restart
+OKbot：🔄 正在重启 OKbot...（重启后代码修改将生效）
+[3秒后自动重启]
+OKbot：✅ OKbot 已重新启动
+```
 
 #### Skills 动态加载
 
