@@ -2340,8 +2340,22 @@ class FeishuSDKServer:
         # Stop all WebSocket clients
         for name, ws_client in self._ws_clients.items():
             logger.info(f"Stopping WebSocket client for {name}")
+            try:
+                # Attempt to stop the WebSocket client
+                ws_client.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping WebSocket client for {name}: {e}")
+        
+        # Wait for WebSocket threads to finish (with timeout)
+        for name, thread in self._ws_threads.items():
+            logger.info(f"Waiting for WebSocket thread {name} to finish...")
+            try:
+                thread.join(timeout=2.0)
+            except Exception as e:
+                logger.warning(f"Error joining thread {name}: {e}")
         
         self._ws_clients.clear()
+        self._ws_threads.clear()
         self._handlers.clear()
         self._clients.clear()
         
@@ -2404,7 +2418,11 @@ class FeishuSDKServer:
                 logger.info(f"Starting WebSocket client for account: {account_name}")
                 ws_client.start()
             except Exception as e:
-                logger.error(f"WebSocket client error for {account_name}: {e}")
+                # Only log error if server is still running
+                if self._running:
+                    logger.error(f"WebSocket client error for {account_name}: {e}")
+                else:
+                    logger.info(f"WebSocket client for {account_name} stopped (server shutting down)")
         
         # Start in a daemon thread
         thread = threading.Thread(target=run_ws_client, daemon=True)
@@ -2424,6 +2442,16 @@ class FeishuSDKServer:
         
         def _schedule_async(coro, name: str = "task"):
             """Schedule async coroutine in main loop, non-blocking."""
+            # Check if server is still running
+            if not self._running:
+                print(f"[SCHEDULE] Server not running, ignoring {name}")
+                return None
+            
+            # Check if event loop is closed
+            if main_loop.is_closed():
+                print(f"[SCHEDULE] Event loop closed, ignoring {name}")
+                return None
+            
             def on_done(fut):
                 try:
                     fut.result()
@@ -2437,6 +2465,14 @@ class FeishuSDKServer:
                 future = asyncio.run_coroutine_threadsafe(coro, main_loop)
                 future.add_done_callback(on_done)
                 return future
+            except RuntimeError as e:
+                if "loop is closed" in str(e):
+                    print(f"[SCHEDULE] Event loop closed, ignoring {name}")
+                    return None
+                print(f"[SCHEDULE ERROR] Failed to schedule {name}: {e}")
+                import traceback
+                traceback.print_exc()
+                return None
             except Exception as e:
                 print(f"[SCHEDULE ERROR] Failed to schedule {name}: {e}")
                 import traceback
