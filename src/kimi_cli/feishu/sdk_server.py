@@ -47,6 +47,8 @@ from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kaos.path import KaosPath
 from pydantic import SecretStr
 
+from kimi_cli.feishu.message_renderer import MessageRenderer, create_renderer
+
 
 class SDKChatSession:
     """A chat session with a user using SDK client.
@@ -75,6 +77,9 @@ class SDKChatSession:
         self._cancel_event: asyncio.Event | None = None
         self._tool_call_idx = 0
         self._tool_call_map: dict[str, int] = {}
+        
+        # Initialize message renderer for card-based messages
+        self._renderer = create_renderer()
         
         # Register Feishu tools for this session
         self._register_feishu_tools()
@@ -465,10 +470,8 @@ class SDKChatSession:
             await _run_with_retry(max_retries=1)
             print("[_process_message] run_soul completed successfully")
             
-            # Flush any remaining content
-            print("[_process_message] Flushing buffers after run_soul...")
-            await self._flush_text_buffers()
-            print("[_process_message] Buffers flushed")
+            # Note: Buffers are already flushed by _wire_loop_text_parts on TurnEnd
+            # No need to flush again here to avoid duplicate messages
             
             # Send completion indicator
             print("[_process_message] Sending completion message...")
@@ -932,44 +935,60 @@ class SDKChatSession:
             if self._current_thinking_buffer:
                 content = "".join(self._current_thinking_buffer).strip()
                 if content:
-                    print(f"[_wire_loop_text_parts] Sending thinking: {len(content)} chars")
+                    print(f"[_wire_loop_text_parts] Sending thinking card: {len(content)} chars")
                     try:
-                        # Split into chunks if too long
-                        max_len = 1500
-                        prefix = "💭 [思考过程]\n"
-                        for i in range(0, len(content), max_len):
-                            chunk = content[i:i+max_len]
+                        # Use card renderer for thinking
+                        card = self._renderer.render_thought(content)
+                        msg_id = await asyncio.to_thread(
+                            self.client.send_interactive_card,
+                            self.chat_id,
+                            card,
+                        )
+                        print(f"[_wire_loop_text_parts] Thinking card sent: {msg_id}")
+                    except Exception as e:
+                        print(f"[_wire_loop_text_parts] Error sending thinking card: {e}")
+                        # Fallback to text message
+                        try:
                             msg_id = await asyncio.to_thread(
                                 self.client.send_text_message,
                                 self.chat_id,
-                                prefix + chunk if i == 0 else chunk,
+                                f"💭 [思考过程]\n{content[:1500]}",
                             )
-                            print(f"[_wire_loop_text_parts] Thinking chunk sent: {msg_id}")
-                    except Exception as e:
-                        print(f"[_wire_loop_text_parts] Error sending thinking: {e}")
-                        logger.exception(f"Error sending thinking to Feishu: {e}")
+                            print(f"[_wire_loop_text_parts] Thinking text sent (fallback): {msg_id}")
+                        except Exception as e2:
+                            logger.exception(f"Error sending thinking to Feishu: {e2}")
                 self._current_thinking_buffer = []
         
         async def send_text():
             if self._current_text_buffer:
                 content = "".join(self._current_text_buffer).strip()
                 if content:
-                    print(f"[_wire_loop_text_parts] Sending text: {len(content)} chars")
+                    print(f"[_wire_loop_text_parts] Sending response card: {len(content)} chars")
                     try:
-                        # Split into chunks if too long
-                        max_len = 1500
-                        prefix = "🤖 [回复内容]\n"
-                        for i in range(0, len(content), max_len):
-                            chunk = content[i:i+max_len]
-                            msg_id = await asyncio.to_thread(
-                                self.client.send_text_message,
-                                self.chat_id,
-                                prefix + chunk if i == 0 else f"(续){chunk}",
-                            )
-                            print(f"[_wire_loop_text_parts] Text chunk sent: {msg_id}")
+                        # Use card renderer for response
+                        card = self._renderer.render_text_response(content)
+                        msg_id = await asyncio.to_thread(
+                            self.client.send_interactive_card,
+                            self.chat_id,
+                            card,
+                        )
+                        print(f"[_wire_loop_text_parts] Response card sent: {msg_id}")
                     except Exception as e:
-                        print(f"[_wire_loop_text_parts] Error sending text: {e}")
-                        logger.exception(f"Error sending text to Feishu: {e}")
+                        print(f"[_wire_loop_text_parts] Error sending response card: {e}")
+                        # Fallback to text message
+                        try:
+                            max_len = 1500
+                            prefix = "🤖 [回复内容]\n"
+                            for i in range(0, len(content), max_len):
+                                chunk = content[i:i+max_len]
+                                msg_id = await asyncio.to_thread(
+                                    self.client.send_text_message,
+                                    self.chat_id,
+                                    prefix + chunk if i == 0 else f"(续){chunk}",
+                                )
+                                print(f"[_wire_loop_text_parts] Text chunk sent (fallback): {msg_id}")
+                        except Exception as e2:
+                            logger.exception(f"Error sending text to Feishu: {e2}")
                 self._current_text_buffer = []
         
         try:
@@ -1058,14 +1077,29 @@ class SDKChatSession:
                     except:
                         func_args_display = func_args if func_args else "{}"
                     
-                    # Send tool call info with merged arguments
-                    print(f"[_wire_loop_text_parts] Sending tool call: {func_name}, args: {func_args_display[:100]}...")
-                    msg_id = await asyncio.to_thread(
-                        self.client.send_text_message,
-                        self.chat_id,
-                        f"🔧 [工具调用]\n名称: {func_name}\n参数: {func_args_display[:800]}",
-                    )
-                    print(f"[_wire_loop_text_parts] Tool call sent: {msg_id}")
+                    # Send tool call card
+                    print(f"[_wire_loop_text_parts] Sending tool call card: {func_name}")
+                    try:
+                        tool_call_card = self._renderer.render_tool_call(
+                            tool_name=func_name,
+                            arguments=args_obj if 'args_obj' in dir() else func_args_display,
+                            tool_call_id=tool_call_id,
+                        )
+                        msg_id = await asyncio.to_thread(
+                            self.client.send_interactive_card,
+                            self.chat_id,
+                            tool_call_card,
+                        )
+                        print(f"[_wire_loop_text_parts] Tool call card sent: {msg_id}")
+                    except Exception as e:
+                        print(f"[_wire_loop_text_parts] Error sending tool call card: {e}")
+                        # Fallback to text
+                        msg_id = await asyncio.to_thread(
+                            self.client.send_text_message,
+                            self.chat_id,
+                            f"🔧 [工具调用]\n名称: {func_name}\n参数: {func_args_display[:800]}",
+                        )
+                        print(f"[_wire_loop_text_parts] Tool call text sent (fallback): {msg_id}")
                     
                     # Send tool result (split if too long)
                     # Extract result text with priority: brief > message > output > str(return_value)
@@ -1108,23 +1142,44 @@ class SDKChatSession:
                     # Warn if result is empty (but only if it's truly empty, not just "None" or "")
                     if not result_text or len(result_text.strip()) == 0 or result_text.strip() in ('None', 'null', 'False', '[]', '{}', '[图片内容已过滤]'):
                         print(f"[_wire_loop_text_parts] WARNING: Tool result is empty!")
+                        empty_card = self._renderer.render_error(
+                            error_message=f"工具 `{func_name}` 返回了空结果，可能需要重试或检查输入",
+                            error_type="工具返回为空",
+                        )
                         msg_id = await asyncio.to_thread(
-                            self.client.send_text_message,
+                            self.client.send_interactive_card,
                             self.chat_id,
-                            f"⚠️ [工具返回为空]\n工具 `{func_name}` 返回了空结果，可能需要重试或检查输入",
+                            empty_card,
                         )
                         print(f"[_wire_loop_text_parts] Empty result warning sent: {msg_id}")
                     else:
-                        max_len = 1500
-                        prefix = "📊 [工具返回]\n"
-                        for i in range(0, len(result_text), max_len):
-                            chunk = result_text[i:i+max_len]
-                            msg_id = await asyncio.to_thread(
-                                self.client.send_text_message,
-                                self.chat_id,
-                                prefix + chunk if i == 0 else f"(续){chunk}",
+                        # Send tool result card
+                        print(f"[_wire_loop_text_parts] Sending tool result card: {len(result_text)} chars")
+                        try:
+                            tool_result_card = self._renderer.render_tool_result(
+                                tool_call_id=tool_call_id or "",
+                                result=result_text,
+                                tool_name=func_name,
                             )
-                            print(f"[_wire_loop_text_parts] Tool result chunk sent: {msg_id}")
+                            msg_id = await asyncio.to_thread(
+                                self.client.send_interactive_card,
+                                self.chat_id,
+                                tool_result_card,
+                            )
+                            print(f"[_wire_loop_text_parts] Tool result card sent: {msg_id}")
+                        except Exception as e:
+                            print(f"[_wire_loop_text_parts] Error sending tool result card: {e}")
+                            # Fallback to text
+                            max_len = 1500
+                            prefix = "📊 [工具返回]\n"
+                            for i in range(0, len(result_text), max_len):
+                                chunk = result_text[i:i+max_len]
+                                msg_id = await asyncio.to_thread(
+                                    self.client.send_text_message,
+                                    self.chat_id,
+                                    prefix + chunk if i == 0 else f"(续){chunk}",
+                                )
+                                print(f"[_wire_loop_text_parts] Tool result text sent (fallback): {msg_id}")
                     
                 elif isinstance(msg, StepInterrupted):
                     print("[_wire_loop_text_parts] StepInterrupted received")
@@ -1149,26 +1204,55 @@ class SDKChatSession:
                     if isinstance(subagent_msg, TextPart):
                         if subagent_msg.text:
                             print(f"[_wire_loop_text_parts] Subagent text: {len(subagent_msg.text)} chars")
-                            # Send subagent text immediately (don't buffer)
-                            await asyncio.to_thread(
-                                self.client.send_text_message,
-                                self.chat_id,
-                                f"📎 [Subagent] {subagent_msg.text[:1500]}",
-                            )
+                            # Send subagent text as card
+                            try:
+                                card = self._renderer.render_text_response(f"📎 [Subagent]\n\n{subagent_msg.text}")
+                                await asyncio.to_thread(
+                                    self.client.send_interactive_card,
+                                    self.chat_id,
+                                    card,
+                                )
+                            except Exception as e:
+                                print(f"[_wire_loop_text_parts] Error sending subagent text card: {e}")
+                                await asyncio.to_thread(
+                                    self.client.send_text_message,
+                                    self.chat_id,
+                                    f"📎 [Subagent] {subagent_msg.text[:1500]}",
+                                )
                     elif isinstance(subagent_msg, ThinkPart):
                         if subagent_msg.think:
                             print(f"[_wire_loop_text_parts] Subagent thinking: {len(subagent_msg.think)} chars")
-                            # Optionally send thinking (can be noisy, skip for now)
-                            pass
+                            # Send subagent thinking as card
+                            try:
+                                card = self._renderer.render_thought(f"[Subagent 思考]\n\n{subagent_msg.think}")
+                                await asyncio.to_thread(
+                                    self.client.send_interactive_card,
+                                    self.chat_id,
+                                    card,
+                                )
+                            except Exception as e:
+                                print(f"[_wire_loop_text_parts] Error sending subagent thinking card: {e}")
                     elif isinstance(subagent_msg, ToolCall):
                         # Subagent tool call
                         func_name = subagent_msg.function.name if subagent_msg.function else 'unknown'
                         print(f"[_wire_loop_text_parts] Subagent tool call: {func_name}")
-                        await asyncio.to_thread(
-                            self.client.send_text_message,
-                            self.chat_id,
-                            f"🔧 [Subagent 工具调用] {func_name}",
-                        )
+                        try:
+                            card = self._renderer.render_tool_call(
+                                tool_name=f"[Subagent] {func_name}",
+                                arguments=subagent_msg.function.arguments if subagent_msg.function else "{}",
+                            )
+                            await asyncio.to_thread(
+                                self.client.send_interactive_card,
+                                self.chat_id,
+                                card,
+                            )
+                        except Exception as e:
+                            print(f"[_wire_loop_text_parts] Error sending subagent tool call card: {e}")
+                            await asyncio.to_thread(
+                                self.client.send_text_message,
+                                self.chat_id,
+                                f"🔧 [Subagent 工具调用] {func_name}",
+                            )
                     elif isinstance(subagent_msg, ToolResult):
                         # Subagent tool result
                         # Filter out ImageURLPart with base64 data
@@ -1196,11 +1280,24 @@ class SDKChatSession:
                             result_text = "[图片内容已过滤] " + (result_text if result_text else "")
                         
                         print(f"[_wire_loop_text_parts] Subagent tool result: {len(result_text)} chars")
-                        await asyncio.to_thread(
-                            self.client.send_text_message,
-                            self.chat_id,
-                            f"📊 [Subagent 结果] {result_text[:800]}",
-                        )
+                        try:
+                            card = self._renderer.render_tool_result(
+                                tool_call_id=subagent_msg.tool_call_id if hasattr(subagent_msg, 'tool_call_id') else "",
+                                result=result_text,
+                                tool_name="[Subagent] 工具结果",
+                            )
+                            await asyncio.to_thread(
+                                self.client.send_interactive_card,
+                                self.chat_id,
+                                card,
+                            )
+                        except Exception as e:
+                            print(f"[_wire_loop_text_parts] Error sending subagent tool result card: {e}")
+                            await asyncio.to_thread(
+                                self.client.send_text_message,
+                                self.chat_id,
+                                f"📊 [Subagent 结果] {result_text[:800]}",
+                            )
                     else:
                         print(f"[_wire_loop_text_parts] Unhandled subagent event: {type(subagent_msg).__name__}")
                 
