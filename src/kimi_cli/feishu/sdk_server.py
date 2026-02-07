@@ -1201,9 +1201,15 @@ class SDKChatSession:
                 elif isinstance(msg, TurnEnd):
                     print("[_wire_loop_text_parts] TurnEnd received, flushing buffers...")
                     print(f"[_wire_loop_text_parts] thinking_buffer={len(self._current_thinking_buffer)}, text_buffer={len(self._current_text_buffer)}")
-                    # Flush remaining buffers
-                    await send_thinking()
-                    await send_text()
+                    # Flush remaining buffers - use try/except to ensure both are attempted
+                    try:
+                        await send_thinking()
+                    except Exception as e:
+                        print(f"[_wire_loop_text_parts] Error in send_thinking: {e}")
+                    try:
+                        await send_text()
+                    except Exception as e:
+                        print(f"[_wire_loop_text_parts] Error in send_text: {e}")
                     print("[_wire_loop_text_parts] Buffers flushed")
                     
                 elif isinstance(msg, SubagentEvent):
