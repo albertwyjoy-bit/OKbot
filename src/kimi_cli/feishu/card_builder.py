@@ -334,6 +334,13 @@ def build_response_card(
     
     return {
         "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "default",
+            "title": {
+                "tag": "plain_text",
+                "content": f"{CARD_ICONS['response']} 回复",
+            },
+        },
         "elements": [
             {
                 "tag": "div",
