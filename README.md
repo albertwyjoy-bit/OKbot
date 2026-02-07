@@ -14,10 +14,11 @@
 |------|------|
 | 🔄 **跨端接续** | 100% 复用 Kimi CLI 机制，CLI 上开发到一半随时切飞书继续，任务随时带走 |
 | 🛠️ **动态 Skills** | 飞书中随时让 AI 帮你写 Skills，热更新立即生效，边用边迭代 |
-| 💬 **富媒体交互** | 支持语音、图片、文件收发；移动端直接操控 PC，双向实时通信 |
+| 🎤 **语音消息** | 支持飞书语音消息，使用智谱 ASR 自动识别为文字，随时随地语音操控 |
+| 💬 **富媒体交互** | 支持图片、文件收发；移动端直接操控 PC，双向实时通信 |
 | 🤖 **设备操控** | 支持控制 PC 浏览器（Chrome）和 Android 手机，通过自然语言指令操作 |
-| 🧬 **自我进化** | 让 AI 直接修改自身源码修复问题，重启后生效 |
 | ⚡ **YOLO 模式** | **强制开启**，工具调用自动批准，移动端无需反复确认 |
+| 🔧 **MCP 工具隔离** | 多 MCP 服务器场景下自动添加 `{server}__` 前缀，彻底解决工具重名冲突问题 |
 
 > 🌟 **Forked from**: [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli)
 
@@ -118,12 +119,12 @@ $ python -m kimi_cli.cli --session <session_id> --work-dir <工作目录>
 - **专注效率**：省去反复确认的繁琐步骤，让 AI 自主完成任务
 
 ### 🛠️ MCP 工具生态
-- **多 MCP 服务器支持**：可同时连接多个 MCP 服务器，工具名自动添加前缀避免冲突
-  - `midscene-android__Tap` - Android 自动化测试
-  - `midscene-web__Tap` - Web 自动化测试
+- **多 MCP 服务器支持**：可同时连接多个 MCP 服务器，工具名自动添加 `{server}__` 前缀彻底解决重名冲突
+  - `midscene-android__Tap` / `midscene-web__Tap` - 解决多服务器 `Tap` 工具冲突
   - `chrome-devtools__navigate_page` - Chrome 浏览器控制
   - `notion__API-post-page` - Notion 文档操作
   - `markitdown__convert_to_markdown` - 文件格式转换
+- **智能工具隔离**：同名工具在不同服务器间自动隔离，AI 精准调用无混淆
 
 ### 🔐 OAuth 令牌自动刷新
 - **智能令牌管理**：长对话场景下自动刷新 OAuth 令牌（每 60 秒检查一次）
