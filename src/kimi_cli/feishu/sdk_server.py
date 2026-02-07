@@ -215,6 +215,8 @@ class SDKChatSession:
 **语音消息：**
 • 🎤 按住说话 - 我会自动识别语音并回复
 • 使用智谱 GLM-ASR-2512 进行语音识别（中文识别效果优秀）
+• 需要先设置 API Key: `export ZHIPU_API_KEY="your-api-key"`
+• 获取 API Key: https://open.bigmodel.cn/
 
 **文件传输：**
 • 📥 发送文件给我 - 我会保存到当前目录

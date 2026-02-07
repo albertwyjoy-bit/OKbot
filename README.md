@@ -112,6 +112,7 @@ $ python -m kimi_cli.cli --session <session_id> --work-dir <工作目录>
 - **消息实时响应**：支持群聊和私聊，自动回复用户消息
 - **👌 OK 表情反馈**：收到消息时自动添加 👌 反应，表示已收到
 - **富媒体支持**：支持图片、文件下载和处理
+- **🎤 语音消息识别**：支持飞书语音消息，使用 GLM-ASR-2512 自动识别为文字
 
 ### ⚡ YOLO 模式（强制开启）
 - **自动批准工具调用**：无需手动确认，直接执行所有工具操作
@@ -252,6 +253,11 @@ app_id = "cli_xxxxx"           # 替换为你的 App ID
 app_secret = "xxxxxxxx"        # 替换为你的 App Secret
 show_tool_calls = true         # 在消息中显示工具调用
 show_thinking = true           # 在消息中显示思考过程
+
+# 语音消息识别（可选）
+# 需要先设置环境变量: export ZHIPU_API_KEY="your-api-key"
+# 获取 API Key: https://open.bigmodel.cn/
+# asr_api_key = "your-zhipu-api-key"
 ```
 
 ### 5. 安装 Midscene
@@ -285,6 +291,35 @@ Midscene 支持通过 Chrome 插件实现桥接模式，无需额外安装 Playw
    - 或使用快捷键 `⇧ Shift + D` 快速启动
 
 详细配置参考：https://midscenejs.com/zh/bridge-mode
+
+### 6. 语音消息识别（可选）
+
+OKbot 支持接收飞书语音消息并自动识别为文字，使用智谱 GLM-ASR-2512 模型，中文识别效果优秀。
+
+**配置步骤**：
+
+1. **获取智谱 API Key**：
+   - 访问 [智谱 AI 开放平台](https://open.bigmodel.cn/)
+   - 注册/登录后创建 API Key
+
+2. **设置环境变量**（推荐）：
+   ```bash
+   export ZHIPU_API_KEY="your-zhipu-api-key"
+   ```
+
+3. **或在配置文件中设置**：
+   ```toml
+   [accounts.bot]
+   app_id = "cli_xxxxx"
+   app_secret = "xxxxxxxx"
+   asr_api_key = "your-zhipu-api-key"
+   ```
+
+4. **使用语音功能**：
+   - 在飞书对话中按住麦克风图标说话
+   - OKbot 会自动识别语音并回复
+
+> 📖 详细文档：[docs/voice-messages.md](./docs/voice-messages.md)
 
 **Midscene 文档参考**：https://midscenejs.com/zh/introduction.html
 
@@ -439,23 +474,36 @@ skills_dir = "~/.claude/skills"
 
 OKbot 支持**自主重启**功能。当 OKbot 通过代码自我修复（self-healing）修改了自身代码后，可以通过以下步骤使修改生效：
 
-**方法一：使用启动脚本（推荐）**
+**方法一：直接使用 python 命令启动（推荐）**
 
-使用提供的 `start-feishu.sh` 脚本启动服务，它会自动监控进程状态并在收到重启信号后自动重启：
+现在 `python -m kimi_cli.feishu` 本身已经内置了自动重启功能：
+
+```bash
+python -m kimi_cli.feishu
+```
+
+特点：
+- ✅ 内置自动重启循环
+- ✅ 当收到 `/restart` 命令时，自动在 3 秒后重启
+- ✅ 最多重试 10 次，防止无限循环
+- ✅ 无需额外的启动脚本
+
+**方法二：使用启动脚本**
+
+如果你更喜欢使用脚本启动（例如需要激活 conda 环境）：
 
 ```bash
 ./start-feishu.sh
 ```
 
 脚本特点：
-- 自动检测进程退出状态
-- 当收到重启信号时（如 `/restart` 命令），自动在 3 秒后重启
-- 最多重试 10 次，防止无限循环
+- 自动激活 conda 环境
+- 自动检测进程退出状态并重启
 - 自动清理端口占用
 
-**方法二：在飞书中发送 `/restart` 命令**
+**触发重启**
 
-当 OKbot 完成代码自我修复后，直接在飞书对话中发送：
+无论使用哪种启动方式，当 OKbot 完成代码自我修复后，直接在飞书对话中发送：
 
 ```
 /restart
@@ -466,7 +514,7 @@ OKbot 会：
 2. 等待 2 秒确保消息发送完成
 3. 优雅地停止服务
 4. 退出并返回特殊退出码（42）
-5. 由启动脚本自动重新启动
+5. 自动重新启动（由内置循环或脚本处理）
 6. 重启后加载最新代码
 
 **典型工作流程**：
