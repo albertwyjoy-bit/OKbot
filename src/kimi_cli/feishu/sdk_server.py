@@ -960,8 +960,10 @@ class SDKChatSession:
                 self._current_thinking_buffer = []
         
         async def send_text():
+            print(f"[_wire_loop_text_parts] send_text() called, buffer_size={len(self._current_text_buffer)}")
             if self._current_text_buffer:
                 content = "".join(self._current_text_buffer).strip()
+                print(f"[_wire_loop_text_parts] Content length: {len(content)}")
                 if content:
                     print(f"[_wire_loop_text_parts] Sending response card: {len(content)} chars")
                     try:
@@ -989,7 +991,11 @@ class SDKChatSession:
                                 print(f"[_wire_loop_text_parts] Text chunk sent (fallback): {msg_id}")
                         except Exception as e2:
                             logger.exception(f"Error sending text to Feishu: {e2}")
+                else:
+                    print(f"[_wire_loop_text_parts] Content is empty after strip()")
                 self._current_text_buffer = []
+            else:
+                print(f"[_wire_loop_text_parts] Buffer is empty, nothing to send")
         
         try:
             while True:
@@ -1003,18 +1009,23 @@ class SDKChatSession:
                     
                 elif isinstance(msg, TextPart):
                     if msg.text:
+                        print(f"[_wire_loop_text_parts] TextPart received: {len(msg.text)} chars")
                         self._current_text_buffer.append(msg.text)
                         # Only send text if not in thinking mode (to avoid interleaving)
                         # If we have thinking content pending, wait for it to complete first
                         has_thinking = self._current_thinking_buffer and any(
                             self._current_thinking_buffer
                         )
+                        print(f"[_wire_loop_text_parts] has_thinking={has_thinking}, buffer_size={len(self._current_text_buffer)}")
                         if not has_thinking:
                             total_chars = sum(len(t) for t in self._current_text_buffer)
                             # Lower threshold for slash command responses (usually short)
                             # to ensure they are sent immediately
                             if total_chars > 100:
+                                print(f"[_wire_loop_text_parts] Sending text (>{100} chars)")
                                 await send_text()
+                            else:
+                                print(f"[_wire_loop_text_parts] Buffering text ({total_chars} chars), waiting for more...")
                         
                 elif isinstance(msg, ThinkPart):
                     if msg.think:
@@ -1189,6 +1200,7 @@ class SDKChatSession:
                     
                 elif isinstance(msg, TurnEnd):
                     print("[_wire_loop_text_parts] TurnEnd received, flushing buffers...")
+                    print(f"[_wire_loop_text_parts] thinking_buffer={len(self._current_thinking_buffer)}, text_buffer={len(self._current_text_buffer)}")
                     # Flush remaining buffers
                     await send_thinking()
                     await send_text()
