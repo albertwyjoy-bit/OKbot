@@ -77,11 +77,12 @@ def _note_element(content: str, icon: str = "") -> dict[str, Any]:
     }
 
 
-def build_thought_card(thought: str) -> dict[str, Any]:
+def build_thought_card(thought: str, is_collapsed: bool = False) -> dict[str, Any]:
     """Build a card for AI thought/reasoning.
     
     Args:
         thought: The thought content
+        is_collapsed: Ignored parameter (for backward compatibility)
         
     Returns:
         Interactive card JSON
