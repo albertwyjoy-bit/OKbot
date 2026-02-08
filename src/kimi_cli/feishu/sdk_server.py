@@ -405,6 +405,15 @@ class SDKChatSession:
         """Handle /yolo command: toggle YOLO mode."""
         self._yolo_mode = not self._yolo_mode
         
+        # Also update the soul's runtime approval setting
+        if self.soul and hasattr(self.soul, 'runtime') and self.soul.runtime:
+            if self._yolo_mode:
+                self.soul.runtime.approval.set_yolo(True)
+                print(f"[SESSION] Runtime YOLO mode enabled")
+            else:
+                self.soul.runtime.approval.set_yolo(False)
+                print(f"[SESSION] Runtime YOLO mode disabled")
+        
         if self._yolo_mode:
             status_text = """✅ **YOLO 模式已开启**
 
@@ -1713,7 +1722,7 @@ class SDKMessageHandler:
             oauth=oauth,
             llm=llm,
             session=session,
-            yolo=True,  # YOLO mode: always auto-approve
+            yolo=self.config.auto_approve,  # Use config setting for YOLO mode
             skills_dir=skills_dir,
         )
         
@@ -1801,7 +1810,7 @@ class SDKMessageHandler:
             oauth=oauth,
             llm=llm,
             session=session,
-            yolo=True,  # YOLO mode: always auto-approve
+            yolo=self.config.auto_approve,  # Use config setting for YOLO mode
             skills_dir=skills_dir,
         )
         
