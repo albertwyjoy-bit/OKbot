@@ -751,6 +751,9 @@ class SDKChatSession:
         1. Approve once - allow this single execution
         2. Approve for this conversation - always allow this action
         3. Reject - deny this execution
+        
+        Note: Interactive card callbacks require additional setup. For now,
+        the card is displayed and auto-approved after timeout.
         """
         from kimi_cli.feishu.card_builder import build_approval_card, build_approval_result_card
         
@@ -763,6 +766,8 @@ class SDKChatSession:
         
         # Store the pending request
         self._pending_approvals[request_id] = msg
+        
+        card_message_id: str | None = None
         
         # Build and send approval card
         try:
@@ -792,15 +797,9 @@ class SDKChatSession:
             print(f"[_handle_approval] Approval card sent: {card_message_id}")
             logger.info(f"Approval card sent for request {request_id}")
             
-            # Note: The actual approval resolution will be handled by the card callback
-            # For now, we auto-approve after a timeout if no response is received
-            # This is a simplified implementation - in production, you'd want to:
-            # 1. Wait for the card button callback
-            # 2. Update the card with the result
-            # 3. Continue with the approved/rejected action
-            
             # TODO: Implement proper card callback handling
-            # For now, auto-approve after timeout to prevent blocking
+            # For now, wait for user to reply with approval command
+            # or auto-approve after timeout
             await asyncio.sleep(30)  # Wait 30 seconds for user response
             
             if request_id in self._pending_approvals:
@@ -811,12 +810,16 @@ class SDKChatSession:
                 del self._pending_approvals[request_id]
                 
                 # Update card to show timeout
-                result_card = build_approval_result_card(tool_name, approved=True)
-                await asyncio.to_thread(
-                    self.client.update_interactive_card,
-                    card_message_id,
-                    result_card,
-                )
+                if card_message_id:
+                    try:
+                        result_card = build_approval_result_card(tool_name, approved=True)
+                        await asyncio.to_thread(
+                            self.client.update_interactive_card,
+                            card_message_id,
+                            result_card,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to update card: {e}")
                 
         except Exception as e:
             logger.exception(f"Error handling approval request: {e}")

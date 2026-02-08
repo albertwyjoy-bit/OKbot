@@ -477,7 +477,6 @@ def build_approval_card(
         },
         {
             "tag": "action",
-            "layout": "default",
             "actions": [
                 {
                     "tag": "button",
@@ -487,7 +486,7 @@ def build_approval_card(
                     },
                     "type": "primary",
                     "value": {
-                        "action": "approve_once",
+                        "key": "approve_once",
                         "request_id": request_id,
                     },
                 },
@@ -499,7 +498,7 @@ def build_approval_card(
                     },
                     "type": "default",
                     "value": {
-                        "action": "approve_session",
+                        "key": "approve_session",
                         "request_id": request_id,
                     },
                 },
@@ -511,7 +510,7 @@ def build_approval_card(
                     },
                     "type": "danger",
                     "value": {
-                        "action": "reject",
+                        "key": "reject",
                         "request_id": request_id,
                     },
                 },
@@ -520,7 +519,7 @@ def build_approval_card(
         {
             "tag": "note",
             "elements": [
-                _plain_text_element("💡 提示: YOLO 模式下自动批准所有操作。发送 /yolo 切换模式")
+                _plain_text_element("💡 提示: 发送 /yolo 可切换为自动批准模式")
             ],
         },
     ]
@@ -541,7 +540,11 @@ def build_approval_card(
                 })
     
     return {
-        "config": {"wide_screen_mode": True},
+        "config": {
+            "wide_screen_mode": True,
+            "enable_forward": True,
+            "update_multi": True,
+        },
         "header": {
             "template": "orange",
             "title": {
