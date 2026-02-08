@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import lark_oapi as lark
+from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger
 
 # Suppress RuntimeWarning about unawaited coroutines from the Lark SDK internals
 # These warnings are from the SDK's internal async methods and are not our bugs
@@ -752,10 +753,10 @@ class SDKChatSession:
         2. Approve for this conversation - always allow this action
         3. Reject - deny this execution
         
-        Note: Interactive card callbacks require additional setup. For now,
-        the card is displayed and auto-approved after timeout.
+        The user can click buttons on the card to respond. Card callbacks are
+        received via WebSocket and handled by handle_card_action method.
         """
-        from kimi_cli.feishu.card_builder import build_approval_card, build_approval_result_card
+        from kimi_cli.feishu.card_builder import build_approval_card
         
         request_id = msg.id
         tool_name = msg.sender
@@ -766,8 +767,6 @@ class SDKChatSession:
         
         # Store the pending request
         self._pending_approvals[request_id] = msg
-        
-        card_message_id: str | None = None
         
         # Build and send approval card
         try:
@@ -797,30 +796,10 @@ class SDKChatSession:
             print(f"[_handle_approval] Approval card sent: {card_message_id}")
             logger.info(f"Approval card sent for request {request_id}")
             
-            # TODO: Implement proper card callback handling
-            # For now, wait for user to reply with approval command
-            # or auto-approve after timeout
-            await asyncio.sleep(30)  # Wait 30 seconds for user response
+            # Wait indefinitely for user to click card button
+            # The request will be resolved by handle_card_action when user clicks
+            print(f"[_handle_approval] Waiting for user approval via card button...")
             
-            if request_id in self._pending_approvals:
-                # No response received, auto-approve to prevent blocking
-                print(f"[_handle_approval] Timeout, auto-approving request {request_id}")
-                logger.warning(f"Approval timeout for request {request_id}, auto-approving")
-                msg.resolve("approve")
-                del self._pending_approvals[request_id]
-                
-                # Update card to show timeout
-                if card_message_id:
-                    try:
-                        result_card = build_approval_result_card(tool_name, approved=True)
-                        await asyncio.to_thread(
-                            self.client.update_interactive_card,
-                            card_message_id,
-                            result_card,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to update card: {e}")
-                
         except Exception as e:
             logger.exception(f"Error handling approval request: {e}")
             # In case of error, auto-approve to prevent blocking
@@ -2523,6 +2502,106 @@ class SDKMessageHandler:
         
         logger.info(f"P2P chat created with user: {user_id}")
         # Removed auto welcome message - user can start conversation directly
+    
+    async def handle_card_action(self, data: P2CardActionTrigger) -> None:
+        """Handle card action trigger (button click).
+        
+        This is called when user clicks a button on an interactive card.
+        """
+        try:
+            event = data.event
+            action_value = event.action.value
+            user_id = event.user_id.open_id
+            chat_id = event.chat_id
+            message_id = event.message_id
+            
+            print(f"[CARD ACTION] Received action: {action_value}")
+            logger.info(f"Card action from user {user_id}: {action_value}")
+            
+            # Extract action key and request_id from button value
+            key = action_value.get("key") if isinstance(action_value, dict) else None
+            request_id = action_value.get("request_id") if isinstance(action_value, dict) else None
+            
+            if not key or not request_id:
+                print(f"[CARD ACTION] Invalid action value: {action_value}")
+                return
+            
+            # Find the session for this chat
+            session_key = None
+            for s_key, session in self._sessions.items():
+                if session.chat_id == chat_id:
+                    session_key = s_key
+                    break
+            
+            if not session_key:
+                print(f"[CARD ACTION] No session found for chat {chat_id}")
+                return
+            
+            session = self._sessions.get(session_key)
+            if not session:
+                print(f"[CARD ACTION] Session not found: {session_key}")
+                return
+            
+            # Find the pending approval request
+            if request_id not in session._pending_approvals:
+                print(f"[CARD ACTION] Request {request_id} not found or already processed")
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    "⚠️ 该请求已过期或已被处理",
+                )
+                return
+            
+            msg = session._pending_approvals[request_id]
+            
+            # Handle different actions
+            if key == "approve_once":
+                msg.resolve("approve")
+                del session._pending_approvals[request_id]
+                print(f"[CARD ACTION] Request {request_id} approved once")
+                
+                # Update card to show approved
+                from kimi_cli.feishu.card_builder import build_approval_result_card
+                result_card = build_approval_result_card(msg.sender, approved=True)
+                await asyncio.to_thread(
+                    self.client.update_interactive_card,
+                    message_id,
+                    result_card,
+                )
+                
+            elif key == "approve_session":
+                msg.resolve("approve_for_session")
+                del session._pending_approvals[request_id]
+                print(f"[CARD ACTION] Request {request_id} approved for session")
+                
+                # Update card to show approved for session
+                from kimi_cli.feishu.card_builder import build_approval_result_card
+                result_card = build_approval_result_card(msg.sender, approved=True, is_session_approval=True)
+                await asyncio.to_thread(
+                    self.client.update_interactive_card,
+                    message_id,
+                    result_card,
+                )
+                
+            elif key == "reject":
+                msg.resolve("reject")
+                del session._pending_approvals[request_id]
+                print(f"[CARD ACTION] Request {request_id} rejected")
+                
+                # Update card to show rejected
+                from kimi_cli.feishu.card_builder import build_approval_result_card
+                result_card = build_approval_result_card(msg.sender, approved=False)
+                await asyncio.to_thread(
+                    self.client.update_interactive_card,
+                    message_id,
+                    result_card,
+                )
+            else:
+                print(f"[CARD ACTION] Unknown action key: {key}")
+                
+        except Exception as e:
+            logger.exception(f"Error handling card action: {e}")
+            print(f"[CARD ACTION ERROR] {e}")
 
 
 class FeishuSDKServer:
@@ -2871,6 +2950,22 @@ class FeishuSDKServer:
             """Handle message read event (ignore)."""
             pass
         
+        def on_p2_card_action_trigger(data: P2CardActionTrigger) -> None:
+            """Handle card action trigger (button click)."""
+            print(f"\n[EVENT] Card action triggered!")
+            try:
+                action_value = data.event.action.value
+                user_id = data.event.user_id.open_id
+                chat_id = data.event.chat_id
+                print(f"  action_value: {action_value}")
+                print(f"  user_id: {user_id}")
+                print(f"  chat_id: {chat_id}")
+                
+                # Schedule in main event loop
+                _schedule_async(lambda: handler.handle_card_action(data), "card_action_handler")
+            except Exception as e:
+                print(f"[EVENT ERROR] Failed to handle card action: {e}")
+        
         # Build event handler
         event_handler = lark.EventDispatcherHandler.builder("", "") \
             .register_p2_im_message_receive_v1(on_p2_im_message_receive_v1) \
@@ -2878,6 +2973,7 @@ class FeishuSDKServer:
             .register_p2_im_chat_member_bot_deleted_v1(on_p2_im_chat_member_bot_deleted_v1) \
             .register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(on_p2_im_chat_access_event_v1) \
             .register_p2_im_message_message_read_v1(on_p2_im_message_message_read_v1) \
+            .register_p2_card_action_trigger(on_p2_card_action_trigger) \
             .build()
         
         return event_handler
