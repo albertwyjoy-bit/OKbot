@@ -75,6 +75,8 @@ type ChatWorkspaceProps = {
   onRenameSession?: (sessionId: string, newTitle: string) => Promise<boolean>;
   /** Available slash commands */
   slashCommands?: SlashCommandDef[];
+  /** Fork session at a specific turn */
+  onForkSession?: (turnIndex: number) => void;
 };
 
 type ToolApproval = NonNullable<LiveMessage["toolCall"]>["approval"];
@@ -101,6 +103,7 @@ export const ChatWorkspace = memo(function ChatWorkspaceComponent({
   onOpenSidebar,
   onRenameSession,
   slashCommands = [],
+  onForkSession,
 }: ChatWorkspaceProps): ReactElement {
   const [blocksExpanded, setBlocksExpanded] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -200,7 +203,6 @@ export const ChatWorkspace = memo(function ChatWorkspaceComponent({
           <ChatConversation
             messages={messages}
             status={status}
-            isAwaitingFirstResponse={isAwaitingFirstResponse}
             selectedSessionId={selectedSessionId}
             currentSession={currentSession}
             isReplayingHistory={isReplayingHistory}
@@ -214,6 +216,7 @@ export const ChatWorkspace = memo(function ChatWorkspaceComponent({
             isSearchOpen={isSearchOpen}
             onSearchOpenChange={setIsSearchOpen}
             activityStatus={activityStatus}
+            onForkSession={onForkSession}
           />
         </div>
 

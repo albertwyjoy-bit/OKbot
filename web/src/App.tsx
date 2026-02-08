@@ -60,6 +60,7 @@ function App() {
 
   const {
     sessions,
+    archivedSessions,
     selectedSessionId,
     createSession,
     deleteSession,
@@ -70,9 +71,14 @@ function App() {
     listSessionDirectory,
     refreshSession,
     refreshSessions,
+    refreshArchivedSessions,
     loadMoreSessions,
+    loadMoreArchivedSessions,
     hasMoreSessions,
+    hasMoreArchivedSessions,
     isLoadingMore,
+    isLoadingMoreArchived,
+    isLoadingArchived,
     searchQuery,
     setSearchQuery,
     applySessionStatus,
@@ -80,6 +86,12 @@ function App() {
     fetchStartupDir,
     renameSession,
     generateTitle,
+    archiveSession,
+    unarchiveSession,
+    bulkArchiveSessions,
+    bulkUnarchiveSessions,
+    bulkDeleteSessions,
+    forkSession,
     error: sessionsError,
   } = sessionsHook;
 
@@ -300,6 +312,26 @@ function App() {
     [sessions],
   );
 
+  // Transform archived Session[] to SessionSummary[] for sidebar
+  const archivedSessionSummaries = useMemo(
+    () =>
+      archivedSessions.map((session) => ({
+        id: session.sessionId,
+        title: session.title ?? "Untitled",
+        updatedAt: formatRelativeTime(session.lastUpdated),
+        workDir: session.workDir,
+        lastUpdated: session.lastUpdated,
+      })),
+    [archivedSessions],
+  );
+
+  const handleForkSession = useCallback(
+    async (sessionId: string, turnIndex: number) => {
+      await forkSession(sessionId, turnIndex);
+    },
+    [forkSession],
+  );
+
   const renderChatPanel = () => (
     <ChatWorkspaceContainer
       selectedSessionId={selectedSessionId}
@@ -315,6 +347,7 @@ function App() {
       onOpenSidebar={handleOpenMobileSidebar}
       generateTitle={generateTitle}
       onRenameSession={renameSession}
+      onForkSession={handleForkSession}
     />
   );
 
@@ -384,14 +417,25 @@ function App() {
                     onDeleteSession={handleDeleteSession}
                     onSelectSession={handleSelectSession}
                     onRenameSession={renameSession}
+                    onArchiveSession={archiveSession}
+                    onUnarchiveSession={unarchiveSession}
+                    onBulkArchiveSessions={bulkArchiveSessions}
+                    onBulkUnarchiveSessions={bulkUnarchiveSessions}
+                    onBulkDeleteSessions={bulkDeleteSessions}
                     onRefreshSessions={handleRefreshSessions}
+                    onRefreshArchivedSessions={refreshArchivedSessions}
                     onLoadMoreSessions={loadMoreSessions}
+                    onLoadMoreArchivedSessions={loadMoreArchivedSessions}
                     onOpenCreateDialog={handleOpenCreateDialog}
                     streamStatus={streamStatus}
                     selectedSessionId={selectedSessionId}
                     sessions={sessionSummaries}
+                    archivedSessions={archivedSessionSummaries}
                     hasMoreSessions={hasMoreSessions}
+                    hasMoreArchivedSessions={hasMoreArchivedSessions}
                     isLoadingMore={isLoadingMore}
+                    isLoadingMoreArchived={isLoadingMoreArchived}
+                    isLoadingArchived={isLoadingArchived}
                     searchQuery={searchQuery}
                     onSearchQueryChange={handleSearchQueryChange}
                   />
@@ -446,30 +490,31 @@ function App() {
             onClick={handleCloseMobileSidebar}
           />
           <div className="relative flex h-full w-[min(86vw,360px)] flex-col border-r border-border bg-background pt-[var(--safe-top)] shadow-2xl">
-            <div className="flex items-center justify-between border-b px-3 py-2">
-              <span className="text-sm font-semibold text-foreground">Sessions</span>
-              <button
-                type="button"
-                aria-label="Close sessions sidebar"
-                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/50 hover:text-foreground"
-                onClick={handleCloseMobileSidebar}
-              >
-                <PanelLeftClose className="size-4" />
-              </button>
-            </div>
             <div className="min-h-0 flex-1">
               <SessionsSidebar
                 onDeleteSession={handleDeleteSession}
                 onSelectSession={handleSelectSession}
                 onRenameSession={renameSession}
+                onArchiveSession={archiveSession}
+                onUnarchiveSession={unarchiveSession}
+                onBulkArchiveSessions={bulkArchiveSessions}
+                onBulkUnarchiveSessions={bulkUnarchiveSessions}
+                onBulkDeleteSessions={bulkDeleteSessions}
                 onRefreshSessions={handleRefreshSessions}
+                onRefreshArchivedSessions={refreshArchivedSessions}
                 onLoadMoreSessions={loadMoreSessions}
+                onLoadMoreArchivedSessions={loadMoreArchivedSessions}
                 onOpenCreateDialog={handleOpenCreateDialog}
+                onClose={handleCloseMobileSidebar}
                 streamStatus={streamStatus}
                 selectedSessionId={selectedSessionId}
                 sessions={sessionSummaries}
+                archivedSessions={archivedSessionSummaries}
                 hasMoreSessions={hasMoreSessions}
+                hasMoreArchivedSessions={hasMoreArchivedSessions}
                 isLoadingMore={isLoadingMore}
+                isLoadingMoreArchived={isLoadingMoreArchived}
+                isLoadingArchived={isLoadingArchived}
                 searchQuery={searchQuery}
                 onSearchQueryChange={handleSearchQueryChange}
               />

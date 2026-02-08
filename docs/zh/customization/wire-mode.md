@@ -26,7 +26,7 @@ Wire 模式主要用于：
 
 ## Wire 协议
 
-Wire 使用基于 JSON-RPC 2.0 的协议，通过 stdin/stdout 进行双向通信。当前协议版本为 `1.2`。每条消息是一行 JSON，符合 JSON-RPC 2.0 规范。
+Wire 使用基于 JSON-RPC 2.0 的协议，通过 stdin/stdout 进行双向通信。当前协议版本为 `1.3`。每条消息是一行 JSON，符合 JSON-RPC 2.0 规范。
 
 ### 协议类型定义
 
@@ -137,13 +137,13 @@ interface ExternalToolsResult {
 **请求示例**
 
 ```json
-{"jsonrpc": "2.0", "method": "initialize", "id": "550e8400-e29b-41d4-a716-446655440000", "params": {"protocol_version": "1.1", "client": {"name": "my-ui", "version": "1.0.0"}, "external_tools": [{"name": "open_in_ide", "description": "Open file in IDE", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}]}}
+{"jsonrpc": "2.0", "method": "initialize", "id": "550e8400-e29b-41d4-a716-446655440000", "params": {"protocol_version": "1.3", "client": {"name": "my-ui", "version": "1.0.0"}, "external_tools": [{"name": "open_in_ide", "description": "Open file in IDE", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}]}}
 ```
 
 **成功响应示例**
 
 ```json
-{"jsonrpc": "2.0", "id": "550e8400-e29b-41d4-a716-446655440000", "result": {"protocol_version": "1.1", "server": {"name": "Kimi Code CLI", "version": "0.69.0"}, "slash_commands": [{"name": "init", "description": "Analyze the codebase ...", "aliases": []}], "external_tools": {"accepted": ["open_in_ide"], "rejected": []}}}
+{"jsonrpc": "2.0", "id": "550e8400-e29b-41d4-a716-446655440000", "result": {"protocol_version": "1.3", "server": {"name": "Kimi Code CLI", "version": "0.69.0"}, "slash_commands": [{"name": "init", "description": "Analyze the codebase ...", "aliases": []}], "external_tools": {"accepted": ["open_in_ide"], "rejected": []}}}
 ```
 
 若 Server 不支持 `initialize` 方法，Client 会收到 `-32601 method not found` 错误，应自动降级到无握手模式。
@@ -196,12 +196,50 @@ interface PromptResult {
 | `-32002` | 不支持指定的 LLM |
 | `-32003` | LLM 服务错误 |
 
+### `replay`
+
+::: info 新增
+新增于 Wire 1.3。
+:::
+
+- **方向**：Client → Agent
+- **类型**：Request（需要响应）
+
+触发历史回放。Server 读取会话目录中的 `wire.jsonl`，按顺序重新发送已记录的 `event` 和 `request` 消息。回放是只读的，Client 不应对回放中的 `request` 消息作出响应。如果没有历史记录，Server 直接返回 `events: 0`、`requests: 0`。
+
+```typescript
+/** replay 请求无参数，params 可以是空对象或省略 */
+type ReplayParams = Record<string, never>
+
+/** replay 响应结果 */
+interface ReplayResult {
+  /** 回放结束状态 */
+  status: "finished" | "cancelled"
+  /** 回放的 event 数量 */
+  events: number
+  /** 回放的 request 数量 */
+  requests: number
+}
+```
+
+**请求示例**
+
+```json
+{"jsonrpc": "2.0", "method": "replay", "id": "6ba7b812-9dad-11d1-80b4-00c04fd430c8"}
+```
+
+**成功响应示例**
+
+```json
+{"jsonrpc": "2.0", "id": "6ba7b812-9dad-11d1-80b4-00c04fd430c8", "result": {"status": "finished", "events": 42, "requests": 3}}
+```
+
 ### `cancel`
 
 - **方向**：Client → Agent
 - **类型**：Request（需要响应）
 
-取消当前正在进行的 Agent 轮次。调用后，正在进行的 `prompt` 请求会返回 `{"status": "cancelled"}`。
+取消当前正在进行的 Agent 轮次或回放。调用后，正在进行的 `prompt` 请求会返回 `{"status": "cancelled"}`，回放会返回 `{"status": "cancelled"}` 及已发送的消息计数。
 
 ```typescript
 /** cancel 请求无参数，params 可以是空对象或省略 */
@@ -671,13 +709,13 @@ interface ShellDisplayBlock {
 }
 ```
 
-## KAgent：Rust 版 Wire Server
+## Kimi Agent（Rust）Wire Server
 
 ::: warning 注意
-KAgent 目前为实验性功能，API 和行为可能在后续版本中发生变化。
+Kimi Agent 目前为实验性功能，API 和行为可能在后续版本中发生变化。
 :::
 
-KAgent 是 Kimi Code CLI 的 Rust 实现，专为 Wire 模式设计。如果你只需要 Wire 协议服务，KAgent 提供了一个更轻量的选择。
+Kimi Agent (Rust) 是 Kimi Code CLI 内核的 Rust 实现，专为 Wire 模式设计。如果你只需要 Wire 协议服务，Kimi Agent (Rust) 提供了一个更轻量的选择。Rust 实现位于 [`MoonshotAI/kimi-agent-rs`](https://github.com/MoonshotAI/kimi-agent-rs)。
 
 ### 特点
 
@@ -693,61 +731,61 @@ KAgent 是 Kimi Code CLI 的 Rust 实现，专为 Wire 模式设计。如果你�
 - **无 Kimi 账号登录功能**：没有 `login`/`logout` 子命令和 `/login`、`/logout` 斜杠命令，需要手动配置 API 密钥
 - **不支持 `--prompt`/`--command`**：Wire 服务器不接受初始提示词
 - **仅支持本地执行**：没有 SSH Kaos 支持
-- **MCP OAuth 存储位置不同**：KAgent 存储在 `~/.kimi/credentials/mcp_auth.json`，Python 版存储在 `~/.fastmcp/oauth-mcp-client-cache/`，两者不兼容
+- **MCP OAuth 存储位置不同**：Kimi Agent 存储在 `~/.kimi/credentials/mcp_auth.json`，Python 版存储在 `~/.fastmcp/oauth-mcp-client-cache/`，两者不兼容
 
 ### 安装
 
-从 [GitHub Releases](https://github.com/MoonshotAI/kimi-cli/releases) 下载预编译的二进制文件：
+从 [GitHub Releases](https://github.com/MoonshotAI/kimi-agent-rs/releases) 下载预编译的二进制文件：
 
 ```sh
 # macOS (Apple Silicon)
-curl -L https://github.com/MoonshotAI/kimi-cli/releases/latest/download/kagent-aarch64-apple-darwin.tar.gz | tar xz
-sudo mv kagent /usr/local/bin/
+curl -L https://github.com/MoonshotAI/kimi-agent-rs/releases/latest/download/kimi-agent-aarch64-apple-darwin.tar.gz | tar xz
+sudo mv kimi-agent /usr/local/bin/
 
 # Linux (x86_64)
-curl -L https://github.com/MoonshotAI/kimi-cli/releases/latest/download/kagent-x86_64-unknown-linux-gnu.tar.gz | tar xz
-sudo mv kagent /usr/local/bin/
+curl -L https://github.com/MoonshotAI/kimi-agent-rs/releases/latest/download/kimi-agent-x86_64-unknown-linux-gnu.tar.gz | tar xz
+sudo mv kimi-agent /usr/local/bin/
 ```
 
 ### 使用
 
-KAgent 默认运行 Wire 模式：
+Kimi Agent 默认运行 Wire 模式：
 
 ```sh
-kagent
+kimi-agent
 ```
 
 常用选项与 `kimi` 命令相同：
 
 ```sh
 # 指定工作目录
-kagent --work-dir /path/to/project
+kimi-agent --work-dir /path/to/project
 
 # 继续上一个会话
-kagent --continue
+kimi-agent --continue
 
 # 使用指定会话
-kagent --session <session-id>
+kimi-agent --session <session-id>
 
 # 使用指定模型
-kagent --model k2
+kimi-agent --model k2
 
 # YOLO 模式（跳过审批）
-kagent --yolo
+kimi-agent --yolo
 ```
 
 子命令：
 
 ```sh
 # 显示版本和环境信息
-kagent info
+kimi-agent info
 
 # 管理 MCP 服务器
-kagent mcp list
-kagent mcp add <name> <command> [args...]
-kagent mcp remove <name>
+kimi-agent mcp list
+kimi-agent mcp add <name> <command> [args...]
+kimi-agent mcp remove <name>
 ```
 
 ### 版本同步
 
-KAgent 与 Kimi Code CLI 使用相同的版本号，随每次发布同步更新。两者的 Wire 协议行为保持一致，你可以在它们之间自由切换。
+Kimi Agent 与 Kimi Code CLI 独立发版。兼容性与同步状态以 `MoonshotAI/kimi-agent-rs` 的发布说明为准。
