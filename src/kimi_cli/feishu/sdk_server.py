@@ -775,7 +775,7 @@ class SDKChatSession:
             
             # Send the approval card
             card_message_id = await asyncio.to_thread(
-                self.client.send_card_message,
+                self.client.send_interactive_card,
                 self.chat_id,
                 card,
             )
@@ -804,7 +804,7 @@ class SDKChatSession:
                 # Update card to show timeout
                 result_card = build_approval_result_card(tool_name, approved=True)
                 await asyncio.to_thread(
-                    self.client.update_card_message,
+                    self.client.update_interactive_card,
                     card_message_id,
                     result_card,
                 )
