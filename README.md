@@ -483,10 +483,6 @@ asr_api_key = "your-zhipu-api-key"
 完成以上所有配置后，启动 OKbot 服务：
 
 ```bash
-# 使用启动脚本（推荐）
-./start-feishu.sh
-
-# 或直接启动
 python -m kimi_cli.feishu
 ```
 
@@ -712,7 +708,6 @@ OKbot/                              # Forked from kimi-cli
 │       └── toolset.py              # 修改：MCP 工具名自动添加前缀
 │                                     例如：midscene-web__Tap
 │
-├── start-feishu.sh                 # ⭐ 新增：飞书服务启动脚本
 ├── feishu.example.toml             # ⭐ 新增：飞书配置示例
 └── docs/voice-messages.md          # ⭐ 新增：语音功能文档
 ```
