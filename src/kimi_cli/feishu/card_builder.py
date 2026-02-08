@@ -433,3 +433,168 @@ def build_status_card(
         },
         "elements": elements,
     }
+
+
+def build_approval_card(
+    tool_name: str,
+    description: str,
+    request_id: str,
+    display_blocks: list[dict] | None = None,
+) -> dict[str, Any]:
+    """Build an approval request card with interactive buttons.
+    
+    This card is used when YOLO mode is disabled and user approval is required
+    for tool execution. Users can choose to:
+    1. Approve once - allow this single execution
+    2. Approve for this conversation - always allow this action
+    3. Reject - deny this execution
+    
+    Args:
+        tool_name: Name of the tool requesting approval
+        description: Description of the action
+        request_id: Unique ID for this approval request
+        display_blocks: Optional display blocks from the tool
+        
+    Returns:
+        Interactive card JSON with approval buttons
+    """
+    # Truncate description if too long
+    display_desc = _truncate_text(description, 500)
+    
+    elements: list[dict[str, Any]] = [
+        {
+            "tag": "div",
+            "text": _plain_text_element(f"**工具**: `{tool_name}`"),
+        },
+        {
+            "tag": "div",
+            "text": _plain_text_element(f"**操作**: {display_desc}"),
+        },
+        _divider(),
+        {
+            "tag": "div",
+            "text": _markdown_element("**请选择操作：**"),
+        },
+        {
+            "tag": "action",
+            "layout": "default",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "✅ 允许一次",
+                    },
+                    "type": "primary",
+                    "value": {
+                        "action": "approve_once",
+                        "request_id": request_id,
+                    },
+                },
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "🔓 始终允许",
+                    },
+                    "type": "default",
+                    "value": {
+                        "action": "approve_session",
+                        "request_id": request_id,
+                    },
+                },
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "❌ 拒绝",
+                    },
+                    "type": "danger",
+                    "value": {
+                        "action": "reject",
+                        "request_id": request_id,
+                    },
+                },
+            ],
+        },
+        {
+            "tag": "note",
+            "elements": [
+                _plain_text_element("💡 提示: YOLO 模式下自动批准所有操作。发送 /yolo 切换模式")
+            ],
+        },
+    ]
+    
+    # Add display blocks if provided
+    if display_blocks:
+        elements.insert(2, _divider())
+        elements.insert(3, {
+            "tag": "div",
+            "text": _plain_text_element("**详细信息:**"),
+        })
+        for block in display_blocks[:5]:  # Limit to 5 blocks
+            content = block.get("content", "")
+            if content:
+                elements.insert(4, {
+                    "tag": "div",
+                    "text": _markdown_element(f"```\n{_truncate_text(content, 1000)}\n```"),
+                })
+    
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "orange",
+            "title": {
+                "tag": "plain_text",
+                "content": f"{CARD_ICONS['tool_call']} 需要授权",
+            },
+        },
+        "elements": elements,
+    }
+
+
+def build_approval_result_card(
+    tool_name: str,
+    approved: bool,
+    is_session_approval: bool = False,
+) -> dict[str, Any]:
+    """Build a card showing the approval result.
+    
+    Args:
+        tool_name: Name of the tool
+        approved: Whether the action was approved
+        is_session_approval: Whether this is a session-level approval
+        
+    Returns:
+        Card JSON
+    """
+    if approved:
+        template: CardColor = "green"
+        icon = "✅"
+        status = "已批准"
+        if is_session_approval:
+            detail = f"{tool_name} 已添加到始终允许列表"
+        else:
+            detail = f"{tool_name} 执行中..."
+    else:
+        template = "red"
+        icon = "❌"
+        status = "已拒绝"
+        detail = f"{tool_name} 执行被拒绝"
+    
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": template,
+            "title": {
+                "tag": "plain_text",
+                "content": f"{icon} {status}",
+            },
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": _plain_text_element(detail),
+            },
+        ],
+    }

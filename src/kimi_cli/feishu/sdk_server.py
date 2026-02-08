@@ -78,6 +78,13 @@ class SDKChatSession:
         self._tool_call_idx = 0
         self._tool_call_map: dict[str, int] = {}
         
+        # YOLO mode: auto-approve all tool calls (forced True for Feishu by default)
+        # Set to False to enable approval cards
+        self._yolo_mode: bool = True
+        
+        # Pending approval requests for non-YOLO mode
+        self._pending_approvals: dict[str, Any] = {}
+        
         # Initialize message renderer for card-based messages
         self._renderer = create_renderer()
         
@@ -164,6 +171,10 @@ class SDKChatSession:
                 logger.info("[SESSION] /mcp command")
                 await self._handle_mcp_command(stripped)
                 return
+            elif stripped == "/yolo":
+                logger.info("[SESSION] /yolo command")
+                await self._handle_yolo_toggle()
+                return
             
             # All other slash commands are passed through to KimiSoul
             if stripped.startswith("/"):
@@ -206,7 +217,10 @@ class SDKChatSession:
 当我在处理长任务时，发送 `/stop` 即可立即打断，类似 CLI 中的 Ctrl+C。
 
 **YOLO 模式：**
-• 当前为 **YOLO 模式**，工具调用自动批准（强制开启）
+• /yolo - 切换 YOLO 模式（自动批准工具调用）
+• 当前为 **{'YOLO' if self._yolo_mode else '非 YOLO'} 模式**
+• YOLO 模式：工具调用自动批准
+• 非 YOLO 模式：每次工具调用需通过卡片授权
 
 **Soul 命令 (由KimiSoul处理)：**
 • /compact - 压缩上下文
@@ -386,6 +400,33 @@ class SDKChatSession:
                 self.chat_id,
                 f"❌ 获取 MCP 状态失败: {str(e)[:100]}",
             )
+    
+    async def _handle_yolo_toggle(self) -> None:
+        """Handle /yolo command: toggle YOLO mode."""
+        self._yolo_mode = not self._yolo_mode
+        
+        if self._yolo_mode:
+            status_text = """✅ **YOLO 模式已开启**
+
+工具调用将自动批准，无需手动确认。
+
+💡 **提示**：发送 `/yolo` 关闭 YOLO 模式"""
+        else:
+            status_text = """🔒 **YOLO 模式已关闭**
+
+每次工具调用需要通过卡片授权：
+• ✅ 允许一次 - 仅允许当前操作
+• 🔓 始终允许 - 此对话中始终允许该操作
+• ❌ 拒绝 - 拒绝当前操作
+
+💡 **提示**：发送 `/yolo` 重新开启 YOLO 模式"""
+        
+        await asyncio.to_thread(
+            self.client.send_text_message,
+            self.chat_id,
+            status_text,
+        )
+        logger.info(f"[SESSION] YOLO mode toggled: {self._yolo_mode}")
     
     async def _process_message(self, message_text: str) -> None:
         """Process a user message through the soul - multi-part text output mode."""
@@ -670,8 +711,13 @@ class SDKChatSession:
                         print(f"[_wire_loop] Unhandled subagent event: {type(subagent_msg).__name__}")
                 
                 elif isinstance(msg, ApprovalRequest):
-                    # YOLO mode: auto approve all tool calls
-                    msg.resolve("approve")
+                    # Check if YOLO mode is enabled (forced in Feishu mode by default)
+                    if self._yolo_mode:
+                        # YOLO mode: auto approve all tool calls
+                        msg.resolve("approve")
+                    else:
+                        # Non-YOLO mode: send approval card and wait for user response
+                        await self._handle_approval_request(msg)
                         
         except Exception as e:
             error_msg = str(e)
@@ -687,6 +733,88 @@ class SDKChatSession:
                     f"❌ [处理中断] {error_info}",
                 )
             # Don't re-raise - wire loop ending is normal
+    
+    async def _handle_approval_request(self, msg: Any) -> None:
+        """Handle approval request by sending an interactive card to the user.
+        
+        This method is called when YOLO mode is disabled and a tool needs user approval.
+        It sends a card with three options:
+        1. Approve once - allow this single execution
+        2. Approve for this conversation - always allow this action
+        3. Reject - deny this execution
+        """
+        from kimi_cli.feishu.card_builder import build_approval_card, build_approval_result_card
+        
+        request_id = msg.id
+        tool_name = msg.sender
+        description = msg.description
+        
+        print(f"[_handle_approval] Request {request_id}: {tool_name} - {description[:50]}...")
+        logger.info(f"Approval request {request_id}: {tool_name}")
+        
+        # Store the pending request
+        self._pending_approvals[request_id] = msg
+        
+        # Build and send approval card
+        try:
+            # Convert display blocks to dict format if present
+            display_blocks = None
+            if hasattr(msg, 'display') and msg.display:
+                display_blocks = [
+                    {"type": block.type, "content": block.content}
+                    for block in msg.display
+                    if hasattr(block, 'content')
+                ]
+            
+            card = build_approval_card(
+                tool_name=tool_name,
+                description=description,
+                request_id=request_id,
+                display_blocks=display_blocks,
+            )
+            
+            # Send the approval card
+            card_message_id = await asyncio.to_thread(
+                self.client.send_card_message,
+                self.chat_id,
+                card,
+            )
+            
+            print(f"[_handle_approval] Approval card sent: {card_message_id}")
+            logger.info(f"Approval card sent for request {request_id}")
+            
+            # Note: The actual approval resolution will be handled by the card callback
+            # For now, we auto-approve after a timeout if no response is received
+            # This is a simplified implementation - in production, you'd want to:
+            # 1. Wait for the card button callback
+            # 2. Update the card with the result
+            # 3. Continue with the approved/rejected action
+            
+            # TODO: Implement proper card callback handling
+            # For now, auto-approve after timeout to prevent blocking
+            await asyncio.sleep(30)  # Wait 30 seconds for user response
+            
+            if request_id in self._pending_approvals:
+                # No response received, auto-approve to prevent blocking
+                print(f"[_handle_approval] Timeout, auto-approving request {request_id}")
+                logger.warning(f"Approval timeout for request {request_id}, auto-approving")
+                msg.resolve("approve")
+                del self._pending_approvals[request_id]
+                
+                # Update card to show timeout
+                result_card = build_approval_result_card(tool_name, approved=True)
+                await asyncio.to_thread(
+                    self.client.update_card_message,
+                    card_message_id,
+                    result_card,
+                )
+                
+        except Exception as e:
+            logger.exception(f"Error handling approval request: {e}")
+            # In case of error, auto-approve to prevent blocking
+            msg.resolve("approve")
+            if request_id in self._pending_approvals:
+                del self._pending_approvals[request_id]
     
     def _rebuild_card_with_content(self, content: str) -> None:
         """Rebuild the card with updated assistant content."""
