@@ -212,6 +212,7 @@ class SDKChatSession:
 • /compact - 压缩上下文
 • /init - 生成 AGENTS.md
 • /update-skill - 重新加载 skills
+• /update-mcp - 重新加载 MCP 工具
 • ... 以及其他 Soul 级别命令
 
 **不支持的命令：**

@@ -344,6 +344,64 @@ class KimiToolset:
         for server_info in self._mcp_servers.values():
             await server_info.client.close()
 
+    async def reload_mcp_tools(
+        self, mcp_configs: list[MCPConfig], runtime: Runtime
+    ) -> tuple[int, int, list[str]]:
+        """Reload MCP tools from configs.
+        
+        This will close existing MCP connections and reconnect with new configs.
+        
+        Args:
+            mcp_configs: List of MCP configs to load
+            runtime: Runtime context
+            
+        Returns:
+            Tuple of (servers_connected, total_tools, list of server names)
+        """
+        import fastmcp
+        from fastmcp.mcp_config import MCPConfig
+        
+        logger.info("Reloading MCP tools, closing existing connections...")
+        
+        # Step 1: Remove existing MCP tools from tool dict
+        tools_to_remove = []
+        for tool_name, tool in self._tool_dict.items():
+            if isinstance(tool, MCPTool):
+                tools_to_remove.append(tool_name)
+        
+        for tool_name in tools_to_remove:
+            del self._tool_dict[tool_name]
+            logger.debug(f"Removed MCP tool: {tool_name}")
+        
+        # Step 2: Close existing MCP connections
+        await self.cleanup()
+        self._mcp_servers.clear()
+        self._mcp_loading_task = None
+        
+        # Step 3: Load new MCP configs
+        if not mcp_configs:
+            logger.info("No MCP configs to reload")
+            return 0, 0, []
+        
+        # Load MCP tools (not in background, we want to wait for completion)
+        await self.load_mcp_tools(mcp_configs, runtime, in_background=False)
+        
+        # Wait for loading to complete
+        await self.wait_for_mcp_tools()
+        
+        # Collect results
+        connected_servers = [
+            name for name, info in self._mcp_servers.items() 
+            if info.status == "connected"
+        ]
+        total_tools = sum(len(info.tools) for info in self._mcp_servers.values())
+        
+        logger.info(
+            f"MCP reload complete: {len(connected_servers)} servers, {total_tools} tools"
+        )
+        
+        return len(connected_servers), total_tools, connected_servers
+
 
 @dataclass(slots=True)
 class MCPServerInfo:

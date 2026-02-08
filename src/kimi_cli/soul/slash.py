@@ -117,3 +117,69 @@ The system prompt has been updated with new skill metadata."""
     except Exception as e:
         logger.exception("Failed to reload skills")
         wire_send(TextPart(text=f"❌ Failed to reload skills: {e}"))
+
+
+@registry.command(name="update-mcp")
+async def update_mcp(soul: KimiSoul, args: str):
+    """Reload MCP tools from global config file.
+    
+    Use this command after adding, removing, or modifying MCP servers in `~/.kimi/mcp.json`.
+    This will disconnect existing MCP connections and reconnect with the new configuration.
+    """
+    logger.info("Running `/update-mcp`")
+    wire_send(TextPart(text="🔄 Reloading MCP tools from config..."))
+    
+    try:
+        servers_count, tools_count, server_names = await soul.reload_mcp()
+        
+        # Build summary message
+        if servers_count == 0:
+            message = """⚠️ No MCP servers connected.
+
+Please check:
+• `~/.kimi/mcp.json` exists and contains valid MCP server configurations
+• Run `kimi mcp add` to add MCP servers
+• Run `kimi mcp list` to see configured servers"""
+        else:
+            servers_list = ", ".join(f"`{name}`" for name in server_names[:5])
+            if len(server_names) > 5:
+                servers_list += f", and {len(server_names) - 5} more"
+            
+            message = f"""✅ MCP tools reloaded successfully!
+
+**Connected {servers_count} servers ({tools_count} tools):**
+{servers_list}
+
+MCP tools are now available immediately.
+Use `/mcp` to check server status."""
+        
+        wire_send(TextPart(text=message))
+        
+    except FileNotFoundError as e:
+        wire_send(TextPart(text=f"""❌ MCP config file not found.
+
+Please create `~/.kimi/mcp.json` first:
+
+```bash
+# Example: Add a stdio MCP server
+kimi mcp add --transport stdio my-server -- npx my-mcp-server
+
+# Or add an HTTP MCP server  
+kimi mcp add --transport http my-api https://api.example.com/mcp
+```
+
+Error: {e}"""))
+    except ValueError as e:
+        wire_send(TextPart(text=f"""⚠️ No MCP servers configured.
+
+Please add MCP servers first:
+
+```bash
+kimi mcp add --transport stdio chrome-devtools -- npx chrome-devtools-mcp@latest
+kimi mcp list
+```
+
+Error: {e}"""))
+    except Exception as e:
+        logger.exception("Failed to reload MCP tools")
+        wire_send(TextPart(text=f"❌ Failed to reload MCP tools: {type(e).__name__}: {e}"))

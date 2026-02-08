@@ -204,6 +204,48 @@ class KimiSoul:
         
         return count, skills_formatted
 
+    async def reload_mcp(self) -> tuple[int, int, list[str]]:
+        """Reload MCP tools from global config file.
+        
+        This will disconnect existing MCP servers and reconnect with new configuration.
+        
+        Returns:
+            Tuple of (servers_connected, total_tools, list of connected server names)
+        """
+        from pathlib import Path
+        from kimi_cli.share import get_share_dir
+        from fastmcp.mcp_config import MCPConfig
+        
+        logger.info("Running reload_mcp")
+        
+        # Load MCP config from global mcp.json
+        mcp_file = get_share_dir() / "mcp.json"
+        if not mcp_file.exists():
+            raise FileNotFoundError(f"MCP config file not found: {mcp_file}")
+        
+        import json
+        config_data = json.loads(mcp_file.read_text(encoding="utf-8"))
+        
+        if not config_data.get("mcpServers"):
+            raise ValueError("No MCP servers configured in mcp.json")
+        
+        mcp_config = MCPConfig.model_validate(config_data)
+        
+        # Reload MCP tools through toolset
+        if not hasattr(self._agent.toolset, 'reload_mcp_tools'):
+            raise RuntimeError("Current toolset does not support MCP reload")
+        
+        servers_count, tools_count, server_names = await self._agent.toolset.reload_mcp_tools(
+            [mcp_config], self._runtime
+        )
+        
+        logger.info(
+            "MCP reloaded: {servers} servers, {tools} tools",
+            servers=servers_count, tools=tools_count
+        )
+        
+        return servers_count, tools_count, server_names
+
     async def run(self, user_input: str | list[ContentPart]):
         # Refresh OAuth tokens on each turn to avoid idle-time expirations.
         await self._runtime.oauth.ensure_fresh(self._runtime)
