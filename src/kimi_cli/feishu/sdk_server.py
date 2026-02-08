@@ -78,9 +78,9 @@ class SDKChatSession:
         self._tool_call_idx = 0
         self._tool_call_map: dict[str, int] = {}
         
-        # YOLO mode: auto-approve all tool calls (forced True for Feishu by default)
-        # Set to False to enable approval cards
-        self._yolo_mode: bool = True
+        # YOLO mode: auto-approve all tool calls
+        # Use config setting, default to False (require approval) for safety
+        self._yolo_mode: bool = getattr(config, 'auto_approve', False)
         
         # Pending approval requests for non-YOLO mode
         self._pending_approvals: dict[str, Any] = {}

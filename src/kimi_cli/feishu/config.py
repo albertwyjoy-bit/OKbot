@@ -22,6 +22,7 @@ class FeishuAccountConfig(BaseModel):
     allowed_chats: list[str] = Field(default_factory=list, description="List of allowed chat IDs")
     
     # Behavior settings
+    auto_approve: bool = Field(False, description="Auto-approve tool calls without confirmation")
     show_tool_calls: bool = Field(True, description="Show tool calls in messages")
     show_thinking: bool = Field(True, description="Show thinking process")
     
