@@ -1458,8 +1458,13 @@ class SDKChatSession:
                         print(f"[_wire_loop_text_parts] Unhandled subagent event: {type(subagent_msg).__name__}")
                 
                 elif isinstance(msg, ApprovalRequest):
-                    # Auto approve
-                    msg.resolve("approve")
+                    # Check if YOLO mode is enabled
+                    if self._yolo_mode:
+                        # YOLO mode: auto approve all tool calls
+                        msg.resolve("approve")
+                    else:
+                        # Non-YOLO mode: send approval card and wait for user response
+                        await self._handle_approval_request(msg)
                     
         except Exception as e:
             error_msg = str(e)
