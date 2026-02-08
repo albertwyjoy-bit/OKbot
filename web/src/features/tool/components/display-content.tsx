@@ -677,7 +677,7 @@ const JSONContent = ({ data }: { data: unknown }) => (
  */
 const PlainTextContent = ({ text }: { text: string }) => (
   <div className="my-2 rounded-md bg-muted/40 p-3 text-sm">
-    <pre className="whitespace-pre-wrap font-mono text-xs">{text}</pre>
+    <pre className="whitespace-pre-wrap font-mono text-sm">{text}</pre>
   </div>
 );
 
@@ -1170,7 +1170,7 @@ const DisplayItemRenderer = ({ item }: { item: DisplayItem }) => {
       const briefItem = item as unknown as { type: string; text?: string; data?: unknown };
       const briefText = briefItem.text ?? String(briefItem.data ?? "");
       return (
-        <pre className="whitespace-pre-wrap text-xs">
+        <pre className="whitespace-pre-wrap text-sm">
           {briefText}
         </pre>
       );

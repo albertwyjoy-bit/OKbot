@@ -175,7 +175,12 @@ class ApprovalRequest(BaseModel):
 
     def _get_future(self) -> asyncio.Future[ApprovalResponse.Kind]:
         if self._future is None:
-            self._future = asyncio.get_event_loop().create_future()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            self._future = loop.create_future()
         return self._future
 
     async def wait(self) -> ApprovalResponse.Kind:
@@ -220,7 +225,12 @@ class ToolCallRequest(BaseModel):
 
     def _get_future(self) -> asyncio.Future[ToolReturnValue]:
         if self._future is None:
-            self._future = asyncio.get_event_loop().create_future()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            self._future = loop.create_future()
         return self._future
 
     @staticmethod

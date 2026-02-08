@@ -50,7 +50,7 @@ KIMI_CODE_OAUTH_KEY = "oauth/kimi-code"
 DEFAULT_OAUTH_HOST = "https://auth.kimi.com"
 KEYRING_SERVICE = "kimi-code"
 REFRESH_INTERVAL_SECONDS = 60
-REFRESH_THRESHOLD_SECONDS = 300
+REFRESH_THRESHOLD_SECONDS = 600  # 10 minutes before expiration
 
 
 class OAuthError(RuntimeError):
@@ -584,8 +584,7 @@ async def logout_kimi_code(config: Config) -> AsyncIterator[OAuthEvent]:
 class OAuthManager:
     def __init__(self, config: Config) -> None:
         self._config = config
-        # Cache access tokens only; refresh tokens are always read from persisted storage.
-        self._access_tokens: dict[str, str] = {}
+        self._tokens: dict[str, OAuthToken] = {}
         self._refresh_lock = asyncio.Lock()
         self._migrate_oauth_storage()
         self._load_initial_tokens()
@@ -635,27 +634,28 @@ class OAuthManager:
         for ref in self._iter_oauth_refs():
             token = load_tokens(ref)
             if token:
-                self._cache_access_token(ref, token)
-
-    def _cache_access_token(self, ref: OAuthRef, token: OAuthToken) -> None:
-        if not token.access_token:
-            self._access_tokens.pop(ref.key, None)
-            return
-        self._access_tokens[ref.key] = token.access_token
+                self._tokens[ref.key] = token
 
     def common_headers(self) -> dict[str, str]:
         return _common_headers()
 
     def resolve_api_key(self, api_key: SecretStr, oauth: OAuthRef | None) -> str:
         if oauth:
-            token = self._access_tokens.get(oauth.key)
+            token = self._tokens.get(oauth.key)
             if token is None:
-                persisted = load_tokens(oauth)
-                if persisted:
-                    self._cache_access_token(oauth, persisted)
-                    token = self._access_tokens.get(oauth.key)
-            if token:
-                return token
+                token = load_tokens(oauth)
+                if token:
+                    self._tokens[oauth.key] = token
+            if token and token.access_token:
+                # Log warning if token is about to expire (less than 2 minutes)
+                if token.expires_at:
+                    time_left = token.expires_at - time.time()
+                    if time_left < 120:  # Less than 2 minutes
+                        logger.warning(
+                            "OAuth token expires in {seconds:.0f}s, may cause 401 errors",
+                            seconds=time_left,
+                        )
+                return token.access_token
         return api_key.get_secret_value()
 
     def _kimi_code_ref(self) -> OAuthRef | None:
@@ -675,11 +675,10 @@ class OAuthManager:
         ref = self._kimi_code_ref()
         if ref is None:
             return
-        token = load_tokens(ref)
+        token = self._tokens.get(ref.key) or load_tokens(ref)
         if token is None:
             return
-        self._cache_access_token(ref, token)
-        self._apply_access_token(runtime, token.access_token)
+        self._tokens[ref.key] = token
         await self._refresh_tokens(ref, token, runtime)
 
     @asynccontextmanager
@@ -723,20 +722,11 @@ class OAuthManager:
         token: OAuthToken,
         runtime: Runtime,
     ) -> None:
-        # Always prefer persisted tokens before refresh to avoid stale cache
-        # when multiple sessions might have already rotated the refresh token.
-        persisted = load_tokens(ref)
-        if persisted:
-            self._cache_access_token(ref, persisted)
-        current_token = persisted or token
+        current_token = self._tokens.get(ref.key) or token
         if not current_token.refresh_token:
             return
         async with self._refresh_lock:
-            # Re-check persisted token inside the lock to reduce races.
-            persisted = load_tokens(ref)
-            if persisted:
-                self._cache_access_token(ref, persisted)
-            current = persisted or current_token
+            current = self._tokens.get(ref.key) or current_token
             now = time.time()
             if (
                 current.expires_at
@@ -750,26 +740,19 @@ class OAuthManager:
             try:
                 refreshed = await refresh_token(refresh_token_value)
             except OAuthUnauthorized as exc:
-                # If another session refreshed and persisted a new token,
-                # do not delete it. Just sync memory and exit.
-                latest = load_tokens(ref)
-                if latest and latest.refresh_token != refresh_token_value:
-                    self._cache_access_token(ref, latest)
-                    self._apply_access_token(runtime, latest.access_token)
-                    return
                 logger.warning(
                     "OAuth credentials rejected, deleting stored tokens: {error}",
                     error=exc,
                 )
-                self._access_tokens.pop(ref.key, None)
+                self._tokens.pop(ref.key, None)
                 delete_tokens(ref)
                 self._apply_access_token(runtime, "")
                 return
             except Exception as exc:
                 logger.warning("Failed to refresh OAuth token: {error}", error=exc)
                 return
+            self._tokens[ref.key] = refreshed
             save_tokens(ref, refreshed)
-            self._cache_access_token(ref, refreshed)
             self._apply_access_token(runtime, refreshed.access_token)
 
     def _apply_access_token(self, runtime: Runtime, access_token: str) -> None:

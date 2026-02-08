@@ -107,7 +107,7 @@ class Shell(CallableTool2[Params]):
                 else:
                     break
 
-        process = await kaos.exec(*self._shell_args(command), env=get_clean_env())
+        process = await kaos.exec(*self._shell_args(command))
 
         try:
             await asyncio.wait_for(

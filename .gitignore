@@ -40,3 +40,8 @@ target/
 node_modules/
 static/
 .memo/
+midscene_run/
+
+# Exclude large skill directories
+.agents/skills/canvas-design/
+midscene_run/
