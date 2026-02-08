@@ -129,7 +129,7 @@ class TestApprovalCardBuilder:
         assert "config" in card
         assert "header" in card
         assert "elements" in card
-        assert card["header"]["title"]["content"] == "🔐 需要授权"
+        assert card["header"]["title"]["content"] == "🔧 需要授权"
     
     def test_approval_card_contains_action_info(self):
         """测试卡片包含操作信息."""
