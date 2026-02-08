@@ -1,6 +1,7 @@
 # OKbot - Kimi Feishu Integration
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue)](https://www.python.org/)
+[![Kimi CLI](https://img.shields.io/badge/Kimi%20CLI-v1.9.0-orange)](https://github.com/MoonshotAI/kimi-cli)
 [![Feishu](https://img.shields.io/badge/Feishu-Lark%20SDK-green)](https://open.feishu.cn/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)](https://opensource.org/licenses/Apache-2.0)
 
@@ -14,10 +15,11 @@
 |------|------|
 | 🔄 **跨端接续** | 100% 复用 Kimi CLI 机制，CLI 上开发到一半随时切飞书继续，任务随时带走 |
 | 🛠️ **动态 Skills** | 飞书中随时让 AI 帮你写 Skills，热更新立即生效，边用边迭代 |
+| 🔄 **MCP 热更新** | 运行时动态添加/删除/修改 MCP 服务器配置，无需重启立即生效 |
+| ✅ **灵活授权模式** | 支持 YOLO 自动批准（默认）和交互式卡片授权两种模式，发送 `/yolo` 随时切换 |
 | 🎤 **语音消息** | 支持飞书语音消息，使用智谱 ASR 自动识别为文字，随时随地语音操控 |
 | 💬 **富媒体交互** | 支持图片、文件收发；移动端直接操控 PC，双向实时通信 |
 | 🤖 **设备操控** | 支持控制 PC 浏览器（Chrome）和 Android 手机，通过自然语言指令操作 |
-| ⚡ **YOLO 模式** | **强制开启**，工具调用自动批准，移动端无需反复确认 |
 | 🔧 **MCP 工具隔离** | 多 MCP 服务器场景下自动添加 `{server}__` 前缀，彻底解决工具重名冲突问题 |
 
 > 🌟 **Forked from**: [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli)
@@ -113,10 +115,19 @@ $ python -m kimi_cli.cli --session <session_id> --work-dir <工作目录>
 - **富媒体支持**：支持图片、文件下载和处理
 - **🎤 语音消息识别**：支持飞书语音消息，使用 GLM-ASR-2512 自动识别为文字
 
-### ⚡ YOLO 模式（强制开启）
+### ⚡ 灵活授权模式（YOLO / 交互式卡片）
+
+OKbot 支持两种工具授权模式，通过 `/yolo` 命令随时切换：
+
+**YOLO 模式（默认）**：
 - **自动批准工具调用**：无需手动确认，直接执行所有工具操作
 - **移动端优化**：适合手机操作，无需等待确认
 - **专注效率**：省去反复确认的繁琐步骤，让 AI 自主完成任务
+
+**交互式卡片授权模式**：
+- **精细控制**：每个工具调用都通过卡片展示，可选择「允许一次」「始终允许」或「拒绝」
+- **安全可靠**：敏感操作需要人工确认，避免误操作
+- **灵活切换**：发送 `/yolo` 随时在两种模式间切换
 
 ### 🛠️ MCP 工具生态
 - **多 MCP 服务器支持**：可同时连接多个 MCP 服务器，工具名自动添加 `{server}__` 前缀彻底解决重名冲突
@@ -124,6 +135,7 @@ $ python -m kimi_cli.cli --session <session_id> --work-dir <工作目录>
   - `chrome-devtools__navigate_page` - Chrome 浏览器控制
   - `notion__API-post-page` - Notion 文档操作
   - `markitdown__convert_to_markdown` - 文件格式转换
+- **MCP 热更新**：运行时动态添加/删除/修改 MCP 服务器配置，无需重启立即生效（修改 `~/.kimi/mcp.json` 后执行 `/update-mcp` 命令）
 - **智能工具隔离**：同名工具在不同服务器间自动隔离，AI 精准调用无混淆
 
 ### 🔐 OAuth 令牌自动刷新
@@ -236,11 +248,16 @@ OKbot 基于 Kimi Code CLI，推荐使用 Kimi Code Plan。
 
 #### 3.4 配置事件订阅（⚠️ 关键步骤）
 
-> **注意**：这是最容易被遗漏的配置！如果机器人能发送消息但无法接收消息，请检查此步骤。
+> **注意**：这是最容易被遗漏的配置！如果机器人能发送消息但无法接收消息或点击卡片无反应，请检查此步骤。
+
+**订阅方式**：选择**长连接**（推荐），所有事件和回调都通过 WebSocket 长连接接收，无需配置 HTTP 回调地址。
+
+##### 3.4.1 事件配置
+
+用于接收消息、群组变更等系统事件：
 
 1. 进入**事件与回调**页面
-2. **订阅方式**：选择**长连接**（推荐）
-3. 添加以下事件订阅：
+2. 在「事件配置」部分添加以下事件订阅：
 
 | 事件 | 说明 |
 |------|------|
@@ -249,7 +266,19 @@ OKbot 基于 Kimi Code CLI，推荐使用 Kimi Code Plan。
 | `im.chat.member.bot.added_v1` | 机器人被添加到群组 |
 | `im.chat.member.bot.deleted_v1` | 机器人被移出群组 |
 
-4. 点击**保存**，确认事件权限已申请
+##### 3.4.2 回调配置
+
+用于接收卡片按钮点击等交互式回调：
+
+1. 在「回调配置」部分添加以下回调：
+
+| 回调 | 说明 |
+|------|------|
+| `card.action.trigger` | **卡片回传交互**（必需，用于交互式授权卡片） |
+
+2. 点击**保存**，确认事件权限已申请
+
+> **关于 `card.action.trigger`**：当关闭 YOLO 模式后，用户需要通过点击卡片按钮来批准/拒绝工具调用。如果未订阅此回调，卡片按钮将无响应。此回调同样通过长连接接收，无需 HTTP 回调地址。
 
 #### 3.5 发布应用
 
@@ -276,6 +305,7 @@ app_id = "cli_xxxxx"           # 替换为你的 App ID
 app_secret = "xxxxxxxx"        # 替换为你的 App Secret
 show_tool_calls = true         # 在消息中显示工具调用
 show_thinking = true           # 在消息中显示思考过程
+auto_approve = true            # 默认启用 YOLO 自动批准模式（可通过 /yolo 命令切换）
 
 # 语音消息识别（可选，见步骤 5）
 # asr_api_key = "your-zhipu-api-key"
@@ -371,6 +401,27 @@ pip install markitdown-mcp
 # 然后在 mcp.json 中添加配置（路径根据实际安装位置调整）
 ```
 
+#### 4.5 MCP 热更新（运行时配置变更）
+
+OKbot 支持在不重启服务的情况下动态更新 MCP 配置：
+
+**使用场景**：
+- 新增 MCP 服务器
+- 修改现有 MCP 服务器配置
+- 删除 MCP 服务器
+- 临时禁用/启用某个 MCP 服务器
+
+**操作方式**：
+1. 编辑 `~/.kimi/mcp.json` 配置文件
+2. 在飞书对话中发送 `/update-mcp` 命令
+3. 系统会自动检测配置变更并热更新，无需重启服务
+
+**热更新特性**：
+- ✅ 新增服务器：自动连接并加载工具
+- ✅ 删除服务器：自动断开连接并清理工具
+- ✅ 修改配置：自动重启对应服务器
+- ✅ 工具隔离：保持 `{server}__` 前缀机制
+
 ---
 
 ### 步骤 5：配置语音消息识别（可选）
@@ -440,12 +491,14 @@ python -m kimi_cli.feishu
 |------|------|
 | `/stop` | **打断当前操作**（类似 Ctrl+C，保留上下文） |
 | `/clear` | 清除当前会话上下文，开始新的对话 |
+| `/yolo` | **切换授权模式** - 开启/关闭 YOLO 自动批准模式 |
 | `/sessions` | **跨端接续** - 列出所有可用的 CLI sessions |
 | `/continue <id>` | **跨端接续** - 接续指定的 CLI session |
 | `/session <id>` | **跨端接续** - 同 `/continue` |
 | `/id` | **跨端接续** - 查看当前 session ID（用于 CLI 接续） |
 | `/link` | **跨端接续** - 查看当前关联的 session |
-| `/mcp` | 查看当前可用的 MCP 工具列表 |
+| `/mcp` | 查看 MCP 服务器状态 |
+| `/update-mcp` | **热更新 MCP 工具** - 修改 mcp.json 后执行此命令生效 |
 | `/help` | 显示帮助信息 |
 | `/reset` | 重置当前会话（同 `/clear`） |
 | `/update-skill` | 重新加载 Skills（新增/修改 skill 后使用） |
@@ -455,7 +508,9 @@ python -m kimi_cli.feishu
 
 **注意**：
 - `/sessions`, `/continue`, `/session`, `/id`, `/link` 等跨端接续命令由 Feishu 端直接处理
-- `/yolo` 命令：OKbot 强制开启 YOLO 模式，此命令在 Feishu 端无效（仅影响 CLI 端）
+- `/yolo` 命令：切换 YOLO 自动批准模式（开启/关闭工具调用确认卡片）
+- `/mcp` 命令：查看 MCP 服务器状态（Feishu 本地处理）
+- `/update-mcp` 命令：热更新 MCP 工具（修改 mcp.json 后执行）
 - 其他 slash 命令（如 `/compact` 等）会透传给 Kimi CLI 处理
 
 ### Skills 动态加载

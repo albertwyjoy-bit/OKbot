@@ -32,6 +32,7 @@ app_secret = "xxxxxxxx"
 # 行为设置
 show_tool_calls = true         # 在消息中显示工具调用
 show_thinking = true           # 在消息中显示思考过程
+auto_approve = true            # 默认启用 YOLO 自动批准模式（可通过 /yolo 命令切换）
 
 # ============================================================================
 # 语音识别设置 (GLM-ASR-2512)

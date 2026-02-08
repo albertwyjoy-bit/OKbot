@@ -796,10 +796,41 @@ class SDKChatSession:
             print(f"[_handle_approval] Approval card sent: {card_message_id}")
             logger.info(f"Approval card sent for request {request_id}")
             
-            # Wait indefinitely for user to click card button
+            # Wait for user to click card button
             # The request will be resolved by handle_card_action when user clicks
             print(f"[_handle_approval] Waiting for user approval via card button...")
             
+            try:
+                # Wait for the approval response (resolved by handle_card_action)
+                response = await msg.wait()
+                print(f"[_handle_approval] Got response: {response}")
+                logger.info(f"Approval request {request_id} resolved with: {response}")
+                
+                # Update card to show result
+                if response == "approve":
+                    result_card = build_approval_result_card(tool_name, approved=True)
+                elif response == "approve_for_session":
+                    result_card = build_approval_result_card(tool_name, approved=True, is_session_approval=True)
+                else:
+                    result_card = build_approval_result_card(tool_name, approved=False)
+                
+                await asyncio.to_thread(
+                    self.client.update_interactive_card,
+                    card_message_id,
+                    result_card,
+                )
+                
+            except Exception as wait_err:
+                print(f"[_handle_approval] Error waiting for approval: {wait_err}")
+                logger.exception(f"Error waiting for approval: {wait_err}")
+                # Auto-approve on error to prevent blocking
+                if not msg.resolved:
+                    msg.resolve("approve")
+            finally:
+                # Clean up pending approval
+                if request_id in self._pending_approvals:
+                    del self._pending_approvals[request_id]
+                    
         except Exception as e:
             logger.exception(f"Error handling approval request: {e}")
             # In case of error, auto-approve to prevent blocking
@@ -2511,9 +2542,11 @@ class SDKMessageHandler:
         try:
             event = data.event
             action_value = event.action.value
-            user_id = event.user_id.open_id
-            chat_id = event.chat_id
-            message_id = event.message_id
+            # Use operator.open_id instead of user_id
+            user_id = event.operator.open_id if event.operator else "unknown"
+            # Use context.open_chat_id instead of chat_id
+            chat_id = event.context.open_chat_id if event.context else None
+            message_id = event.context.open_message_id if event.context else None
             
             print(f"[CARD ACTION] Received action: {action_value}")
             logger.info(f"Card action from user {user_id}: {action_value}")
@@ -2555,47 +2588,19 @@ class SDKMessageHandler:
             msg = session._pending_approvals[request_id]
             
             # Handle different actions
+            # Note: Card will be updated by _handle_approval_request after msg.wait() returns
+            # We don't delete from _pending_approvals here - let _handle_approval_request handle cleanup
             if key == "approve_once":
                 msg.resolve("approve")
-                del session._pending_approvals[request_id]
                 print(f"[CARD ACTION] Request {request_id} approved once")
-                
-                # Update card to show approved
-                from kimi_cli.feishu.card_builder import build_approval_result_card
-                result_card = build_approval_result_card(msg.sender, approved=True)
-                await asyncio.to_thread(
-                    self.client.update_interactive_card,
-                    message_id,
-                    result_card,
-                )
                 
             elif key == "approve_session":
                 msg.resolve("approve_for_session")
-                del session._pending_approvals[request_id]
                 print(f"[CARD ACTION] Request {request_id} approved for session")
-                
-                # Update card to show approved for session
-                from kimi_cli.feishu.card_builder import build_approval_result_card
-                result_card = build_approval_result_card(msg.sender, approved=True, is_session_approval=True)
-                await asyncio.to_thread(
-                    self.client.update_interactive_card,
-                    message_id,
-                    result_card,
-                )
                 
             elif key == "reject":
                 msg.resolve("reject")
-                del session._pending_approvals[request_id]
                 print(f"[CARD ACTION] Request {request_id} rejected")
-                
-                # Update card to show rejected
-                from kimi_cli.feishu.card_builder import build_approval_result_card
-                result_card = build_approval_result_card(msg.sender, approved=False)
-                await asyncio.to_thread(
-                    self.client.update_interactive_card,
-                    message_id,
-                    result_card,
-                )
             else:
                 print(f"[CARD ACTION] Unknown action key: {key}")
                 
@@ -2954,17 +2959,25 @@ class FeishuSDKServer:
             """Handle card action trigger (button click)."""
             print(f"\n[EVENT] Card action triggered!")
             try:
-                action_value = data.event.action.value
-                user_id = data.event.user_id.open_id
-                chat_id = data.event.chat_id
+                action = data.event.action
+                action_value = action.value
+                # Use operator.open_id instead of user_id
+                user_id = data.event.operator.open_id if data.event.operator else "unknown"
+                # Use context.open_chat_id instead of chat_id
+                chat_id = data.event.context.open_chat_id if data.event.context else None
+                message_id = data.event.context.open_message_id if data.event.context else None
+                
                 print(f"  action_value: {action_value}")
                 print(f"  user_id: {user_id}")
                 print(f"  chat_id: {chat_id}")
+                print(f"  message_id: {message_id}")
                 
                 # Schedule in main event loop
                 _schedule_async(lambda: handler.handle_card_action(data), "card_action_handler")
             except Exception as e:
                 print(f"[EVENT ERROR] Failed to handle card action: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Build event handler
         event_handler = lark.EventDispatcherHandler.builder("", "") \
