@@ -13,6 +13,7 @@
 
 | 特性 | 说明 |
 |------|------|
+| 🕐 **定时任务** | **重磅新功能！** 支持 Cron 表达式创建定时任务，Agent 智能执行或定时提醒，支持文件自动生成与引用 |
 | 🔄 **跨端接续** | 100% 复用 Kimi CLI 机制，CLI 上开发到一半随时切飞书继续，任务随时带走 |
 | 🛠️ **动态 Skills** | 飞书中随时让 AI 帮你写 Skills，热更新立即生效，边用边迭代 |
 | 🔄 **MCP 热更新** | 运行时动态添加/删除/修改 MCP 服务器配置，无需重启立即生效 |
@@ -105,6 +106,62 @@ $ python -m kimi_cli.cli --session <session_id> --work-dir <工作目录>
 | `/link` | 查看当前关联的 session |
 
 **演示场景**：用户在电脑端使用 CLI 开始编写代码，临时需要外出，通过飞书 `/sessions` 查看可用会话，使用 `/continue` 接续之前的对话，在手机上继续完成任务。
+
+### 定时任务（Scheduled Tasks）🕐
+
+OKbot 现在支持强大的**定时任务功能**，让你可以设置周期性任务，由 AI 自动执行或定时发送提醒。
+
+**功能亮点**：
+- 🕐 **双模式支持**：智能任务执行（Agent 处理）或简单定时提醒
+- 📝 **自然语言创建**：用自然语言描述时间，AI 自动转换为 Cron 表达式
+- 📁 **文件自动生成**：任务生成的文件自动上传到飞书，引用卡片时可读取内容
+- ⏱️ **灵活的 Cron 表达式**：支持 5字段（分钟级）和 6字段（秒级）Cron 表达式
+
+**使用示例**：
+
+```
+# 方式一：使用 /cron 命令
+/cron add "0 9 * * *" "每天早上9点生成昨日数据报告"
+
+# 方式二：使用自然语言（Agent 工具）
+"每30分钟提醒我喝水"
+"每周一上午9点生成周报并发送给我"
+```
+
+**命令列表**：
+
+| 命令 | 说明 |
+|------|------|
+| `/cron help` | 显示定时任务帮助信息 |
+| `/cron list` | 列出当前对话的所有定时任务 |
+| `/cron add "表达式" "描述"` | 创建新的定时任务 |
+| `/cron remove <id>` | 删除指定的定时任务 |
+| `/cron toggle <id>` | 暂停/启用指定的定时任务 |
+| `/cron history [id]` | 查看任务执行历史 |
+| `/cron trigger <id>` | 立即触发任务（测试用）|
+
+**Cron 表达式格式**：
+
+```
+# 5字段格式（分钟级）：分 时 日 月 周
+0 9 * * *       # 每天上午9点
+0 9 * * 1       # 每周一上午9点
+*/30 * * * *    # 每30分钟
+
+# 6字段格式（秒级）：秒 分 时 日 月 周
+*/5 * * * * *   # 每5秒执行一次
+0 * * * * *     # 每分钟的第0秒执行
+```
+
+**双模式说明**：
+
+1. **智能任务模式**（默认）：设置 `task_description`，定时触发时调用 Agent 执行复杂任务
+   - 示例：生成报告、分析数据、检查日志等
+
+2. **提醒模式**：设置 `reminder_text`，定时直接发送提醒消息（不经过 Agent）
+   - 示例：喝水提醒、会议提醒等
+
+> 📖 详细文档：[docs/scheduler_file_handling.md](./docs/scheduler_file_handling.md)
 
 ## ✨ 主要特性
 
@@ -512,6 +569,7 @@ python -m kimi_cli.feishu
 | `/stop` | **打断当前操作**（类似 Ctrl+C，保留上下文） |
 | `/clear` | 清除当前会话上下文，开始新的对话 |
 | `/yolo` | **切换授权模式** - 开启/关闭 YOLO 自动批准模式 |
+| `/cron` | **定时任务** - 管理定时任务（add/list/remove/toggle/history） |
 | `/sessions` | **跨端接续** - 列出所有可用的 CLI sessions |
 | `/continue <id>` | **跨端接续** - 接续指定的 CLI session |
 | `/session <id>` | **跨端接续** - 同 `/continue` |
@@ -529,6 +587,7 @@ python -m kimi_cli.feishu
 **注意**：
 - `/sessions`, `/continue`, `/session`, `/id`, `/link` 等跨端接续命令由 Feishu 端直接处理
 - `/yolo` 命令：切换 YOLO 自动批准模式（开启/关闭工具调用确认卡片）
+- `/cron` 命令：管理定时任务（add/list/remove/toggle/history）
 - `/mcp` 命令：查看 MCP 服务器状态（Feishu 本地处理）
 - `/update-mcp` 命令：热更新 MCP 工具（修改 mcp.json 后执行）
 - 其他 slash 命令（如 `/compact` 等）会透传给 Kimi CLI 处理
@@ -694,10 +753,20 @@ OKbot/                              # Forked from kimi-cli
 │   │
 │   ├── cli/feishu.py               # ⭐ 新增：飞书相关 CLI 命令
 │   │
+│   ├── scheduler/                  # ⭐ 新增：定时任务模块
+│   │   ├── scheduler.py            # 主调度器
+│   │   ├── cron_engine.py          # Cron 引擎（支持秒级/分钟级）
+│   │   ├── session.py              # 定时任务执行会话
+│   │   ├── models.py               # 数据模型
+│   │   ├── commands.py             # /cron 命令处理
+│   │   └── ...
+│   │
 │   ├── tools/feishu/               # ⭐ 新增：Feishu 工具集
 │   │   ├── send_message.py         # 发送消息到飞书
 │   │   ├── send_file.py            # 发送文件/图片
 │   │   └── ...
+│   │
+│   ├── tools/scheduler_tool.py     # ⭐ 新增：定时任务智能工具
 │   │
 │   ├── auth/oauth.py               # 修改：增加 Kimi OAuth 自动刷新
 │   │
@@ -709,7 +778,8 @@ OKbot/                              # Forked from kimi-cli
 │                                     例如：midscene-web__Tap
 │
 ├── feishu.example.toml             # ⭐ 新增：飞书配置示例
-└── docs/voice-messages.md          # ⭐ 新增：语音功能文档
+├── docs/voice-messages.md          # ⭐ 新增：语音功能文档
+└── docs/scheduler_file_handling.md # ⭐ 新增：定时任务文档
 ```
 
 **核心改动说明**：
@@ -717,6 +787,7 @@ OKbot/                              # Forked from kimi-cli
 | 模块 | 改动类型 | 说明 |
 |------|----------|------|
 | `feishu/` | 新增 | 飞书 SDK 集成，支持消息收发、文件传输、语音识别 |
+| `scheduler/` | 新增 | 定时任务模块，支持 Cron 表达式、Agent 执行、文件生成与引用 |
 | `tools/feishu/` | 新增 | Feishu 专用工具，供 AI 调用发送消息/文件 |
 | 动态 Skills | 新增 | 运行时热更新 Skills（`/update-skill`），无需重启服务 |
 | OAuth 刷新 | 修改 | 每 60 秒自动检查刷新，支持长对话场景 |

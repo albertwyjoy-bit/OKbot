@@ -36,6 +36,7 @@ dependencies = [
     "websockets>=14.0",
     "keyring>=25.7.0",
     "pydub>=0.25.1",
+    "croniter>=2.0.0",
 ]
 
 [project.optional-dependencies]

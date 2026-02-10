@@ -50,6 +50,9 @@ from pydantic import SecretStr
 
 from kimi_cli.feishu.message_renderer import MessageRenderer, create_renderer
 
+# Scheduler imports (lazy import to avoid circular imports)
+_scheduler_initialized = False
+
 
 class SDKChatSession:
     """A chat session with a user using SDK client.
@@ -90,29 +93,91 @@ class SDKChatSession:
         self._renderer = create_renderer()
         
         # Register Feishu tools for this session
+        print(f"[SESSION] SDKChatSession.__init__ called for chat {chat_id}, calling _register_feishu_tools")
         self._register_feishu_tools()
+        
+        # Scheduled task pending notifications queue
+        # This stores results from scheduled tasks that need to be sent
+        # when the session becomes idle
+        self._pending_scheduled_notifications: list[Any] = []
+        self._scheduled_notifications_lock = asyncio.Lock()
     
     def _register_feishu_tools(self) -> None:
         """Register Feishu tools with the soul's toolset."""
+        print(f"[SESSION] Starting tool registration for chat {self.chat_id}")
+        logger.info(f"[SESSION] Starting tool registration for chat {self.chat_id}")
         try:
             from kimi_cli.tools.feishu import set_feishu_client
             from kimi_cli.tools.feishu import FeishuSendFile, FeishuSendMessage
+            from kimi_cli.tools.scheduler_tool import (
+                CreateScheduledJob,
+                ListScheduledJobs,
+                DeleteScheduledJob,
+                ToggleScheduledJob,
+            )
             
             # Set the global client reference for tools
             set_feishu_client(self.client)
+            logger.info(f"[SESSION] Feishu client set for chat {self.chat_id}")
             
             # Add tools to soul's toolset if not already present
             # Access toolset through soul's agent
-            if hasattr(self.soul, '_agent'):
+            if hasattr(self.soul, '_agent') and self.soul._agent is not None:
                 toolset = self.soul._agent.toolset
+                logger.info(f"[SESSION] Got toolset for chat {self.chat_id}, tool count: {len(toolset.tools)}")
+                
                 if not toolset.find("FeishuSendFile"):
                     toolset.add(FeishuSendFile())
                     logger.info(f"[SESSION] Registered FeishuSendFile tool for chat {self.chat_id}")
+                else:
+                    logger.info(f"[SESSION] FeishuSendFile already exists for chat {self.chat_id}")
+                    
                 if not toolset.find("FeishuSendMessage"):
                     toolset.add(FeishuSendMessage())
                     logger.info(f"[SESSION] Registered FeishuSendMessage tool for chat {self.chat_id}")
+                else:
+                    logger.info(f"[SESSION] FeishuSendMessage already exists for chat {self.chat_id}")
+                    
+                if not toolset.find("CreateScheduledJob"):
+                    toolset.add(CreateScheduledJob())
+                    logger.info(f"[SESSION] Registered CreateScheduledJob tool for chat {self.chat_id}")
+                else:
+                    logger.info(f"[SESSION] CreateScheduledJob already exists for chat {self.chat_id}")
+                    
+                if not toolset.find("ListScheduledJobs"):
+                    toolset.add(ListScheduledJobs())
+                    logger.info(f"[SESSION] Registered ListScheduledJobs tool for chat {self.chat_id}")
+                else:
+                    logger.info(f"[SESSION] ListScheduledJobs already exists for chat {self.chat_id}")
+                    
+                if not toolset.find("DeleteScheduledJob"):
+                    toolset.add(DeleteScheduledJob())
+                    logger.info(f"[SESSION] Registered DeleteScheduledJob tool for chat {self.chat_id}")
+                else:
+                    logger.info(f"[SESSION] DeleteScheduledJob already exists for chat {self.chat_id}")
+                    
+                if not toolset.find("ToggleScheduledJob"):
+                    toolset.add(ToggleScheduledJob())
+                    logger.info(f"[SESSION] Registered ToggleScheduledJob tool for chat {self.chat_id}")
+                else:
+                    logger.info(f"[SESSION] ToggleScheduledJob already exists for chat {self.chat_id}")
+                    
+                # Log all available tools after registration
+                tool_names = [t.name for t in toolset.tools]
+                logger.info(f"[SESSION] Tool registration complete for chat {self.chat_id}, total tools: {len(toolset.tools)}")
+                logger.info(f"[SESSION] Available tools: {tool_names}")
+                print(f"[SESSION] Registered {len(toolset.tools)} tools for chat {self.chat_id}: {tool_names}")
+                
+                # Refresh system prompt to include new tools
+                try:
+                    self.soul._agent.refresh_system_prompt()
+                    logger.info(f"[SESSION] System prompt refreshed for chat {self.chat_id}")
+                except Exception as e:
+                    logger.warning(f"[SESSION] Failed to refresh system prompt: {e}")
+            else:
+                logger.warning(f"[SESSION] Soul has no _agent for chat {self.chat_id}, skipping tool registration")
         except Exception as e:
-            logger.warning(f"[SESSION] Failed to register Feishu tools: {e}")
+            logger.warning(f"[SESSION] Failed to register Feishu tools: {e}", exc_info=True)
     
     async def handle_message(self, message_text: str) -> None:
         """Handle an incoming message."""
@@ -176,6 +241,10 @@ class SDKChatSession:
                 logger.info("[SESSION] /yolo command")
                 await self._handle_yolo_toggle()
                 return
+            elif stripped.startswith("/cron"):
+                logger.info("[SESSION] /cron command")
+                await self._handle_cron_command(stripped)
+                return
             
             # All other slash commands are passed through to KimiSoul
             if stripped.startswith("/"):
@@ -196,6 +265,54 @@ class SDKChatSession:
             async with self._lock:
                 self._running = False
                 self._cancel_event = None
+            
+            # Flush pending scheduled notifications
+            # This sends any scheduled task results that were queued while we were busy
+            await self._flush_pending_scheduled_notifications()
+    
+    async def _handle_cron_command(self, command: str) -> None:
+        """Handle /cron command."""
+        try:
+            from kimi_cli.scheduler.commands import handle_cron_command
+            handled, response = await handle_cron_command(command, self)
+            if handled and response:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    self.chat_id,
+                    response,
+                )
+        except Exception as e:
+            logger.exception(f"Error handling /cron command: {e}")
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                self.chat_id,
+                f"❌ 处理定时任务命令时出错: {str(e)[:100]}",
+            )
+    
+    async def _flush_pending_scheduled_notifications(self) -> None:
+        """Flush pending scheduled notifications.
+        
+        This sends any scheduled task results that were queued while the session was busy.
+        """
+        try:
+            from kimi_cli.scheduler.scheduler import get_scheduler
+            
+            scheduler = get_scheduler()
+            if not scheduler._initialized:
+                return
+            
+            session_manager = scheduler._session_manager
+            if not session_manager:
+                return
+            
+            # Find all scheduled sessions for this chat and flush their notifications
+            for session_id, sched_session in list(session_manager._scheduled_sessions.items()):
+                if sched_session.chat_id == self.chat_id:
+                    await sched_session.flush_pending_notifications()
+                    logger.debug(f"Flushed pending notifications for scheduled session {session_id}")
+                    
+        except Exception as e:
+            logger.exception(f"Error flushing pending scheduled notifications: {e}")
     
     async def _send_help(self) -> None:
         """Send help message."""
@@ -207,6 +324,7 @@ class SDKChatSession:
 • /stop - 打断当前操作（保留上下文，类似 Ctrl+C）
 • /clear - 中断当前处理并清空上下文
 • /mcp - 显示 MCP 服务器状态
+• /cron - 定时任务管理
 
 **跨端接续（CLI ↔ Feishu）：**
 • /sessions - 列出电脑端 CLI 的所有 sessions
@@ -447,6 +565,17 @@ class SDKChatSession:
         
         print(f"[_process_message] Starting with text: {message_text[:100]}")
         logger.info(f"[_process_message] Starting with text: {message_text[:100]}")
+        
+        # Log toolset status
+        try:
+            if self.soul and hasattr(self.soul, '_agent') and self.soul._agent:
+                toolset = self.soul._agent.toolset
+                tool_names = [t.name for t in toolset.tools]
+                print(f"[_process_message] Toolset has {len(toolset.tools)} tools: {tool_names}")
+                logger.info(f"[_process_message] Toolset has {len(toolset.tools)} tools: {tool_names}")
+        except Exception as e:
+            print(f"[_process_message] Failed to get toolset info: {e}")
+            logger.warning(f"[_process_message] Failed to get toolset info: {e}")
         
         # Run the soul with wire (messages sent in real-time)
         self._current_thinking_buffer: list[str] = []
@@ -2083,7 +2212,15 @@ class SDKMessageHandler:
         
         Returns:
             List of MCP config dicts (each with 'mcpServers' key)
+            
+        Note:
+            Set environment variable DISABLE_MCP=1 to disable MCP tools loading.
         """
+        # Check if MCP is disabled via environment variable
+        if os.environ.get("DISABLE_MCP", "0") == "1":
+            logger.info("MCP tools disabled via DISABLE_MCP environment variable")
+            return []
+        
         try:
             # Import here to avoid circular import issues
             from pathlib import Path
@@ -2109,6 +2246,220 @@ class SDKMessageHandler:
         except Exception as e:
             logger.warning(f"Failed to load MCP config: {e}")
             return []
+    
+    async def _get_quoted_message_content(self, message: Any) -> str | None:
+        """获取被引用消息的内容
+        
+        当用户引用/回复一条消息时，尝试获取被引用消息的内容
+        
+        Args:
+            message: 飞书消息对象
+            
+        Returns:
+            被引用消息的文本内容，如果没有引用则返回 None
+        """
+        try:
+            # 检查是否有 parent_id（表示这是一条回复消息）
+            parent_id = getattr(message, 'parent_id', None)
+            if not parent_id:
+                # 某些版本可能使用 root_id
+                parent_id = getattr(message, 'root_id', None)
+            
+            if not parent_id:
+                return None
+            
+            print(f"[DEBUG] Found quoted message, parent_id: {parent_id}")
+            
+            # 使用 client 获取消息内容
+            if not hasattr(self.client, 'get_message'):
+                print(f"[DEBUG] Client does not have get_message method")
+                return None
+            
+            print(f"[DEBUG] Fetching message content for {parent_id}")
+            msg_data = await asyncio.to_thread(
+                self.client.get_message,
+                parent_id
+            )
+            
+            print(f"[DEBUG] Got msg_data: {msg_data is not None}")
+            print(f"[DEBUG] msg_data keys: {list(msg_data.keys()) if msg_data else 'None'}")
+            print(f"[DEBUG] Full msg_data: {msg_data}")
+            
+            if not msg_data:
+                print(f"[DEBUG] Failed to get message data for {parent_id}")
+                # 即使获取失败，也返回一个提示，让对话可以继续
+                return "[无法获取引用消息内容]"
+            
+            # 解析被引用消息的内容
+            quoted_content = msg_data.get('content', '{}')
+            quoted_msg_type = msg_data.get('msg_type', 'text')
+            print(f"[DEBUG] Raw quoted_content: {quoted_content[:100]}...")
+            print(f"[DEBUG] Raw quoted_msg_type: {quoted_msg_type}")
+            
+            try:
+                content_dict = json.loads(quoted_content)
+            except json.JSONDecodeError:
+                content_dict = {}
+            
+            # 提取文本内容
+            if quoted_msg_type == 'text':
+                text_content = content_dict.get('text', '')
+                if not text_content:
+                    print(f"[DEBUG] Empty text content in message {parent_id}")
+                    return "[引用消息内容为空 - 可能无权限查看或消息已过期]"
+                return text_content
+            
+            elif quoted_msg_type == 'interactive':
+                # 卡片消息，提取标题和内容摘要
+                card_content = content_dict
+                header = card_content.get('header', {})
+                title = header.get('content', '') if isinstance(header, dict) else ''
+                # 尝试多种可能的标题路径
+                if not title and 'title' in header:
+                    title_obj = header.get('title', {})
+                    if isinstance(title_obj, dict):
+                        title = title_obj.get('content', '')
+                
+                elements = card_content.get('elements', [])
+                
+                # 提取元素中的文本
+                texts = []
+                if title:
+                    texts.append(f"【{title}】")
+                
+                # 处理嵌套数组结构 [[...]]
+                def extract_text_from_elements(elems):
+                    for elem in elems:
+                        if isinstance(elem, list):
+                            # 嵌套数组，递归处理
+                            extract_text_from_elements(elem)
+                        elif isinstance(elem, dict):
+                            tag = elem.get('tag', '')
+                            if tag in ('div', 'text', 'plain_text', 'lark_md'):
+                                text_obj = elem.get('text', {})
+                                if isinstance(text_obj, dict):
+                                    text_content = text_obj.get('content', '')
+                                else:
+                                    text_content = str(text_obj)
+                                if text_content:
+                                    texts.append(text_content)
+                            # 处理 title 标签
+                            elif tag == 'title' and not title:
+                                title_text = elem.get('content', '')
+                                if title_text:
+                                    texts.insert(0, f"【{title_text}】")
+                
+                extract_text_from_elements(elements)
+                
+                card_text = '\n'.join(texts) if texts else '[卡片消息]'
+                
+                # 检查是否是定时任务卡片，尝试读取关联的文件
+                if '定时任务' in title or '任务' in title:
+                    file_content = await self._load_scheduled_task_files(card_text)
+                    if file_content:
+                        card_text += f"\n\n[关联文件内容]:\n{file_content}"
+                
+                return card_text
+            
+            elif quoted_msg_type == 'file':
+                # 文件消息，尝试获取文件信息
+                file_key = content_dict.get('file_key', '')
+                file_name = content_dict.get('file_name', '未知文件')
+                
+                # 对于文件消息，我们无法直接读取内容，但提供文件信息
+                return f"[文件消息: {file_name}]\n(文件内容无法直接读取，请在对话中上传文件后提问)"
+            
+            elif quoted_msg_type == 'image':
+                # 图片消息
+                image_key = content_dict.get('image_key', '')
+                return f"[图片消息]\n(图片内容无法直接读取，请描述图片内容或重新上传)"
+            
+            else:
+                return f'[{quoted_msg_type} 消息]'
+                
+        except Exception as e:
+            logger.debug(f"Error getting quoted message content: {e}")
+            return None
+    
+    async def _load_scheduled_task_files(self, card_text: str) -> str | None:
+        """加载定时任务卡片关联的文件内容
+        
+        Args:
+            card_text: 卡片文本内容
+            
+        Returns:
+            文件内容摘要，如果没有文件则返回 None
+        """
+        try:
+            # 从卡片文本中提取任务ID
+            import re
+            job_id_match = re.search(r'任务ID:\s*`([^`]+)`', card_text)
+            if not job_id_match:
+                return None
+            
+            job_id = job_id_match.group(1)
+            
+            # 从历史记录中获取文件信息
+            from kimi_cli.scheduler.history import JobHistoryStore
+            
+            history_store = JobHistoryStore()
+            # 由于不知道具体的 chat_id，我们尝试从所有记录中查找
+            # 这里简化处理：在历史存储中查找最近包含此 job_id 的记录
+            
+            # 遍历所有历史文件（实际使用时可以优化）
+            history_dir = history_store._storage_dir
+            if not history_dir.exists():
+                return None
+            
+            for history_file in history_dir.glob("*.json"):
+                try:
+                    import json
+                    with open(history_file, "r", encoding="utf-8") as f:
+                        records = json.load(f)
+                    
+                    for record_data in records:
+                        if record_data.get("job_id") == job_id:
+                            # 找到匹配的记录
+                            files = record_data.get("files", [])
+                            feishu_files = record_data.get("feishu_files", [])
+                            
+                            if not files and not feishu_files:
+                                return None
+                            
+                            # 读取文件内容（只读文本文件）
+                            file_contents = []
+                            for file_path in files[:3]:  # 最多读3个文件
+                                try:
+                                    path = Path(file_path)
+                                    if path.exists() and path.is_file():
+                                        # 检查文件大小（不超过 500KB）
+                                        if path.stat().st_size > 500 * 1024:
+                                            file_contents.append(f"[{path.name}]: 文件过大，无法读取")
+                                            continue
+                                        
+                                        # 检查是否是文本文件
+                                        content = path.read_text(encoding='utf-8', errors='ignore')
+                                        # 截断内容
+                                        if len(content) > 2000:
+                                            content = content[:2000] + "\n... (内容已截断)"
+                                        file_contents.append(f"=== {path.name} ===\n{content}")
+                                except Exception as e:
+                                    file_contents.append(f"[{path.name}]: 读取失败 - {e}")
+                            
+                            if file_contents:
+                                return "\n\n".join(file_contents)
+                            elif feishu_files:
+                                file_names = [f.get("file_name", "未知文件") for f in feishu_files]
+                                return f"关联文件: {', '.join(file_names)}\n(飞书文件需要重新上传才能读取内容)"
+                            
+                except Exception:
+                    continue
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error loading scheduled task files: {e}")
+            return None
     
     async def handle_message_event(self, data: lark.im.v1.P2ImMessageReceiveV1) -> None:
         """Handle message receive event (v2.0)."""
@@ -2390,6 +2741,13 @@ class SDKMessageHandler:
         print(f"[DEBUG] Text before clean: '{text}'")
         text = self._clean_mentions(text)
         print(f"[DEBUG] Text after clean: '{text}'")
+        
+        # Handle quoted/reply messages - fetch the quoted content
+        quoted_content = await self._get_quoted_message_content(message)
+        if quoted_content:
+            print(f"[DEBUG] Quoted content: {quoted_content[:200]}...")
+            # Append quoted content to user's message
+            text = f"{text}\n\n[引用消息]:\n{quoted_content}"
         
         if not text.strip():
             print(f"[DEBUG] Empty text after cleaning, returning")
@@ -2684,6 +3042,10 @@ class FeishuSDKServer:
         logger.info(f"[START] Waiting for WebSocket connections to establish...")
         await asyncio.sleep(1.5)
         
+        # Initialize scheduler in background task (don't block)
+        print(f"[START] Initializing scheduler in background...")
+        asyncio.create_task(self._init_scheduler_bg())
+        
         logger.info(f"[START] Feishu SDK server instance {self._instance_id} started successfully")
         print(f"✅ Feishu SDK server is running (instance {self._instance_id})")
         print(f"   Use Ctrl+C to stop")
@@ -2732,12 +3094,25 @@ class FeishuSDKServer:
         self._handlers.clear()
         self._clients.clear()
         
+        # Stop scheduler
+        await self._stop_scheduler()
+        
         # Give extra time for connections to fully close
         logger.info(f"[STOP] Waiting for connections to close...")
         await asyncio.sleep(2.0)  # Increased delay
         
         logger.info(f"[STOP] Feishu SDK server stopped (instance {self._instance_id})")
         print(f"[STOP] Instance {self._instance_id} fully stopped")
+    
+    async def _stop_scheduler(self) -> None:
+        """Stop the scheduler."""
+        try:
+            from kimi_cli.scheduler.scheduler import get_scheduler
+            scheduler = get_scheduler()
+            await scheduler.stop()
+            logger.info("[STOP] Scheduler stopped")
+        except Exception as e:
+            logger.exception(f"[STOP] Error stopping scheduler: {e}")
     
     async def _init_accounts(self) -> None:
         """Initialize Feishu SDK clients for all accounts."""
@@ -2782,6 +3157,142 @@ class FeishuSDKServer:
                 print(f"[INIT] ERROR: Failed to initialize account '{account_name}': {e}")
         
         logger.info(f"[INIT] Accounts initialization complete for instance {self._instance_id}")
+        print(f"[INIT] Accounts initialization complete for instance {self._instance_id}")
+        
+        # Note: Scheduler is now initialized in start() method after _init_accounts
+    
+    async def _init_scheduler_bg(self) -> None:
+        """Initialize scheduler in background"""
+        # 等待一小段时间确保 handler 已经创建
+        await asyncio.sleep(2)
+        
+        print("[SCHEDULER] Background initialization starting...")
+        
+        try:
+            from kimi_cli.scheduler.scheduler import get_scheduler
+            from kimi_cli.scheduler.cron_engine import CronEngine
+            
+            # Get first handler
+            handler = None
+            for h in self._handlers.values():
+                handler = h
+                break
+            
+            if not handler:
+                print("[SCHEDULER] No handler available")
+                return
+            
+            scheduler = get_scheduler()
+            
+            # 简单初始化
+            await scheduler._job_store.load_all()
+            scheduler._initialized = True
+            scheduler._feishu_handler = handler
+            
+            # 创建并启动 cron 引擎
+            scheduler._cron_engine = CronEngine(
+                job_store=scheduler._job_store,
+                on_trigger=lambda job: self._trigger_scheduled_task(scheduler, job),
+                check_interval=30.0,
+            )
+            await scheduler._cron_engine.start()
+            
+            print(f"✅ Scheduler initialized and started")
+            print(f"   Jobs: {len(await scheduler._job_store.list_all())}")
+            
+        except Exception as e:
+            print(f"⚠️ Scheduler init failed: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _trigger_scheduled_task(self, scheduler, job) -> None:
+        """触发定时任务"""
+        import asyncio
+        from datetime import datetime
+        from kimi_cli.scheduler.models import IncomingMessage
+        
+        async def run_task():
+            try:
+                handler = scheduler._feishu_handler
+                if not handler:
+                    return
+                
+                # 如果设置了 reminder_text，直接发送提醒消息，不经过 Agent
+                if job.reminder_text:
+                    try:
+                        # 构建提醒卡片
+                        card = {
+                            "config": {"wide_screen_mode": True},
+                            "header": {
+                                "title": {
+                                    "tag": "plain_text",
+                                    "content": "⏰ 定时提醒"
+                                },
+                                "template": "blue"
+                            },
+                            "elements": [
+                                {
+                                    "tag": "div",
+                                    "text": {
+                                        "tag": "lark_md",
+                                        "content": job.reminder_text
+                                    }
+                                },
+                                {
+                                    "tag": "note",
+                                    "elements": [
+                                        {
+                                            "tag": "plain_text",
+                                            "content": f"任务: {job.description}"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                        # 直接发送卡片消息
+                        await asyncio.to_thread(
+                            handler.client.send_interactive_card,
+                            job.chat_id,
+                            card
+                        )
+                        return
+                    except Exception:
+                        # 如果发送失败，回退到 Agent 执行
+                        pass
+                
+                # 没有 reminder_text 或发送失败时，通过 Agent 执行
+                message = IncomingMessage(
+                    text=f"[定时任务] {job.description}",
+                    source="scheduled",
+                    source_id=job.id,
+                    chat_id=job.chat_id,
+                    user_id=job.user_id,
+                    chat_type=job.chat_type,
+                    tenant_key=job.tenant_key,
+                    metadata={"cron": job.cron},
+                    created_at=datetime.now(),
+                )
+                
+                from kimi_cli.scheduler.session import ScheduledTaskSession
+                sched_session = ScheduledTaskSession(
+                    session_id=f"sched_{job.user_id}_{job.id}",
+                    chat_id=job.chat_id,
+                    user_id=job.user_id,
+                    feishu_handler=handler,
+                    pending_store=scheduler._pending_store,
+                )
+                await sched_session.execute_scheduled_task(message)
+                
+            except Exception as e:
+                print(f"[SCHEDULED] Error: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(run_task())
+        except RuntimeError:
+            pass
     
     def _start_ws_client(
         self,

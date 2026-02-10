@@ -374,6 +374,82 @@ class FeishuSDKClient:
             }
         return None
     
+    def get_message(self, message_id: str) -> dict[str, Any] | None:
+        """Get message content by message ID.
+        
+        Args:
+            message_id: The message ID to retrieve
+            
+        Returns:
+            Message data dict with 'content', 'msg_type', etc. or None if failed
+        """
+        try:
+            # Ensure token is valid
+            if not self._refresh_token():
+                logger.error("Failed to refresh token for get_message")
+                return None
+            
+            # Build request using SDK
+            request = lark.im.v1.GetMessageRequest.builder() \
+                .message_id(message_id) \
+                .build()
+            
+            print(f"[SDK] Calling message.get API for {message_id}")
+            response = self._client.im.v1.message.get(request)
+            
+            print(f"[SDK] Got response: {response is not None}")
+            if response:
+                print(f"[SDK] Response code: {getattr(response, 'code', 'N/A')}")
+                print(f"[SDK] Response msg: {getattr(response, 'msg', 'N/A')}")
+            
+            # Check response
+            if not response or response.code != 0:
+                code = getattr(response, 'code', 'None') if response else 'None'
+                msg = getattr(response, 'msg', 'None') if response else 'None'
+                logger.warning(f"Failed to get message {message_id}: code={code}, msg={msg}")
+                print(f"[SDK] Failed to get message {message_id}: code={code}, msg={msg}")
+                return None
+            
+            # Extract message data from items list
+            # API returns: response.data.items = [Message, ...]
+            if not response.data or not response.data.items:
+                print(f"[SDK] No items in response data")
+                return None
+            
+            msg = response.data.items[0]  # Get first message
+            
+            # Extract content from body.content for interactive/card messages
+            content = '{}'
+            if msg.body and hasattr(msg.body, 'content'):
+                content = msg.body.content
+            
+            # Extract sender info
+            sender = {}
+            if msg.sender:
+                sender = {
+                    'id': getattr(msg.sender.sender_id, 'open_id', None) if hasattr(msg.sender, 'sender_id') else None,
+                    'type': getattr(msg.sender, 'sender_type', None),
+                }
+            
+            result = {
+                "message_id": getattr(msg, 'message_id', message_id),
+                "msg_type": getattr(msg, 'msg_type', 'text'),
+                "content": content,
+                "sender": sender,
+                "chat_id": getattr(msg, 'chat_id', None),
+                "create_time": getattr(msg, 'create_time', None),
+            }
+            
+            print(f"[SDK] Successfully got message: {result['message_id']}, type={result['msg_type']}")
+            return result
+            
+        except Exception as e:
+            logger.exception(f"Exception getting message {message_id}: {e}")
+            print(f"[SDK] Exception getting message {message_id}: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
     def download_file(self, file_key: str, message_id: str | None = None) -> tuple[bytes, str] | None:
         """Download a file from Feishu by file_key.
         
