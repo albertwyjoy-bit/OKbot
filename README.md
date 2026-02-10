@@ -19,7 +19,7 @@ OKbot 是 [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli) 的飞书扩�
 
 | 特性 | 说明 |
 |------|------|
-| 🕐 **定时任务** | 支持 Cron 表达式创建定时任务，Agent 智能执行 |
+| 🕐 **定时任务** | 自然语言创建定时任务，Agent 自动执行，支持文件自动生成 |
 | 🔄 **跨端接续** | CLI 上开发到一半随时切飞书继续，100% 复用 Kimi CLI Session |
 | 🛠️ **动态 Skills** | 飞书中随时让 AI 帮你写 Skills，热更新立即生效 |
 | 🔄 **MCP 热更新** | 运行时动态添加/删除 MCP 服务器，无需重启 |
@@ -111,9 +111,10 @@ $ kimi chat
 
 ### 定时任务
 
-```
-/cron add "0 9 * * *" "每天早上9点调研当天科技新闻生成HTML报告文件"
-```
+用自然语言创建定时任务，OKbot 自动解析执行：
+
+> "每天早上9点调研科技新闻并生成报告"
+> "每30分钟提醒我喝水"
 
 📖 [定时任务详细文档](./docs/scheduler_file_handling.md)
 
@@ -131,7 +132,7 @@ $ kimi chat
 | `/yolo` | 切换自动批准模式 |
 | `/sessions` | 列出 CLI sessions |
 | `/continue <id>` | 接续指定 session |
-| `/cron` | 定时任务管理 |
+
 | `/mcp` | 查看 MCP 状态 |
 | `/update-mcp` | 热更新 MCP 配置 |
 
