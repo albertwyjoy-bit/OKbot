@@ -601,3 +601,308 @@ def build_approval_result_card(
             },
         ],
     }
+
+
+def build_model_selection_card(
+    models: list[dict[str, Any]],
+    current_model: str | None = None,
+    request_id: str = "model_select",
+) -> dict[str, Any]:
+    """Build a card for selecting LLM model.
+    
+    This card displays a list of available models as selectable buttons.
+    Users can click on a model to select it.
+    
+    Args:
+        models: List of model info dicts with 'name', 'model', 'provider', 'label' keys
+        current_model: Name of the currently selected model
+        request_id: Unique ID for this selection request
+        
+    Returns:
+        Interactive card JSON with model selection buttons
+    """
+    elements: list[dict[str, Any]] = [
+        {
+            "tag": "div",
+            "text": _markdown_element("**请选择要使用的模型：**"),
+        },
+        _divider(),
+    ]
+    
+    # Add model selection buttons
+    actions: list[dict[str, Any]] = []
+    for model in models:
+        name = model.get("name", "")
+        label = model.get("label", name)
+        is_current = name == current_model
+        
+        button_text = f"✓ {label}" if is_current else label
+        button_style = "primary" if is_current else "default"
+        
+        actions.append({
+            "tag": "button",
+            "text": {
+                "tag": "plain_text",
+                "content": button_text,
+            },
+            "type": button_style,
+            "value": {
+                "key": "select_model",
+                "request_id": request_id,
+                "model_name": name,
+            },
+        })
+    
+    # Add action buttons in groups of 3 per row
+    for i in range(0, len(actions), 3):
+        row_actions = actions[i:i+3]
+        elements.append({
+            "tag": "action",
+            "actions": row_actions,
+        })
+    
+    # Add note about current selection
+    if current_model:
+        elements.append(_note_element(f"当前模型: {current_model}", "💡"))
+    
+    return {
+        "config": {
+            "wide_screen_mode": True,
+            "enable_forward": True,
+            "update_multi": True,
+        },
+        "header": {
+            "template": "blue",
+            "title": {
+                "tag": "plain_text",
+                "content": "🤖 选择模型",
+            },
+        },
+        "elements": elements,
+    }
+
+
+def build_thinking_selection_card(
+    current_thinking: bool = False,
+    model_name: str = "",
+    request_id: str = "thinking_select",
+) -> dict[str, Any]:
+    """Build a card for selecting thinking mode.
+    
+    This card displays options to enable or disable thinking mode.
+    
+    Args:
+        current_thinking: Current thinking mode state
+        model_name: Name of the selected model
+        request_id: Unique ID for this selection request
+        
+    Returns:
+        Interactive card JSON with thinking mode selection buttons
+    """
+    elements: list[dict[str, Any]] = [
+        {
+            "tag": "div",
+            "text": _plain_text_element(f"**模型**: `{model_name}`"),
+        },
+        {
+            "tag": "div",
+            "text": _markdown_element("**是否启用 Thinking 模式？**"),
+        },
+        _divider(),
+        {
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "✓ 开启" if current_thinking else "开启",
+                    },
+                    "type": "primary" if current_thinking else "default",
+                    "value": {
+                        "key": "select_thinking",
+                        "request_id": request_id,
+                        "thinking": True,
+                        "model_name": model_name,
+                    },
+                },
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "✓ 关闭" if not current_thinking else "关闭",
+                    },
+                    "type": "primary" if not current_thinking else "default",
+                    "value": {
+                        "key": "select_thinking",
+                        "request_id": request_id,
+                        "thinking": False,
+                        "model_name": model_name,
+                    },
+                },
+            ],
+        },
+        {
+            "tag": "note",
+            "elements": [
+                _plain_text_element("💡 Thinking 模式会让模型展示更详细的推理过程")
+            ],
+        },
+    ]
+    
+    return {
+        "config": {
+            "wide_screen_mode": True,
+            "enable_forward": True,
+            "update_multi": True,
+        },
+        "header": {
+            "template": "purple",
+            "title": {
+                "tag": "plain_text",
+                "content": "💭 Thinking 模式",
+            },
+        },
+        "elements": elements,
+    }
+
+
+def build_model_confirm_card(
+    model_name: str,
+    thinking: bool,
+    confirm_request_id: str = "model_confirm",
+) -> dict[str, Any]:
+    """Build a card for confirming model and thinking mode selection.
+    
+    Args:
+        model_name: Selected model name
+        thinking: Selected thinking mode
+        confirm_request_id: Unique ID for confirmation
+        
+    Returns:
+        Interactive card JSON with confirm/cancel buttons
+    """
+    thinking_text = "开启" if thinking else "关闭"
+    
+    elements: list[dict[str, Any]] = [
+        {
+            "tag": "div",
+            "text": _plain_text_element(f"**模型**: `{model_name}`"),
+        },
+        {
+            "tag": "div",
+            "text": _plain_text_element(f"**Thinking 模式**: {thinking_text}"),
+        },
+        _divider(),
+        {
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "✅ 确认切换",
+                    },
+                    "type": "primary",
+                    "value": {
+                        "key": "confirm_model",
+                        "request_id": confirm_request_id,
+                        "model_name": model_name,
+                        "thinking": thinking,
+                    },
+                },
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "❌ 取消",
+                    },
+                    "type": "default",
+                    "value": {
+                        "key": "cancel_model",
+                        "request_id": confirm_request_id,
+                    },
+                },
+            ],
+        },
+        {
+            "tag": "note",
+            "elements": [
+                _plain_text_element("💡 确认后请发送 /new 创建新会话以应用新设置")
+            ],
+        },
+    ]
+    
+    return {
+        "config": {
+            "wide_screen_mode": True,
+            "enable_forward": True,
+            "update_multi": True,
+        },
+        "header": {
+            "template": "orange",
+            "title": {
+                "tag": "plain_text",
+                "content": "🔄 确认切换",
+            },
+        },
+        "elements": elements,
+    }
+
+
+def build_model_result_card(
+    model_name: str,
+    thinking: bool,
+    success: bool = True,
+) -> dict[str, Any]:
+    """Build a card showing the model switch result.
+    
+    Args:
+        model_name: The selected model name
+        thinking: Thinking mode state
+        success: Whether the switch was successful
+        
+    Returns:
+        Card JSON
+    """
+    thinking_text = "开启" if thinking else "关闭"
+    
+    if success:
+        template: CardColor = "green"
+        icon = "✅"
+        status = "切换成功"
+        detail = f"已切换到 `{model_name}`，Thinking 模式: {thinking_text}"
+        note = "请发送 /new 创建新会话后生效"
+    else:
+        template = "red"
+        icon = "❌"
+        status = "切换失败"
+        detail = "切换模型时出错，请重试"
+        note = None
+    
+    elements: list[dict[str, Any]] = [
+        {
+            "tag": "div",
+            "text": _plain_text_element(detail),
+        },
+    ]
+    
+    if note:
+        elements.append({
+            "tag": "note",
+            "elements": [
+                _plain_text_element(f"💡 {note}")
+            ],
+        })
+    
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": template,
+            "title": {
+                "tag": "plain_text",
+                "content": f"{icon} {status}",
+            },
+        },
+        "elements": elements,
+    }

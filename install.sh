@@ -208,9 +208,15 @@ if [ -n "$PNPM_CMD" ]; then
     else
         print_warning "未找到 package.json，跳过 Node.js 依赖安装"
     fi
+    
+    # 全局安装 chrome-devtools-mcp
+    print_info "全局安装 chrome-devtools-mcp..."
+    $PNPM_CMD install -g chrome-devtools-mcp
+    print_success "chrome-devtools-mcp 全局安装完成"
 else
     print_step "步骤 4/7: 跳过 Node.js 依赖安装"
     print_warning "未检测到包管理器，请手动运行: pnpm install 或 npm install"
+    print_warning "如需 Chrome DevTools 支持，请手动安装: npm install -g chrome-devtools-mcp"
 fi
 
 # ==================== 步骤 5: 配置智谱 API Key ====================
@@ -429,8 +435,8 @@ if [ -z "$SKIP_MCP_CONFIG" ]; then
             FIRST=false
             MCP_CONTENT="$MCP_CONTENT
     \"chrome-devtools\": {
-      \"command\": \"npx\",
-      \"args\": [\"-y\", \"chrome-devtools-mcp@latest\"]
+      \"command\": \"chrome-devtools-mcp\",
+      \"args\": []
     }"
         fi
         

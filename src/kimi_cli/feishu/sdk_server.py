@@ -89,6 +89,12 @@ class SDKChatSession:
         # Pending approval requests for non-YOLO mode
         self._pending_approvals: dict[str, Any] = {}
         
+        # Pending model selection requests
+        self._pending_model_selections: dict[str, Any] = {}
+        
+        # Flag to indicate this session should be deleted (for /new command)
+        self._should_delete: bool = False
+        
         # Initialize message renderer for card-based messages
         self._renderer = create_renderer()
         
@@ -233,6 +239,10 @@ class SDKChatSession:
                 logger.info("[SESSION] /reset command")
                 await self._send_reset()
                 return
+            elif stripped == "/new":
+                logger.info("[SESSION] /new command")
+                await self._handle_new_session()
+                return
             elif stripped == "/mcp" or stripped.startswith("/mcp "):
                 logger.info("[SESSION] /mcp command")
                 await self._handle_mcp_command(stripped)
@@ -244,6 +254,10 @@ class SDKChatSession:
             elif stripped.startswith("/cron"):
                 logger.info("[SESSION] /cron command")
                 await self._handle_cron_command(stripped)
+                return
+            elif stripped == "/model":
+                logger.info("[SESSION] /model command")
+                await self._handle_model_command()
                 return
             
             # All other slash commands are passed through to KimiSoul
@@ -289,6 +303,92 @@ class SDKChatSession:
                 f"❌ 处理定时任务命令时出错: {str(e)[:100]}",
             )
     
+    async def _handle_model_command(self) -> None:
+        """Handle /model command: show model selection card."""
+        from kimi_cli.feishu.card_builder import (
+            build_model_selection_card,
+            build_model_result_card,
+        )
+        from kimi_cli.config import load_config
+        from kimi_cli.auth.platforms import get_platform_name_for_provider, refresh_managed_models
+        
+        try:
+            config = load_config()
+            
+            # Refresh managed models from remote if needed
+            await refresh_managed_models(config)
+            
+            if not config.models:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    self.chat_id,
+                    "⚠️ 没有配置任何模型。请先在配置文件中添加模型。",
+                )
+                return
+            
+            # Get current model from soul's runtime
+            current_model_name: str | None = None
+            if self.soul and self.soul.runtime and self.soul.runtime.llm:
+                curr_model_cfg = self.soul.runtime.llm.model_config
+                for name, model_cfg in config.models.items():
+                    if model_cfg == curr_model_cfg:
+                        current_model_name = name
+                        break
+            
+            # If no runtime model found, use default from config
+            if not current_model_name and config.default_model:
+                current_model_name = config.default_model
+            
+            # Build model list
+            models: list[dict[str, Any]] = []
+            for name in sorted(config.models.keys()):
+                model_cfg = config.models[name]
+                provider_label = get_platform_name_for_provider(model_cfg.provider) or model_cfg.provider
+                label = f"{model_cfg.model} ({provider_label})"
+                models.append({
+                    "name": name,
+                    "model": model_cfg.model,
+                    "provider": provider_label,
+                    "label": label,
+                })
+            
+            # Generate request ID for this selection
+            import uuid
+            request_id = f"model_select_{uuid.uuid4().hex[:8]}"
+            
+            # Build and send model selection card
+            card = build_model_selection_card(
+                models=models,
+                current_model=current_model_name,
+                request_id=request_id,
+            )
+            
+            card_message_id = await asyncio.to_thread(
+                self.client.send_interactive_card,
+                self.chat_id,
+                card,
+            )
+            
+            logger.info(f"[SESSION] Model selection card sent: {card_message_id}")
+            
+            # Store pending model selection state
+            self._pending_model_selections[request_id] = {
+                "message_id": card_message_id,
+                "models": models,
+                "current_model": current_model_name,
+                "stage": "selecting_model",  # selecting_model -> selecting_thinking -> confirming
+                "selected_model": None,
+                "selected_thinking": None,
+            }
+            
+        except Exception as e:
+            logger.exception(f"Error handling /model command: {e}")
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                self.chat_id,
+                f"❌ 处理模型选择命令时出错: {str(e)[:100]}",
+            )
+    
     async def _flush_pending_scheduled_notifications(self) -> None:
         """Flush pending scheduled notifications.
         
@@ -320,11 +420,13 @@ class SDKChatSession:
 
 **本地命令：**
 • /help - 显示此帮助
+• /new - 创建新会话（获取新的 session ID）
 • /reset - 重置对话
 • /stop - 打断当前操作（保留上下文，类似 Ctrl+C）
 • /clear - 中断当前处理并清空上下文
 • /mcp - 显示 MCP 服务器状态
 • /cron - 定时任务管理
+• /model - 切换模型和 Thinking 模式
 
 **跨端接续（CLI ↔ Feishu）：**
 • /sessions - 列出电脑端 CLI 的所有 sessions
@@ -347,9 +449,6 @@ class SDKChatSession:
 • /update-skill - 重新加载 skills
 • /update-mcp - 重新加载 MCP 工具
 • ... 以及其他 Soul 级别命令
-
-**不支持的命令：**
-• /model - 请使用 --model 参数启动
 
 **Skills：**
 • /skill - 使用 skill（需先在 feishu.toml 中配置 skills_dir）
@@ -388,6 +487,39 @@ class SDKChatSession:
             self.chat_id,
             "🔄 对话已重置。让我们重新开始！",
         )
+    
+    async def _handle_new_session(self) -> None:
+        """Handle /new command: create a new session.
+        
+        This deletes the current session and forces creation of a new one
+        with a new session ID on the next message.
+        """
+        # Send confirmation first
+        await asyncio.to_thread(
+            self.client.send_text_message,
+            self.chat_id,
+            "🆕 正在创建新会话...",
+        )
+        
+        # Clear the context first (best effort)
+        try:
+            if self.soul and hasattr(self.soul, 'context'):
+                await self.soul.context.clear()
+                logger.info("[SESSION] Context cleared for new session")
+        except Exception as e:
+            logger.warning(f"[SESSION] Failed to clear context: {e}")
+        
+        # Mark this session for deletion by the handler
+        # The handler will remove it from _sessions and create a new one
+        self._should_delete = True
+        print(f"[SESSION] _should_delete set to True for session {id(self)}, chat {self.chat_id}")
+        
+        await asyncio.to_thread(
+            self.client.send_text_message,
+            self.chat_id,
+            "✅ 已准备好创建新会话。请发送一条消息以开始新对话！",
+        )
+        logger.info(f"[SESSION] Session {id(self)} marked for deletion (_should_delete={self._should_delete}), new session will be created on next message")
     
     async def _handle_stop(self) -> None:
         """Handle /stop command: cancel current operation without clearing context.
@@ -2819,6 +2951,16 @@ class SDKMessageHandler:
         # Get or create session
         async with self._lock:
             session = self._sessions.get(session_key)
+            
+            # Check if session should be deleted (from /new command)
+            should_delete = getattr(session, '_should_delete', False) if session else False
+            print(f"[HANDLER] Session {id(session) if session else 'None'} _should_delete={should_delete}, session_key={session_key}")
+            if session is not None and should_delete:
+                print(f"[HANDLER] Session marked for deletion, removing {session_key}")
+                logger.info(f"[HANDLER] Session {id(session)} marked for deletion, removing {session_key}")
+                del self._sessions[session_key]
+                session = None
+            
             if session is None:
                 print(f"[HANDLER] Creating new session for {session_key}")
                 logger.info(f"[HANDLER] Creating new session for {session_key}")
@@ -2950,7 +3092,12 @@ class SDKMessageHandler:
                 print(f"[CARD ACTION] Session not found: {session_key}")
                 return
             
-            print(f"[CARD ACTION] Found session {session_key}, pending_approvals: {list(session._pending_approvals.keys())}")
+            print(f"[CARD ACTION] Found session {session_key}, pending_approvals: {list(session._pending_approvals.keys())}, pending_model_selections: {list(session._pending_model_selections.keys())}")
+            
+            # Check if this is a model selection action
+            if key in ("select_model", "select_thinking", "confirm_model", "cancel_model"):
+                await self._handle_model_card_action(session, message_id, key, request_id, action_value)
+                return
             
             # Find the pending approval request
             if request_id not in session._pending_approvals:
@@ -2994,6 +3141,228 @@ class SDKMessageHandler:
         except Exception as e:
             logger.exception(f"Error handling card action: {e}")
             print(f"[CARD ACTION ERROR] {e}")
+    
+    async def _handle_model_card_action(
+        self,
+        session: SDKChatSession,
+        message_id: str | None,
+        key: str,
+        request_id: str,
+        action_value: dict[str, Any],
+    ) -> None:
+        """Handle model selection card actions.
+        
+        Args:
+            session: The chat session
+            message_id: The message ID of the card
+            key: The action key
+            request_id: The request ID
+            action_value: The full action value dict
+        """
+        from kimi_cli.feishu.card_builder import (
+            build_model_selection_card,
+            build_thinking_selection_card,
+            build_model_confirm_card,
+            build_model_result_card,
+        )
+        from kimi_cli.config import load_config, save_config
+        from kimi_cli.llm import derive_model_capabilities
+        
+        print(f"[MODEL ACTION] Handling model action: {key}, request_id: {request_id}")
+        
+        # Check if this is a valid model selection request
+        if request_id not in session._pending_model_selections:
+            print(f"[MODEL ACTION] Request {request_id} not found in pending_model_selections")
+            return
+        
+        selection_state = session._pending_model_selections[request_id]
+        
+        try:
+            if key == "select_model":
+                # User selected a model
+                model_name = action_value.get("model_name")
+                if not model_name:
+                    print("[MODEL ACTION] No model_name in action value")
+                    return
+                
+                print(f"[MODEL ACTION] Model selected: {model_name}")
+                selection_state["selected_model"] = model_name
+                selection_state["stage"] = "selecting_thinking"
+                
+                # Get current thinking state
+                current_thinking = False
+                if session.soul and hasattr(session.soul, 'thinking'):
+                    current_thinking = session.soul.thinking
+                
+                # Load config to check if this model supports thinking
+                config = load_config()
+                model_cfg = config.models.get(model_name)
+                supports_thinking = False
+                always_thinking = False
+                
+                if model_cfg:
+                    capabilities = derive_model_capabilities(model_cfg)
+                    if "always_thinking" in capabilities:
+                        always_thinking = True
+                        current_thinking = True
+                    elif "thinking" in capabilities:
+                        supports_thinking = True
+                
+                if always_thinking:
+                    # Skip thinking selection, go directly to confirm
+                    selection_state["selected_thinking"] = True
+                    selection_state["stage"] = "confirming"
+                    confirm_card = build_model_confirm_card(
+                        model_name=model_name,
+                        thinking=True,
+                        confirm_request_id=request_id,
+                    )
+                    await asyncio.to_thread(
+                        session.client.update_interactive_card,
+                        message_id,
+                        confirm_card,
+                    )
+                elif supports_thinking:
+                    # Show thinking selection card
+                    thinking_card = build_thinking_selection_card(
+                        current_thinking=current_thinking,
+                        model_name=model_name,
+                        request_id=request_id,
+                    )
+                    await asyncio.to_thread(
+                        session.client.update_interactive_card,
+                        message_id,
+                        thinking_card,
+                    )
+                else:
+                    # Model doesn't support thinking, skip to confirm
+                    selection_state["selected_thinking"] = False
+                    selection_state["stage"] = "confirming"
+                    confirm_card = build_model_confirm_card(
+                        model_name=model_name,
+                        thinking=False,
+                        confirm_request_id=request_id,
+                    )
+                    await asyncio.to_thread(
+                        session.client.update_interactive_card,
+                        message_id,
+                        confirm_card,
+                    )
+                    
+            elif key == "select_thinking":
+                # User selected thinking mode
+                thinking = action_value.get("thinking", False)
+                model_name = action_value.get("model_name")
+                
+                print(f"[MODEL ACTION] Thinking selected: {thinking} for model {model_name}")
+                selection_state["selected_thinking"] = thinking
+                selection_state["stage"] = "confirming"
+                
+                # Show confirm card
+                confirm_card = build_model_confirm_card(
+                    model_name=model_name or selection_state.get("selected_model", ""),
+                    thinking=thinking,
+                    confirm_request_id=request_id,
+                )
+                await asyncio.to_thread(
+                    session.client.update_interactive_card,
+                    message_id,
+                    confirm_card,
+                )
+                
+            elif key == "confirm_model":
+                # User confirmed the selection
+                model_name = action_value.get("model_name")
+                thinking = action_value.get("thinking", False)
+                
+                print(f"[MODEL ACTION] Confirming model: {model_name}, thinking: {thinking}")
+                
+                # Update config
+                try:
+                    config = load_config()
+                    if model_name in config.models:
+                        config.default_model = model_name
+                        config.default_thinking = thinking
+                        save_config(config)
+                        
+                        # Update the card to show success
+                        result_card = build_model_result_card(
+                            model_name=model_name,
+                            thinking=thinking,
+                            success=True,
+                        )
+                        await asyncio.to_thread(
+                            session.client.update_interactive_card,
+                            message_id,
+                            result_card,
+                        )
+                        
+                        # Clean up pending selection
+                        session._pending_model_selections.pop(request_id, None)
+                        
+                        # Note: We don't reload the session here to avoid disrupting the conversation
+                        # The new settings will take effect on the next session
+                        
+                    else:
+                        # Model not found
+                        result_card = build_model_result_card(
+                            model_name=model_name or "Unknown",
+                            thinking=thinking,
+                            success=False,
+                        )
+                        await asyncio.to_thread(
+                            session.client.update_interactive_card,
+                            message_id,
+                            result_card,
+                        )
+                        session._pending_model_selections.pop(request_id, None)
+                        
+                except Exception as e:
+                    logger.exception(f"Error saving model config: {e}")
+                    result_card = build_model_result_card(
+                        model_name=model_name or "Unknown",
+                        thinking=thinking,
+                        success=False,
+                    )
+                    await asyncio.to_thread(
+                        session.client.update_interactive_card,
+                        message_id,
+                        result_card,
+                    )
+                    session._pending_model_selections.pop(request_id, None)
+                    
+            elif key == "cancel_model":
+                # User cancelled
+                print(f"[MODEL ACTION] Model selection cancelled")
+                
+                # Update card to show cancelled
+                from kimi_cli.feishu.card_builder import _plain_text_element
+                cancel_card = {
+                    "config": {"wide_screen_mode": True},
+                    "header": {
+                        "template": "grey",
+                        "title": {
+                            "tag": "plain_text",
+                            "content": "❌ 已取消",
+                        },
+                    },
+                    "elements": [
+                        {
+                            "tag": "div",
+                            "text": _plain_text_element("模型切换已取消，当前设置保持不变。"),
+                        },
+                    ],
+                }
+                await asyncio.to_thread(
+                    session.client.update_interactive_card,
+                    message_id,
+                    cancel_card,
+                )
+                session._pending_model_selections.pop(request_id, None)
+                
+        except Exception as e:
+            logger.exception(f"Error handling model card action: {e}")
+            print(f"[MODEL ACTION ERROR] {e}")
 
 
 class FeishuSDKServer:
