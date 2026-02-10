@@ -132,7 +132,6 @@ $ kimi chat
 | `/yolo` | 切换自动批准模式 |
 | `/sessions` | 列出 CLI sessions |
 | `/continue <id>` | 接续指定 session |
-
 | `/mcp` | 查看 MCP 状态 |
 | `/update-mcp` | 热更新 MCP 配置 |
 
