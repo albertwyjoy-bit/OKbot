@@ -15,7 +15,7 @@ OKbot 是 [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli) 的飞书扩�
 
 ---
 
-## ✨ 核心特性
+## 核心特性
 
 | 特性 | 说明 |
 |------|------|
@@ -30,7 +30,7 @@ OKbot 是 [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli) 的飞书扩�
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 一键安装（推荐）
 
@@ -67,7 +67,7 @@ python -m kimi_cli.feishu
 
 ---
 
-## 🎬 功能演示
+## 功能演示
 
 ### 跨端 Session 接续
 
@@ -120,7 +120,7 @@ $ kimi chat
 
 ---
 
-## 📋 常用命令
+## 常用命令
 
 | 命令 | 说明 |
 |------|------|
@@ -137,7 +137,7 @@ $ kimi chat
 
 ---
 
-## 📁 项目结构
+## 项目结构
 
 ```
 OKbot/
@@ -155,7 +155,7 @@ OKbot/
 
 ---
 
-## 🔧 配置说明
+## 配置说明
 
 ### 必需配置
 
@@ -181,7 +181,7 @@ auto_approve = true
 
 ---
 
-## 📚 文档导航
+## 文档导航
 
 | 文档 | 说明 |
 |------|------|
@@ -193,7 +193,7 @@ auto_approve = true
 
 ---
 
-## 🌟 为什么选 OKbot？
+## 为什么选 OKbot？
 
 - **无缝衔接**：CLI 和飞书共享同一个 Session，随时切换设备继续工作
 - **移动端操控 PC**：通过手机飞书控制电脑浏览器和 Android 设备
@@ -202,7 +202,7 @@ auto_approve = true
 
 ---
 
-## 🐛 常见问题
+## 常见问题
 
 **Q: 如何配置 GLM 作为对话模型？**
 > 参考 [GLM 配置说明](./docs/detailed-readme.md#22-%E6%99%BA%E8%B0%B1-ai-api-key%E5%8F%AF%E9%80%89%E7%94%A8%E4%BA%8E%E8%AF%AD%E9%9F%B3%E5%92%8C%E5%9B%BE%E5%83%8F%E7%90%86%E8%A7%A3)
@@ -217,7 +217,7 @@ auto_approve = true
 
 ---
 
-## 📄 许可证
+## 许可证
 
 本项目基于 [Apache License 2.0](LICENSE) 开源。
 
