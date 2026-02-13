@@ -82,6 +82,67 @@ async def yolo(soul: KimiSoul, args: str):
         wire_send(TextPart(text="You only live once! All actions will be auto-approved."))
 
 
+@registry.command
+async def plan(soul: KimiSoul, args: str):
+    """Enter plan mode - analyze and plan without executing write operations"""
+    import os
+    from pathlib import Path
+    
+    # Check if already in plan mode
+    if soul.runtime.approval.is_plan_mode():
+        wire_send(TextPart(text="Already in plan mode. Use `PlanExit` tool to exit."))
+        return
+    
+    # Get session ID for plan file name
+    session_id = soul.runtime.session.id
+    plans_dir = Path.home() / ".kimi" / "plans"
+    plan_file = plans_dir / f"{session_id}.md"
+    
+    # Create plans directory if not exists
+    try:
+        plans_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        logger.error("Failed to create plans directory: {e}")
+        wire_send(TextPart(text=f"❌ Failed to create plans directory: {e}"))
+        return
+    
+    # Create empty plan file if not exists
+    try:
+        if not plan_file.exists():
+            plan_file.write_text(f"# Plan for Session {session_id}\n\n", encoding="utf-8")
+    except Exception as e:
+        logger.error("Failed to create plan file: {e}")
+        wire_send(TextPart(text=f"❌ Failed to create plan file: {e}"))
+        return
+    
+    # Enable plan mode
+    soul.runtime.approval.set_plan_mode(True, str(plan_file))
+    
+    # Notify user
+    wire_send(TextPart(
+        text=f"📝 **Entered Plan Mode**\n\n"
+             f"Plan file: `{plan_file}`\n\n"
+             f"In plan mode:\n"
+             f"• Read-only tools are allowed (ReadFile, Grep, Search, etc.)\n"
+             f"• WriteFile is allowed **only** for the plan file\n"
+             f"• All other write operations are blocked\n\n"
+             f"Use `PlanExit` tool when you're ready to proceed with execution."
+    ))
+    
+    # Add system message to context with plan prompt and file path
+    plan_message_content = (
+        f"{prompts.PLAN}\n\n"
+        f"Current editable plan file: {plan_file}"
+    )
+    
+    await soul.context.append_message(Message(
+        role="user",
+        content=[system(plan_message_content)]
+    ))
+    
+    logger.info("Entered plan mode, plan file: {plan_file}", plan_file=plan_file)
+
+
 @registry.command(name="update-skill")
 async def update_skill(soul: KimiSoul, args: str):
     """Reload skills from disk and update system prompt.

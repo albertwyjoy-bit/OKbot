@@ -294,7 +294,8 @@ async def load_agent(
         )
         runtime.labor_market.add_fixed_subagent(subagent_name, subagent, subagent_spec.description)
 
-    toolset = KimiToolset()
+    # Create toolset with plan mode check callback
+    toolset = KimiToolset(plan_mode_check=lambda: runtime.approval.state.plan_mode)
     tool_deps = {
         KimiToolset: toolset,
         Runtime: runtime,

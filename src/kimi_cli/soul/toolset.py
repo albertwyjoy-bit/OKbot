@@ -8,6 +8,7 @@ import json
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 from kosong.tooling import (
@@ -29,6 +30,7 @@ from kosong.utils.typing import JsonType
 from loguru import logger
 
 from kimi_cli.exception import InvalidToolError, MCPRuntimeError
+
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.wire.types import (
@@ -69,10 +71,15 @@ if TYPE_CHECKING:
 
 
 class KimiToolset:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        plan_mode_check: Callable[[], bool] | None = None,
+    ) -> None:
         self._tool_dict: dict[str, ToolType] = {}
         self._mcp_servers: dict[str, MCPServerInfo] = {}
         self._mcp_loading_task: asyncio.Task[None] | None = None
+        # Callback to check if plan mode is enabled
+        self._plan_mode_check = plan_mode_check
 
     def add(self, tool: ToolType) -> None:
         self._tool_dict[tool.name] = tool
@@ -92,11 +99,34 @@ class KimiToolset:
 
     @property
     def tools(self) -> list[Tool]:
-        return [tool.base for tool in self._tool_dict.values()]
+        all_tools = list(self._tool_dict.values())
+
+        # Check if plan mode is enabled via callback
+        if self._plan_mode_check is None or not self._plan_mode_check():
+            tools = [tool.base for tool in all_tools]
+            logger.debug("Tools (normal mode): {tools}", tools=[t.name for t in tools])
+            return tools
+
+        # Plan mode: filter to allowed tools only, exclude all MCP tools
+        # Import here to avoid circular import
+        from kimi_cli.soul.approval import PLAN_MODE_ALLOWED_TOOLS
+        tools = [
+            tool.base for tool in all_tools
+            if tool.base.name in PLAN_MODE_ALLOWED_TOOLS
+            and not isinstance(tool, MCPTool)
+        ]
+        logger.debug("Tools (plan mode): {tools}", tools=[t.name for t in tools])
+        return tools
 
     def handle(self, tool_call: ToolCall) -> HandleResult:
         token = current_tool_call.set(tool_call)
         try:
+            logger.debug(
+                "Handling tool call: {name} (plan_mode: {plan_mode})",
+                name=tool_call.function.name,
+                plan_mode=self._plan_mode_check() if self._plan_mode_check else False,
+            )
+
             if tool_call.function.name not in self._tool_dict:
                 return ToolResult(
                     tool_call_id=tool_call.id,
@@ -104,6 +134,36 @@ class KimiToolset:
                 )
 
             tool = self._tool_dict[tool_call.function.name]
+
+            # Plan mode check: reject disallowed tools
+            if self._plan_mode_check is not None and self._plan_mode_check():
+                from kimi_cli.soul.approval import PLAN_MODE_ALLOWED_TOOLS
+                if tool.base.name not in PLAN_MODE_ALLOWED_TOOLS:
+                    logger.info(
+                        "Rejecting tool call in plan mode: {name}",
+                        name=tool.base.name,
+                    )
+                    return ToolResult(
+                        tool_call_id=tool_call.id,
+                        return_value=ToolError(
+                            message=f"Tool `{tool.base.name}` is not allowed in plan mode. "
+                            f"Only read-only tools can be used while planning.",
+                            brief="Tool not allowed in plan mode",
+                        ),
+                    )
+                # Also reject MCP tools in plan mode
+                if isinstance(tool, MCPTool):
+                    logger.info(
+                        "Rejecting MCP tool call in plan mode: {name}",
+                        name=tool.base.name,
+                    )
+                    return ToolResult(
+                        tool_call_id=tool_call.id,
+                        return_value=ToolError(
+                            message="MCP tools are not allowed in plan mode.",
+                            brief="MCP tools not allowed in plan mode",
+                        ),
+                    )
 
             try:
                 arguments: JsonType = json.loads(tool_call.function.arguments or "{}")

@@ -164,6 +164,8 @@ class ApprovalRequest(BaseModel):
     description: str
     display: list[DisplayBlock] = Field(default_factory=list[DisplayBlock])
     """Defaults to an empty list for backwards-compatible wire.jsonl loading."""
+    mandatory: bool = False
+    """Whether this is a mandatory approval request that bypasses YOLO mode."""
 
     # Note that the above fields are just a copy of `kimi_cli.soul.approval.Request`, but
     # we cannot directly use that class here because we want to avoid dependency from Wire
