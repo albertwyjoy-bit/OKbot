@@ -313,24 +313,111 @@ def build_search_result_card(
     }
 
 
+def _find_split_point(text: str, max_length: int) -> int:
+    """Find the best point to split text, preferring paragraph/sentence boundaries.
+    
+    Args:
+        text: Text to split
+        max_length: Maximum length for the chunk
+        
+    Returns:
+        Index to split at
+    """
+    if len(text) <= max_length:
+        return len(text)
+    
+    # Look for paragraph boundary first (\n\n)
+    search_end = min(max_length, len(text))
+    for i in range(search_end - 1, max(0, search_end - 500), -1):
+        if i + 1 < len(text) and text[i] == '\n' and text[i + 1] == '\n':
+            return i + 2
+    
+    # Then look for sentence boundary (。！？\n)
+    for i in range(search_end - 1, max(0, search_end - 200), -1):
+        if text[i] in '。！？\n':
+            return i + 1
+    
+    # Finally, look for space or comma
+    for i in range(search_end - 1, max(0, search_end - 100), -1):
+        if text[i] in ' ，,':
+            return i + 1
+    
+    # Fallback: hard split at max_length
+    return max_length
+
+
+def split_content_for_cards(content: str, max_length: int = 8000) -> list[str]:
+    """Split long content into chunks for multiple cards.
+    
+    Tries to split at paragraph or sentence boundaries to maintain readability.
+    Preserves markdown structure as much as possible.
+    
+    Args:
+        content: Content to split
+        max_length: Maximum length per chunk
+        
+    Returns:
+        List of content chunks (never empty)
+    """
+    # Handle edge cases
+    if not content:
+        return [""]
+    
+    if len(content) <= max_length:
+        return [content]
+    
+    chunks = []
+    remaining = content
+    
+    while remaining:
+        if len(remaining) <= max_length:
+            chunks.append(remaining)
+            break
+        
+        # Find split point
+        split_at = _find_split_point(remaining, max_length)
+        
+        # Ensure we make progress (avoid infinite loop)
+        if split_at <= 0:
+            split_at = max_length
+        elif split_at > len(remaining):
+            split_at = len(remaining)
+        
+        chunk = remaining[:split_at].rstrip()
+        if chunk:
+            chunks.append(chunk)
+        else:
+            # If chunk is empty after strip, include at least some content
+            chunks.append(remaining[:max_length])
+        
+        remaining = remaining[split_at:].lstrip()
+    
+    # Ensure we never return an empty list
+    if not chunks:
+        return [content[:max_length]]
+    
+    return chunks
+
+
 def build_response_card(
     content: str,
     is_markdown: bool = True,
+    page_info: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """Build a card for AI response text.
     
     Args:
         content: Response content
         is_markdown: Whether content is markdown formatted
+        page_info: Optional pagination info {"current": 1, "total": 3}
         
     Returns:
         Interactive card JSON
     """
-    # For long responses, we may want to truncate or split
-    max_length = 8000  # Feishu card size limit
-    
-    if len(content) > max_length:
-        content = content[:max_length - 100] + "\n\n... (内容已截断)"
+    # Build title with pagination info if provided
+    title = f"{CARD_ICONS['response']} 回复"
+    if page_info and page_info.get("total", 1) > 1:
+        title = f"{CARD_ICONS['response']} 回复 ({page_info['current']}/{page_info['total']})"
     
     return {
         "config": {"wide_screen_mode": True},
@@ -338,7 +425,7 @@ def build_response_card(
             "template": "default",
             "title": {
                 "tag": "plain_text",
-                "content": f"{CARD_ICONS['response']} 回复",
+                "content": title,
             },
         },
         "elements": [

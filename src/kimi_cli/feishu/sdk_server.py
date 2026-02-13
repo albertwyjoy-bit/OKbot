@@ -14,7 +14,6 @@ from __future__ import annotations
 # NOTE: We no longer use nest_asyncio due to compatibility issues with Python 3.12
 # (causes "cannot enter context" errors with contextvars).
 # Instead, we ensure complete event loop isolation in WebSocket threads.
-
 import asyncio
 import json
 import os
@@ -33,22 +32,24 @@ warnings.filterwarnings(
     message=r"coroutine 'Client\._(connect|disconnect)' was never awaited",
     category=RuntimeWarning,
 )
+from kaos.path import KaosPath
 from loguru import logger
+from pydantic import SecretStr
 
+from kimi_cli.agentspec import DEFAULT_AGENT_FILE
+from kimi_cli.config import load_config
+from kimi_cli.feishu.card_builder import split_content_for_cards
 from kimi_cli.feishu.config import FeishuAccountConfig, FeishuConfig
+from kimi_cli.feishu.message_renderer import create_renderer
+from kimi_cli.feishu.post_message import handle_post_message
 from kimi_cli.feishu.sdk_client import FeishuSDKClient
-from kimi_cli.utils.asr import transcribe_audio
+from kimi_cli.session import Session
+
 # Gateway removed - using SDK long connection only
 from kimi_cli.soul.agent import Runtime, load_agent
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
-from kimi_cli.config import load_config
-from kimi_cli.session import Session
-from kimi_cli.agentspec import DEFAULT_AGENT_FILE
-from kaos.path import KaosPath
-from pydantic import SecretStr
-
-from kimi_cli.feishu.message_renderer import MessageRenderer, create_renderer
+from kimi_cli.utils.asr import transcribe_audio
 
 # Scheduler imports (lazy import to avoid circular imports)
 _scheduler_initialized = False
@@ -58,6 +59,7 @@ class SDKChatSession:
     """A chat session with a user using SDK client.
     
     Each session has its own KimiSoul with isolated context.
+    Supports buffering media files (images/documents) until text instruction arrives.
     """
     
     def __init__(
@@ -107,18 +109,23 @@ class SDKChatSession:
         # when the session becomes idle
         self._pending_scheduled_notifications: list[Any] = []
         self._scheduled_notifications_lock = asyncio.Lock()
+        
+        # Media buffer for deferred processing
+        # Stores media files (images, documents) received without text instruction
+        self._media_buffer: list[dict[str, Any]] = []
+        self._buffer_notification_id: str | None = None  # Message ID for buffer status updates
+        self._buffer_lock = asyncio.Lock()
     
     def _register_feishu_tools(self) -> None:
         """Register Feishu tools with the soul's toolset."""
         print(f"[SESSION] Starting tool registration for chat {self.chat_id}")
         logger.info(f"[SESSION] Starting tool registration for chat {self.chat_id}")
         try:
-            from kimi_cli.tools.feishu import set_feishu_client
-            from kimi_cli.tools.feishu import FeishuSendFile, FeishuSendMessage
+            from kimi_cli.tools.feishu import FeishuSendFile, FeishuSendMessage, set_feishu_client
             from kimi_cli.tools.scheduler_tool import (
                 CreateScheduledJob,
-                ListScheduledJobs,
                 DeleteScheduledJob,
+                ListScheduledJobs,
                 ToggleScheduledJob,
             )
             
@@ -185,6 +192,105 @@ class SDKChatSession:
         except Exception as e:
             logger.warning(f"[SESSION] Failed to register Feishu tools: {e}", exc_info=True)
     
+    async def add_to_media_buffer(
+        self,
+        media_type: str,
+        file_path: str,
+        file_name: str,
+        file_size: int = 0,
+    ) -> bool:
+        """Add media to the buffer and notify user.
+        
+        Args:
+            media_type: 'image' or 'file'
+            file_path: Path where the file is saved
+            file_name: Original file name
+            file_size: File size in bytes
+            
+        Returns:
+            True if added successfully
+        """
+        async with self._buffer_lock:
+            self._media_buffer.append({
+                "type": media_type,
+                "path": file_path,
+                "name": file_name,
+                "size": file_size,
+                "timestamp": asyncio.get_event_loop().time(),
+            })
+            
+            buffer_count = len(self._media_buffer)
+            image_count = sum(1 for m in self._media_buffer if m["type"] == "image")
+            file_count = sum(1 for m in self._media_buffer if m["type"] == "file")
+            
+            # Build status message
+            parts = [f"📦 已缓存 {buffer_count} 个文件"]
+            if image_count > 0:
+                parts.append(f"🖼️ 图片: {image_count}")
+            if file_count > 0:
+                parts.append(f"📄 文件: {file_count}")
+            parts.append("\n💡 发送文字说明即可一起处理")
+            
+            status_text = "\n".join(parts)
+            
+            # Update existing notification or send new one
+            try:
+                if self._buffer_notification_id:
+                    # Try to update the existing message
+                    # Note: Feishu doesn't support updating text messages easily,
+                    # so we delete and resend or just send a new one
+                    await asyncio.to_thread(
+                        self.client.send_text_message,
+                        self.chat_id,
+                        status_text,
+                    )
+                else:
+                    # First media in buffer
+                    msg_id = await asyncio.to_thread(
+                        self.client.send_text_message,
+                        self.chat_id,
+                        status_text,
+                    )
+                    self._buffer_notification_id = msg_id
+            except Exception as e:
+                logger.warning(f"[SESSION] Failed to send buffer notification: {e}")
+            
+            return True
+    
+    async def get_buffered_media_context(self) -> str:
+        """Get context string for all buffered media.
+        
+        Returns:
+            Formatted context string describing buffered media
+        """
+        async with self._buffer_lock:
+            if not self._media_buffer:
+                return ""
+            
+            parts = ["\n\n[已缓存的文件/图片]"]
+            for i, media in enumerate(self._media_buffer, 1):
+                media_type = "图片" if media["type"] == "image" else "文件"
+                parts.append(f"{i}. [{media_type}] {media['name']} ({media['size']} bytes) - 路径: {media['path']}")
+            
+            return "\n".join(parts)
+    
+    async def clear_media_buffer(self) -> list[dict[str, Any]]:
+        """Clear and return all buffered media.
+        
+        Returns:
+            List of buffered media items (for processing)
+        """
+        async with self._buffer_lock:
+            buffered = self._media_buffer.copy()
+            self._media_buffer.clear()
+            self._buffer_notification_id = None
+            return buffered
+    
+    async def has_buffered_media(self) -> bool:
+        """Check if there are buffered media files."""
+        async with self._buffer_lock:
+            return len(self._media_buffer) > 0
+    
     async def handle_message(self, message_text: str) -> None:
         """Handle an incoming message."""
         print(f"[SESSION] Handling message: {message_text[:50]}...")
@@ -202,6 +308,10 @@ class SDKChatSession:
         elif stripped == "/stop":
             logger.info("[SESSION] /stop command (pre-lock)")
             await self._handle_stop()
+            return
+        elif stripped == "/clear-buffer":
+            logger.info("[SESSION] /clear-buffer command")
+            await self._handle_clear_buffer()
             return
         
         async with self._lock:
@@ -250,6 +360,10 @@ class SDKChatSession:
             elif stripped == "/yolo":
                 logger.info("[SESSION] /yolo command")
                 await self._handle_yolo_toggle()
+                return
+            elif stripped == "/plan":
+                logger.info("[SESSION] /plan command")
+                await self._handle_plan_command()
                 return
             elif stripped.startswith("/cron"):
                 logger.info("[SESSION] /cron command")
@@ -305,12 +419,11 @@ class SDKChatSession:
     
     async def _handle_model_command(self) -> None:
         """Handle /model command: show model selection card."""
+        from kimi_cli.auth.platforms import get_platform_name_for_provider, refresh_managed_models
+        from kimi_cli.config import load_config
         from kimi_cli.feishu.card_builder import (
             build_model_selection_card,
-            build_model_result_card,
         )
-        from kimi_cli.config import load_config
-        from kimi_cli.auth.platforms import get_platform_name_for_provider, refresh_managed_models
         
         try:
             config = load_config()
@@ -424,6 +537,7 @@ class SDKChatSession:
 • /reset - 重置对话
 • /stop - 打断当前操作（保留上下文，类似 Ctrl+C）
 • /clear - 中断当前处理并清空上下文
+• /clear-buffer - 清空已缓存的文件/图片
 • /mcp - 显示 MCP 服务器状态
 • /cron - 定时任务管理
 • /model - 切换模型和 Thinking 模式
@@ -442,6 +556,11 @@ class SDKChatSession:
 • 当前为 **{'YOLO' if self._yolo_mode else '非 YOLO'} 模式**
 • YOLO 模式：工具调用自动批准
 • 非 YOLO 模式：每次工具调用需通过卡片授权
+
+**Plan 模式：**
+• /plan - 进入 Plan 模式（规划阶段，限制写操作）
+• Plan 模式下只能使用只读工具和编辑 Plan 文件
+• 使用 `PlanExit` 工具退出 Plan 模式
 
 **Soul 命令 (由KimiSoul处理)：**
 • /compact - 压缩上下文
@@ -462,6 +581,11 @@ class SDKChatSession:
 **文件传输：**
 • 📥 发送文件给我 - 我会保存到当前目录
 • 📤 让我发送文件 - 直接说"把xxx文件发给我"
+
+**批量文件处理：**
+• 您可以连续发送多个图片/文件，它们会被暂存
+• 发送文字说明后，我会一次性处理所有内容
+• 使用 `/clear-buffer` 清空暂存的文件
 
 **工具调用：**
 • Kimi 可以使用 `FeishuSendFile` 工具发送文件
@@ -552,6 +676,29 @@ class SDKChatSession:
                 "ℹ️ 当前没有正在进行的操作。",
             )
             logger.info("[SESSION] /stop called but no operation was running")
+    
+    async def _handle_clear_buffer(self) -> None:
+        """Handle /clear-buffer command: clear the media buffer."""
+        async with self._buffer_lock:
+            buffer_count = len(self._media_buffer)
+            if buffer_count == 0:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    self.chat_id,
+                    "📭 当前没有缓存的文件/图片",
+                )
+                return
+            
+            # Clear the buffer
+            self._media_buffer.clear()
+            self._buffer_notification_id = None
+        
+        await asyncio.to_thread(
+            self.client.send_text_message,
+            self.chat_id,
+            f"🧹 已清空缓存 ({buffer_count} 个文件/图片)",
+        )
+        logger.info(f"[SESSION] Media buffer cleared ({buffer_count} items)")
     
     async def _handle_clear(self) -> None:
         """Handle /clear command: cancel current operation and clear context."""
@@ -660,10 +807,10 @@ class SDKChatSession:
         if self.soul and hasattr(self.soul, 'runtime') and self.soul.runtime:
             if self._yolo_mode:
                 self.soul.runtime.approval.set_yolo(True)
-                print(f"[SESSION] Runtime YOLO mode enabled")
+                print("[SESSION] Runtime YOLO mode enabled")
             else:
                 self.soul.runtime.approval.set_yolo(False)
-                print(f"[SESSION] Runtime YOLO mode disabled")
+                print("[SESSION] Runtime YOLO mode disabled")
         
         if self._yolo_mode:
             status_text = """✅ **YOLO 模式已开启**
@@ -688,12 +835,105 @@ class SDKChatSession:
         )
         logger.info(f"[SESSION] YOLO mode toggled: {self._yolo_mode}")
     
+    async def _handle_plan_command(self) -> None:
+        """Handle /plan command: enter plan mode."""
+        from pathlib import Path
+        
+        # Check if already in plan mode via soul's approval
+        if self.soul and hasattr(self.soul, 'runtime') and self.soul.runtime:
+            if self.soul.runtime.approval.is_plan_mode():
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    self.chat_id,
+                    "Already in plan mode. Use `PlanExit` tool to exit.",
+                )
+                return
+        
+        # Get session ID for plan file name
+        session_id = ""
+        if self.soul and hasattr(self.soul, '_runtime') and self.soul._runtime and self.soul._runtime.session:
+            session_id = self.soul._runtime.session.id
+        else:
+            # Fallback to a unique ID based on chat_id
+            import uuid
+            session_id = f"feishu_{self.chat_id}_{uuid.uuid4().hex[:8]}"
+        plans_dir = Path.home() / ".kimi" / "plans"
+        plan_file = plans_dir / f"{session_id}.md"
+        
+        # Create plans directory if not exists
+        try:
+            plans_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Failed to create plans directory: {e}")
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                self.chat_id,
+                f"❌ Failed to create plans directory: {e}",
+            )
+            return
+        
+        # Create empty plan file if not exists
+        try:
+            if not plan_file.exists():
+                plan_file.write_text(f"# Plan for Session {session_id}\n\n", encoding="utf-8")
+        except Exception as e:
+            logger.error(f"Failed to create plan file: {e}")
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                self.chat_id,
+                f"❌ Failed to create plan file: {e}",
+            )
+            return
+        
+        # Enable plan mode in soul's approval
+        if self.soul and hasattr(self.soul, 'runtime') and self.soul.runtime:
+            self.soul.runtime.approval.set_plan_mode(True, str(plan_file))
+        
+        # Send confirmation message
+        status_text = f"""📝 **Entered Plan Mode**
+
+Plan file: `{plan_file}`
+
+In plan mode:
+• Read-only tools are allowed (ReadFile, Grep, Search, etc.)
+• WriteFile is allowed **only** for the plan file
+• All other write operations are blocked
+
+Use `PlanExit` tool when you're ready to proceed with execution."""
+        
+        await asyncio.to_thread(
+            self.client.send_text_message,
+            self.chat_id,
+            status_text,
+        )
+        
+        # Add plan mode prompt to context
+        try:
+            from kosong.message import Message
+
+            import kimi_cli.prompts as prompts
+            from kimi_cli.soul.message import system
+            
+            plan_message_content = (
+                f"{prompts.PLAN}\n\n"
+                f"Current editable plan file: {plan_file}"
+            )
+            
+            if self.soul and hasattr(self.soul, 'context'):
+                await self.soul.context.append_message(Message(
+                    role="user",
+                    content=[system(plan_message_content)]
+                ))
+                logger.info("[SESSION] Added plan mode prompt to context")
+        except Exception as e:
+            logger.warning(f"[SESSION] Failed to add plan mode prompt to context: {e}")
+        
+        logger.info(f"[SESSION] Entered plan mode, plan file: {plan_file}")
+    
     async def _process_message(self, message_text: str) -> None:
         """Process a user message through the soul - multi-part text output mode."""
-        import os
+
         from kimi_cli.soul import run_soul
-        from kimi_cli.wire import Wire
-        from contextlib import asynccontextmanager
         
         print(f"[_process_message] Starting with text: {message_text[:100]}")
         logger.info(f"[_process_message] Starting with text: {message_text[:100]}")
@@ -754,11 +994,23 @@ class SDKChatSession:
                     
                 except Exception as e:
                     error_msg = str(e)
-                    is_auth_error = (
-                        "401" in error_msg 
-                        or "invalid_authentication" in error_msg 
-                        or "API Key appears to be invalid" in error_msg
+                    # Only treat as OAuth error if it's specifically about OAuth/unauthorized
+                    # Don't retry on generic API key errors like "API Key appears to be invalid"
+                    is_oauth_error = (
+                        "invalid_authentication" in error_msg 
+                        or "unauthorized" in error_msg.lower()
+                        or "token expired" in error_msg.lower()
+                        or "token invalid" in error_msg.lower()
                     )
+                    # 401 could be OAuth or API key - check if current model uses OAuth
+                    has_oauth = False
+                    if hasattr(self.soul, '_runtime') and self.soul._runtime.llm:
+                        model_config = self.soul._runtime.llm.model_config
+                        if model_config:
+                            provider = self.soul._runtime.config.providers.get(model_config.provider)
+                            if provider and provider.oauth:
+                                has_oauth = True
+                    is_auth_error = is_oauth_error or ("401" in error_msg and has_oauth)
                     
                     if is_auth_error and attempt < max_retries:
                         print(f"[_process_message] OAuth token expired (attempt {attempt + 1}), refreshing...")
@@ -802,15 +1054,29 @@ class SDKChatSession:
             logger.exception(f"[_process_message] Error: {e}")
             
             # Flush any remaining content before error message
-            await self._flush_text_buffers()
+            try:
+                await self._flush_text_buffers()
+            except Exception as flush_err:
+                print(f"[_process_message] Error flushing buffers: {flush_err}")
+                logger.warning(f"Error flushing buffers: {flush_err}")
             
             # Send user-friendly error message
-            user_friendly_msg = self._get_user_friendly_error(error_type, error_msg)
-            await asyncio.to_thread(
-                self.client.send_text_message,
-                self.chat_id,
-                user_friendly_msg,
-            )
+            try:
+                user_friendly_msg = self._get_user_friendly_error(error_type, error_msg)
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    self.chat_id,
+                    user_friendly_msg,
+                )
+            except Exception as send_err:
+                print(f"[_process_message] Error sending error message: {send_err}")
+                logger.error(f"Error sending error message: {send_err}")
+                # Fallback error message
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    self.chat_id,
+                    f"❌ 处理消息时出错: {error_type}",
+                )
         finally:
             # Cleanup is handled automatically since we don't change working directory
             pass
@@ -844,7 +1110,7 @@ class SDKChatSession:
         
         # Network errors
         if "connection" in error_msg.lower() or "timeout" in error_msg.lower() or "network" in error_msg.lower():
-            return f"❌ **网络错误**: 连接失败或超时\n\n请检查网络连接后重试。"
+            return "❌ **网络错误**: 连接失败或超时\n\n请检查网络连接后重试。"
         
         # Default error
         return f"❌ **处理出错**: {error_msg[:200]}\n\n请重试或联系支持。"
@@ -852,8 +1118,16 @@ class SDKChatSession:
     async def _wire_loop(self, wire: Wire) -> None:
         """Process wire messages during soul execution."""
         from kimi_cli.wire.types import (
-            ApprovalRequest, ImageURLPart, TextPart, ThinkPart, ToolCall, ToolCallPart, ToolResult,
-            TurnBegin, TurnEnd, StepBegin, StepInterrupted, SubagentEvent
+            ApprovalRequest,
+            StepBegin,
+            StepInterrupted,
+            SubagentEvent,
+            TextPart,
+            ThinkPart,
+            ToolCall,
+            ToolResult,
+            TurnBegin,
+            TurnEnd,
         )
         
         wire_ui = wire.ui_side(merge=False)
@@ -861,23 +1135,23 @@ class SDKChatSession:
         current_step = 0
         assistant_content: list[str] = []
         
-        print(f"[_wire_loop] Starting wire loop...")
+        print("[_wire_loop] Starting wire loop...")
         
         try:
             while True:
-                print(f"[_wire_loop] Waiting for message...")
+                print("[_wire_loop] Waiting for message...")
                 msg = await wire_ui.receive()
                 print(f"[_wire_loop] Received message: {type(msg).__name__}")
                 
                 if isinstance(msg, TurnBegin):
-                    print(f"[_wire_loop] TurnBegin received")
+                    print("[_wire_loop] TurnBegin received")
                     assistant_content = []
                     
                 elif isinstance(msg, StepBegin):
                     current_step = msg.n
                     
                 elif isinstance(msg, StepInterrupted):
-                    print(f"[_wire_loop] StepInterrupted received")
+                    print("[_wire_loop] StepInterrupted received")
                     
                 elif isinstance(msg, TurnEnd):
                     print(f"[_wire_loop] TurnEnd received, final content: {''.join(assistant_content)[:100]}...")
@@ -1060,7 +1334,7 @@ class SDKChatSession:
             
             # Wait for user to click card button
             # The request will be resolved by handle_card_action when user clicks
-            print(f"[_handle_approval] Waiting for user approval via card button...")
+            print("[_handle_approval] Waiting for user approval via card button...")
             
             try:
                 # Wait for the approval response (resolved by handle_card_action)
@@ -1245,7 +1519,7 @@ class SDKChatSession:
                 )
                 print(f"[_upload_and_send_file] File sent: {msg_id}")
             else:
-                print(f"[_upload_and_send_file] Upload failed")
+                print("[_upload_and_send_file] Upload failed")
                 await asyncio.to_thread(
                     self.client.send_text_message,
                     self.chat_id,
@@ -1262,7 +1536,6 @@ class SDKChatSession:
     
     async def _upload_and_send_image(self, image_path: str) -> None:
         """Upload an image and send it to the chat."""
-        from pathlib import Path
         
         # Resolve image path using client's work_dir if available
         if not os.path.isabs(image_path):
@@ -1311,7 +1584,7 @@ class SDKChatSession:
                 )
                 print(f"[_upload_and_send_image] Image sent: {msg_id}")
             else:
-                print(f"[_upload_and_send_image] Upload failed")
+                print("[_upload_and_send_image] Upload failed")
                 await asyncio.to_thread(
                     self.client.send_text_message,
                     self.chat_id,
@@ -1326,11 +1599,92 @@ class SDKChatSession:
                 f"❌ 上传图片出错: {str(e)[:100]}",
             )
     
+    async def _send_screenshot_to_feishu(self, data_url: str) -> None:
+        """Send a screenshot (base64 data URL) to Feishu chat.
+        
+        This is used for MCP tools like midscene-android and chrome-devtools
+        that return screenshots as base64 data URLs.
+        
+        Args:
+            data_url: Base64 data URL like "data:image/png;base64,iVBORw0KG..."
+        """
+        import base64
+        import re
+        
+        try:
+            print("[_send_screenshot_to_feishu] Processing screenshot")
+            
+            # Parse data URL
+            # Format: data:[<mediatype>][;base64],<data>
+            match = re.match(r'data:(image/\w+);base64,(.+)', data_url)
+            if not match:
+                print("[_send_screenshot_to_feishu] Invalid data URL format")
+                return
+            
+            mime_type = match.group(1)
+            base64_data = match.group(2)
+            
+            # Determine file extension
+            ext = 'png'
+            if mime_type == 'image/jpeg' or mime_type == 'image/jpg':
+                ext = 'jpg'
+            elif mime_type == 'image/gif':
+                ext = 'gif'
+            elif mime_type == 'image/webp':
+                ext = 'webp'
+            
+            # Decode base64
+            image_content = base64.b64decode(base64_data)
+            image_size = len(image_content)
+            
+            print(f"[_send_screenshot_to_feishu] Screenshot size: {image_size} bytes ({mime_type})")
+            
+            # Upload image
+            image_key = await asyncio.to_thread(
+                self.client.upload_image,
+                image_content,
+                f"screenshot.{ext}",
+            )
+            
+            if image_key:
+                # Send image message
+                msg_id = await asyncio.to_thread(
+                    self.client.send_image_message,
+                    self.chat_id,
+                    image_key,
+                )
+                print(f"[_send_screenshot_to_feishu] Screenshot sent: {msg_id}")
+            else:
+                print("[_send_screenshot_to_feishu] Upload failed")
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    self.chat_id,
+                    "❌ 截图上传失败",
+                )
+                
+        except Exception as e:
+            print(f"[_send_screenshot_to_feishu] Error: {e}")
+            logger.exception(f"Error sending screenshot: {e}")
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                self.chat_id,
+                f"❌ 发送截图出错: {str(e)[:100]}",
+            )
+    
     async def _wire_loop_text_parts(self, wire: Wire) -> None:
         """Wire loop that sends different parts as separate messages."""
         from kimi_cli.wire.types import (
-            ApprovalRequest, ImageURLPart, TextPart, ThinkPart, ToolCall, ToolCallPart, ToolResult,
-            TurnBegin, TurnEnd, StepBegin, StepInterrupted, SubagentEvent
+            ApprovalRequest,
+            ImageURLPart,
+            StepInterrupted,
+            SubagentEvent,
+            TextPart,
+            ThinkPart,
+            ToolCall,
+            ToolCallPart,
+            ToolResult,
+            TurnBegin,
+            TurnEnd,
         )
         
         print("[_wire_loop_text_parts] Starting wire loop...")
@@ -1374,42 +1728,74 @@ class SDKChatSession:
                 self._current_thinking_buffer = []
         
         async def send_text():
-            print(f"[_wire_loop_text_parts] send_text() called, buffer_size={len(self._current_text_buffer)}")
-            if self._current_text_buffer:
-                content = "".join(self._current_text_buffer).strip()
-                print(f"[_wire_loop_text_parts] Content length: {len(content)}")
-                if content:
-                    print(f"[_wire_loop_text_parts] Sending response card: {len(content)} chars")
+            print("[_wire_loop_text_parts] send_text() called")
+            if not hasattr(self, '_current_text_buffer'):
+                print("[_wire_loop_text_parts] WARNING: _current_text_buffer not initialized")
+                self._current_text_buffer = []
+                return
+            
+            buffer_size = len(self._current_text_buffer)
+            print(f"[_wire_loop_text_parts] Buffer size: {buffer_size}")
+            
+            if not self._current_text_buffer:
+                print("[_wire_loop_text_parts] Buffer is empty, nothing to send")
+                return
+            
+            content = "".join(self._current_text_buffer).strip()
+            print(f"[_wire_loop_text_parts] Content length after strip: {len(content)}")
+            
+            if not content:
+                print("[_wire_loop_text_parts] Content is empty after strip()")
+                self._current_text_buffer = []
+                return
+            
+            try:
+                # Split content into chunks if too long
+                chunks = split_content_for_cards(content, max_length=8000)
+                total = len(chunks)
+                print(f"[_wire_loop_text_parts] Content split into {total} chunk(s)")
+                
+                if total == 0:
+                    print("[_wire_loop_text_parts] WARNING: split_content_for_cards returned empty list")
+                    # Send original content as single chunk
+                    chunks = [content]
+                    total = 1
+                
+                for i, chunk in enumerate(chunks, 1):
+                    print(f"[_wire_loop_text_parts] Sending response card {i}/{total}: {len(chunk)} chars")
                     try:
-                        # Use card renderer for response
-                        card = self._renderer.render_text_response(content)
+                        # Use card renderer for response with pagination info
+                        page_info = {"current": i, "total": total} if total > 1 else None
+                        card = self._renderer.render_text_response(chunk, page_info=page_info)
                         msg_id = await asyncio.to_thread(
                             self.client.send_interactive_card,
                             self.chat_id,
                             card,
                         )
-                        print(f"[_wire_loop_text_parts] Response card sent: {msg_id}")
+                        print(f"[_wire_loop_text_parts] Response card {i}/{total} sent: {msg_id}")
                     except Exception as e:
-                        print(f"[_wire_loop_text_parts] Error sending response card: {e}")
-                        # Fallback to text message
+                        print(f"[_wire_loop_text_parts] Error sending response card {i}/{total}: {e}")
+                        logger.exception(f"Error sending response card: {e}")
+                        # Fallback to text message for this chunk
                         try:
                             max_len = 1500
-                            prefix = "🤖 [回复内容]\n"
-                            for i in range(0, len(content), max_len):
-                                chunk = content[i:i+max_len]
+                            prefix = f"🤖 [回复内容 ({i}/{total})]\n"
+                            for j in range(0, len(chunk), max_len):
+                                sub_chunk = chunk[j:j+max_len]
                                 msg_id = await asyncio.to_thread(
                                     self.client.send_text_message,
                                     self.chat_id,
-                                    prefix + chunk if i == 0 else f"(续){chunk}",
+                                    prefix + sub_chunk if j == 0 else f"(续){sub_chunk}",
                                 )
                                 print(f"[_wire_loop_text_parts] Text chunk sent (fallback): {msg_id}")
                         except Exception as e2:
                             logger.exception(f"Error sending text to Feishu: {e2}")
-                else:
-                    print(f"[_wire_loop_text_parts] Content is empty after strip()")
+                
                 self._current_text_buffer = []
-            else:
-                print(f"[_wire_loop_text_parts] Buffer is empty, nothing to send")
+            except Exception as e:
+                print(f"[_wire_loop_text_parts] Error in send_text: {e}")
+                logger.exception(f"Error in send_text: {e}")
+                raise  # Re-raise to be handled by caller
         
         try:
             while True:
@@ -1471,7 +1857,7 @@ class SDKChatSession:
                             args_list.append(msg.arguments_part)
                             print(f"[_wire_loop_text_parts] Added arg to {tool_name}: {msg.arguments_part[:50]}...")
                     else:
-                        print(f"[_wire_loop_text_parts] Warning: ToolCallPart without matching ToolCall")
+                        print("[_wire_loop_text_parts] Warning: ToolCallPart without matching ToolCall")
                     
                 elif isinstance(msg, ToolResult):
                     # Find matching tool call and merge arguments
@@ -1528,9 +1914,10 @@ class SDKChatSession:
                     
                     # Send tool result (split if too long)
                     # Extract result text with priority: brief > message > output > str(return_value)
-                    # Filter out ImageURLPart with base64 data (e.g., from midscene-android screenshots)
+                    # Handle ImageURLPart with base64 data (e.g., from midscene-android screenshots)
                     result_text = ""
                     has_image = False
+                    screenshot_urls = []  # Collect base64 screenshots to send
                     
                     if hasattr(msg.return_value, 'brief') and msg.return_value.brief:
                         result_text = str(msg.return_value.brief)
@@ -1544,9 +1931,11 @@ class SDKChatSession:
                             for part in output:
                                 if isinstance(part, ImageURLPart):
                                     has_image = True
-                                    # Skip base64 images, replace with placeholder
-                                    if part.image_url and part.image_url.url and part.image_url.url.startswith('data:'):
-                                        continue  # Skip base64 image data
+                                    image_url = part.image_url.url if part.image_url else ""
+                                    # Check if it's a base64 data URL (screenshot from MCP tools)
+                                    if image_url.startswith('data:image'):
+                                        screenshot_urls.append(image_url)
+                                        continue  # Skip from text output
                                     else:
                                         filtered_parts.append(part)
                                 else:
@@ -1558,15 +1947,19 @@ class SDKChatSession:
                     else:
                         result_text = str(msg.return_value)
                     
-                    # Add note if image was filtered
-                    if has_image:
-                        result_text = "[图片内容已过滤] " + (result_text if result_text else "")
+                    # Send screenshots if any
+                    for screenshot_url in screenshot_urls:
+                        await self._send_screenshot_to_feishu(screenshot_url)
+                    
+                    # Add note if image was present
+                    if has_image and screenshot_urls:
+                        result_text = "[截图已发送] " + (result_text if result_text else "")
                     
                     print(f"[_wire_loop_text_parts] Sending tool result: {len(result_text)} chars")
                     
                     # Warn if result is empty (but only if it's truly empty, not just "None" or "")
                     if not result_text or len(result_text.strip()) == 0 or result_text.strip() in ('None', 'null', 'False', '[]', '{}', '[图片内容已过滤]'):
-                        print(f"[_wire_loop_text_parts] WARNING: Tool result is empty!")
+                        print("[_wire_loop_text_parts] WARNING: Tool result is empty!")
                         empty_card = self._renderer.render_error(
                             error_message=f"工具 `{func_name}` 返回了空结果，可能需要重试或检查输入",
                             error_type="工具返回为空",
@@ -1687,9 +2080,10 @@ class SDKChatSession:
                             )
                     elif isinstance(subagent_msg, ToolResult):
                         # Subagent tool result
-                        # Filter out ImageURLPart with base64 data
+                        # Handle ImageURLPart with base64 data (screenshots)
                         result_text = ""
                         has_image = False
+                        screenshot_urls = []
                         
                         if hasattr(subagent_msg.return_value, 'brief') and subagent_msg.return_value.brief:
                             result_text = str(subagent_msg.return_value.brief)
@@ -1698,18 +2092,31 @@ class SDKChatSession:
                         elif hasattr(subagent_msg.return_value, 'output') and subagent_msg.return_value.output:
                             output = subagent_msg.return_value.output
                             if isinstance(output, list):
+                                filtered_parts = []
                                 for part in output:
                                     if isinstance(part, ImageURLPart):
                                         has_image = True
-                                        if part.image_url and part.image_url.url and part.image_url.url.startswith('data:'):
-                                            continue  # Skip base64 image data
-                            result_text = str(subagent_msg.return_value)
+                                        image_url = part.image_url.url if part.image_url else ""
+                                        if image_url.startswith('data:image'):
+                                            screenshot_urls.append(image_url)
+                                            continue
+                                        else:
+                                            filtered_parts.append(part)
+                                    else:
+                                        filtered_parts.append(part)
+                                result_text = " ".join(str(p) for p in filtered_parts if not isinstance(p, ImageURLPart))
+                            else:
+                                result_text = str(subagent_msg.return_value)
                         else:
                             result_text = str(subagent_msg.return_value)
                         
-                        # Add note if image was filtered
-                        if has_image:
-                            result_text = "[图片内容已过滤] " + (result_text if result_text else "")
+                        # Send screenshots if any
+                        for screenshot_url in screenshot_urls:
+                            await self._send_screenshot_to_feishu(screenshot_url)
+                        
+                        # Add note if image was present
+                        if has_image and screenshot_urls:
+                            result_text = "[截图已发送] " + (result_text if result_text else "")
                         
                         print(f"[_wire_loop_text_parts] Subagent tool result: {len(result_text)} chars")
                         try:
@@ -1734,12 +2141,12 @@ class SDKChatSession:
                         print(f"[_wire_loop_text_parts] Unhandled subagent event: {type(subagent_msg).__name__}")
                 
                 elif isinstance(msg, ApprovalRequest):
-                    # Check if YOLO mode is enabled
-                    if self._yolo_mode:
-                        # YOLO mode: auto approve all tool calls
+                    # Check if YOLO mode is enabled and request is not mandatory
+                    if self._yolo_mode and not msg.mandatory:
+                        # YOLO mode: auto approve non-mandatory tool calls
                         msg.resolve("approve")
                     else:
-                        # Non-YOLO mode: send approval card and wait for user response
+                        # Non-YOLO mode or mandatory request: send approval card and wait for user response
                         await self._handle_approval_request(msg)
                     
         except Exception as e:
@@ -1811,6 +2218,64 @@ class SDKMessageHandler:
         """Get unique session key."""
         return f"{chat_id}:{user_id}"
     
+    async def _get_or_create_session_for_media(
+        self,
+        chat_id: str,
+        user_id: str,
+        session_key: str,
+    ) -> SDKChatSession | None:
+        """Get existing session or create new one for buffering media.
+        
+        This is used when receiving images/files without text - we need
+        a session to store the buffer, but we don't trigger Agent processing.
+        
+        Returns:
+            SDKChatSession if successful, None if failed
+        """
+        async with self._lock:
+            session = self._sessions.get(session_key)
+            if session is not None:
+                return session
+            
+            # Session doesn't exist, create a new one
+            print(f"[HANDLER] Creating new session for media buffering: {session_key}")
+            logger.info(f"[HANDLER] Creating new session for media buffering: {session_key}")
+            
+            try:
+                # Check if there's a linked CLI session
+                linked_session_id = self._linked_sessions.get(session_key)
+                
+                if linked_session_id:
+                    # Try to load existing CLI session
+                    soul = await self._create_soul_from_session_id(linked_session_id)
+                    if soul:
+                        print(f"[HANDLER] Loaded CLI session: {linked_session_id}")
+                        logger.info(f"[HANDLER] Loaded CLI session: {linked_session_id}")
+                    else:
+                        # Fall back to new session
+                        print(f"[HANDLER] Failed to load session {linked_session_id}, creating new")
+                        soul = await self._create_soul_for_session(session_key)
+                else:
+                    # Create new soul for this chat session
+                    soul = await self._create_soul_for_session(session_key)
+                
+                session = SDKChatSession(
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    client=self.client,
+                    config=self.config,
+                    soul=soul,
+                )
+                self._sessions[session_key] = session
+                print("[HANDLER] New session created for media buffering")
+                logger.info("[HANDLER] New session created for media buffering")
+                return session
+                
+            except Exception as e:
+                print(f"[HANDLER ERROR] Failed to create session for media: {e}")
+                logger.exception(f"[HANDLER] Failed to create session for media: {e}")
+                return None
+    
     def _check_access(self, user_id: str, chat_id: str) -> bool:
         """Check if user/chat has access."""
         if self.config.allowed_users:
@@ -1837,7 +2302,6 @@ class SDKMessageHandler:
             Path to working directory (guaranteed to exist)
         """
         import os
-        from pathlib import Path
         
         if self.feishu_config and self.feishu_config.work_dir:
             work_dir = self.feishu_config.work_dir
@@ -1867,8 +2331,9 @@ class SDKMessageHandler:
         Returns:
             List of session info dicts with id, title, updated_at, work_dir
         """
-        from kimi_cli.metadata import load_metadata
         from datetime import datetime
+
+        from kimi_cli.metadata import load_metadata
         
         sessions = []
         metadata = load_metadata()
@@ -1942,9 +2407,8 @@ class SDKMessageHandler:
         Returns:
             KimiSoul if successful, None if session not found
         """
-        import os
-        from kimi_cli.llm import augment_provider_with_env_vars, create_llm
         from kimi_cli.auth.oauth import OAuthManager
+        from kimi_cli.llm import augment_provider_with_env_vars, create_llm
         
         kimi_config = load_config()
         work_dir = self._get_work_dir_kaos()
@@ -2023,7 +2487,7 @@ class SDKMessageHandler:
                         timeout=60.0  # Longer timeout for background connection
                     )
                     logger.info("[HANDLER] MCP tools connected successfully")
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning("[HANDLER] Timeout waiting for MCP tools, some tools may be unavailable")
                 except Exception as e:
                     logger.warning(f"[HANDLER] Error waiting for MCP tools: {e}")
@@ -2046,8 +2510,9 @@ class SDKMessageHandler:
     async def _create_soul_for_session(self, session_key: str) -> KimiSoul:
         """Create a new KimiSoul for a chat session."""
         import os
-        from kimi_cli.llm import augment_provider_with_env_vars, create_llm
+
         from kimi_cli.auth.oauth import OAuthManager
+        from kimi_cli.llm import augment_provider_with_env_vars, create_llm
         
         kimi_config = load_config()
         
@@ -2117,7 +2582,7 @@ class SDKMessageHandler:
                         timeout=60.0  # Longer timeout for background connection
                     )
                     logger.info("[HANDLER] MCP tools connected successfully")
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning("[HANDLER] Timeout waiting for MCP tools, some tools may be unavailable")
                 except Exception as e:
                     logger.warning(f"[HANDLER] Error waiting for MCP tools: {e}")
@@ -2355,7 +2820,6 @@ class SDKMessageHandler:
         
         try:
             # Import here to avoid circular import issues
-            from pathlib import Path
             from kimi_cli.share import get_share_dir
             
             mcp_file = get_share_dir() / "mcp.json"
@@ -2404,7 +2868,7 @@ class SDKMessageHandler:
             
             # 使用 client 获取消息内容
             if not hasattr(self.client, 'get_message'):
-                print(f"[DEBUG] Client does not have get_message method")
+                print("[DEBUG] Client does not have get_message method")
                 return None
             
             print(f"[DEBUG] Fetching message content for {parent_id}")
@@ -2504,7 +2968,7 @@ class SDKMessageHandler:
             elif quoted_msg_type == 'image':
                 # 图片消息
                 image_key = content_dict.get('image_key', '')
-                return f"[图片消息]\n(图片内容无法直接读取，请描述图片内容或重新上传)"
+                return "[图片消息]\n(图片内容无法直接读取，请描述图片内容或重新上传)"
             
             else:
                 return f'[{quoted_msg_type} 消息]'
@@ -2546,7 +3010,7 @@ class SDKMessageHandler:
             for history_file in history_dir.glob("*.json"):
                 try:
                     import json
-                    with open(history_file, "r", encoding="utf-8") as f:
+                    with open(history_file, encoding="utf-8") as f:
                         records = json.load(f)
                     
                     for record_data in records:
@@ -2605,7 +3069,7 @@ class SDKMessageHandler:
         msg_type = message.message_type
         
         # DEBUG: Print received event
-        print(f"\n[DEBUG] Received event:")
+        print("\n[DEBUG] Received event:")
         print(f"  chat_id: {chat_id}")
         print(f"  chat_type: {chat_type}")
         print(f"  user_id: {user_id}")
@@ -2631,7 +3095,7 @@ class SDKMessageHandler:
                 "❌ 访问被拒绝：您不在允许的用户列表中",
             )
             return
-        print(f"[DEBUG] Access granted")
+        print("[DEBUG] Access granted")
         
         # Add OK reaction to the user's message
         message_id = message.message_id if hasattr(message, 'message_id') else None
@@ -2647,19 +3111,17 @@ class SDKMessageHandler:
         
         # Extract text content
         text = ""
+        # Track if this message has media content that should be buffered
+        has_media_only = False
+        
         if msg_type == "text":
             text = content.get("text", "")
         elif msg_type == "image":
-            # Handle image download
+            # Handle image download with buffer support
             image_key = content.get("image_key")
             
             if image_key:
                 print(f"[HANDLER] Received image: {image_key}")
-                await asyncio.to_thread(
-                    self.client.send_text_message,
-                    chat_id,
-                    f"📷 收到图片\n正在下载...",
-                )
                 
                 # Download the image
                 message_id = message.message_id if hasattr(message, 'message_id') else None
@@ -2678,13 +3140,21 @@ class SDKMessageHandler:
                         with open(save_path, "wb") as f:
                             f.write(image_content)
                         print(f"[HANDLER] Image saved to: {save_path}")
-                        await asyncio.to_thread(
-                            self.client.send_text_message,
-                            chat_id,
-                            f"✅ 图片已保存: {save_path}\n大小: {len(image_content)} 字节",
+                        
+                        # Add to session's media buffer (will be processed when text arrives)
+                        session_key = self._get_session_key(chat_id, user_id)
+                        session = await self._get_or_create_session_for_media(
+                            chat_id, user_id, session_key
                         )
-                        # Also inform Kimi about the image
-                        text = f"[用户上传了图片，已保存到: {save_path}]"
+                        if session:
+                            await session.add_to_media_buffer(
+                                media_type="image",
+                                file_path=save_path,
+                                file_name=image_name,
+                                file_size=len(image_content),
+                            )
+                        has_media_only = True
+                        text = ""  # No text yet, will be processed later
                     except Exception as e:
                         print(f"[HANDLER ERROR] Failed to save image: {e}")
                         await asyncio.to_thread(
@@ -2694,11 +3164,11 @@ class SDKMessageHandler:
                         )
                         return
                 else:
-                    print(f"[HANDLER ERROR] Failed to download image")
+                    print("[HANDLER ERROR] Failed to download image")
                     await asyncio.to_thread(
                         self.client.send_text_message,
                         chat_id,
-                        f"❌ 下载图片失败",
+                        "❌ 下载图片失败",
                     )
                     return
             else:
@@ -2715,11 +3185,6 @@ class SDKMessageHandler:
             
             if file_key:
                 print(f"[HANDLER] Received file: {file_name}, key: {file_key}")
-                await asyncio.to_thread(
-                    self.client.send_text_message,
-                    chat_id,
-                    f"📁 收到文件: {file_name}\n正在下载...",
-                )
                 
                 # Download the file (pass message_id for user-sent files)
                 message_id = message.message_id if hasattr(message, 'message_id') else None
@@ -2738,13 +3203,21 @@ class SDKMessageHandler:
                         with open(save_path, "wb") as f:
                             f.write(file_content)
                         print(f"[HANDLER] File saved to: {save_path}")
-                        await asyncio.to_thread(
-                            self.client.send_text_message,
-                            chat_id,
-                            f"✅ 文件已保存: {save_path}\n大小: {len(file_content)} 字节",
+                        
+                        # Add to session's media buffer (will be processed when text arrives)
+                        session_key = self._get_session_key(chat_id, user_id)
+                        session = await self._get_or_create_session_for_media(
+                            chat_id, user_id, session_key
                         )
-                        # Also inform Kimi about the file
-                        text = f"[用户上传了文件: {file_name}，已保存到: {save_path}]"
+                        if session:
+                            await session.add_to_media_buffer(
+                                media_type="file",
+                                file_path=save_path,
+                                file_name=file_name,
+                                file_size=len(file_content),
+                            )
+                        has_media_only = True
+                        text = ""  # No text yet, will be processed later
                     except Exception as e:
                         print(f"[HANDLER ERROR] Failed to save file: {e}")
                         await asyncio.to_thread(
@@ -2754,11 +3227,11 @@ class SDKMessageHandler:
                         )
                         return
                 else:
-                    print(f"[HANDLER ERROR] Failed to download file")
+                    print("[HANDLER ERROR] Failed to download file")
                     await asyncio.to_thread(
                         self.client.send_text_message,
                         chat_id,
-                        f"❌ 下载文件失败",
+                        "❌ 下载文件失败",
                     )
                     return
             else:
@@ -2847,11 +3320,11 @@ class SDKMessageHandler:
                         )
                         return
                 else:
-                    print(f"[HANDLER ERROR] Failed to download audio")
+                    print("[HANDLER ERROR] Failed to download audio")
                     await asyncio.to_thread(
                         self.client.send_text_message,
                         chat_id,
-                        f"❌ 下载语音消息失败",
+                        "❌ 下载语音消息失败",
                     )
                     return
             else:
@@ -2859,6 +3332,30 @@ class SDKMessageHandler:
                     self.client.send_text_message,
                     chat_id,
                     "🎤 收到语音消息，但无法获取音频信息",
+                )
+                return
+        elif msg_type == "post":
+            # Handle rich text (post) message
+            print("[HANDLER] Received post message")
+            work_dir = self._get_work_dir()
+            message_id = message.message_id if hasattr(message, 'message_id') else None
+            
+            post_text = await handle_post_message(
+                self,
+                self.client,
+                chat_id,
+                content,
+                message_id,
+                work_dir,
+            )
+            
+            if post_text:
+                text = post_text
+            else:
+                await asyncio.to_thread(
+                    self.client.send_text_message,
+                    chat_id,
+                    "⚠️ 处理富文本消息失败，请尝试分开发送文字和文件",
                 )
                 return
         else:
@@ -2881,14 +3378,30 @@ class SDKMessageHandler:
             # Append quoted content to user's message
             text = f"{text}\n\n[引用消息]:\n{quoted_content}"
         
+        # Handle media buffer logic
+        session_key = self._get_session_key(chat_id, user_id)
+        
+        if has_media_only and not text.strip():
+            # Pure media message (no text) - buffered and wait for instruction
+            print("[HANDLER] Media buffered, waiting for text instruction")
+            return
+        
+        # If there's text and we have buffered media, merge them
+        if text.strip():
+            existing_session = self._sessions.get(session_key)
+            if existing_session and await existing_session.has_buffered_media():
+                buffered_context = await existing_session.get_buffered_media_context()
+                if buffered_context:
+                    text = text + buffered_context
+                    # Clear buffer after retrieving context
+                    await existing_session.clear_media_buffer()
+                    print("[HANDLER] Merged buffered media into message")
+        
         if not text.strip():
-            print(f"[DEBUG] Empty text after cleaning, returning")
+            print("[DEBUG] Empty text after cleaning, returning")
             return
         
         logger.info(f"[HANDLER] Received message from {user_id} in {chat_id} ({chat_type}): {text[:100]}")
-        
-        # Get session key
-        session_key = self._get_session_key(chat_id, user_id)
         logger.info(f"[HANDLER] Session key: {session_key}")
         
         # Handle session management commands (before creating session)
@@ -2983,7 +3496,7 @@ class SDKMessageHandler:
                         # Create new soul for this chat session
                         soul = await self._create_soul_for_session(session_key)
                     
-                    print(f"[HANDLER] Soul created successfully")
+                    print("[HANDLER] Soul created successfully")
                 except Exception as e:
                     print(f"[HANDLER ERROR] Failed to create soul: {e}")
                     logger.exception(f"[HANDLER] Failed to create soul: {e}")
@@ -3002,8 +3515,8 @@ class SDKMessageHandler:
                     soul=soul,
                 )
                 self._sessions[session_key] = session
-                print(f"[HANDLER] New session created")
-                logger.info(f"[HANDLER] New session created")
+                print("[HANDLER] New session created")
+                logger.info("[HANDLER] New session created")
             else:
                 print(f"[HANDLER] Using existing session for {session_key}")
                 logger.info(f"[HANDLER] Using existing session for {session_key}")
@@ -3159,13 +3672,12 @@ class SDKMessageHandler:
             request_id: The request ID
             action_value: The full action value dict
         """
+        from kimi_cli.config import load_config, save_config
         from kimi_cli.feishu.card_builder import (
-            build_model_selection_card,
-            build_thinking_selection_card,
             build_model_confirm_card,
             build_model_result_card,
+            build_thinking_selection_card,
         )
-        from kimi_cli.config import load_config, save_config
         from kimi_cli.llm import derive_model_capabilities
         
         print(f"[MODEL ACTION] Handling model action: {key}, request_id: {request_id}")
@@ -3333,7 +3845,7 @@ class SDKMessageHandler:
                     
             elif key == "cancel_model":
                 # User cancelled
-                print(f"[MODEL ACTION] Model selection cancelled")
+                print("[MODEL ACTION] Model selection cancelled")
                 
                 # Update card to show cancelled
                 from kimi_cli.feishu.card_builder import _plain_text_element
@@ -3408,16 +3920,16 @@ class FeishuSDKServer:
         await self._init_accounts()
         
         # Give WebSocket clients time to establish connections
-        logger.info(f"[START] Waiting for WebSocket connections to establish...")
+        logger.info("[START] Waiting for WebSocket connections to establish...")
         await asyncio.sleep(1.5)
         
         # Initialize scheduler in background task (don't block)
-        print(f"[START] Initializing scheduler in background...")
+        print("[START] Initializing scheduler in background...")
         asyncio.create_task(self._init_scheduler_bg())
         
         logger.info(f"[START] Feishu SDK server instance {self._instance_id} started successfully")
         print(f"✅ Feishu SDK server is running (instance {self._instance_id})")
-        print(f"   Use Ctrl+C to stop")
+        print("   Use Ctrl+C to stop")
     
     async def stop(self) -> None:
         """Stop the server."""
@@ -3467,7 +3979,7 @@ class FeishuSDKServer:
         await self._stop_scheduler()
         
         # Give extra time for connections to fully close
-        logger.info(f"[STOP] Waiting for connections to close...")
+        logger.info("[STOP] Waiting for connections to close...")
         await asyncio.sleep(2.0)  # Increased delay
         
         logger.info(f"[STOP] Feishu SDK server stopped (instance {self._instance_id})")
@@ -3538,8 +4050,8 @@ class FeishuSDKServer:
         print("[SCHEDULER] Background initialization starting...")
         
         try:
-            from kimi_cli.scheduler.scheduler import get_scheduler
             from kimi_cli.scheduler.cron_engine import CronEngine
+            from kimi_cli.scheduler.scheduler import get_scheduler
             
             # Get first handler
             handler = None
@@ -3566,7 +4078,7 @@ class FeishuSDKServer:
             )
             await scheduler._cron_engine.start()
             
-            print(f"✅ Scheduler initialized and started")
+            print("✅ Scheduler initialized and started")
             print(f"   Jobs: {len(await scheduler._job_store.list_all())}")
             
         except Exception as e:
@@ -3578,6 +4090,7 @@ class FeishuSDKServer:
         """触发定时任务"""
         import asyncio
         from datetime import datetime
+
         from kimi_cli.scheduler.models import IncomingMessage
         
         async def run_task():
@@ -3835,18 +4348,18 @@ class FeishuSDKServer:
         # Define event callbacks - these run in the SDK's thread
         def on_p2_im_message_receive_v1(data: lark.im.v1.P2ImMessageReceiveV1) -> None:
             """Handle message receive event."""
-            print(f"\n[EVENT] Message received!")
+            print("\n[EVENT] Message received!")
             try:
                 content = data.event.message.content
                 print(f"  content: {content[:100] if content else 'N/A'}")
             except Exception:
-                print(f"  (content not available)")
+                print("  (content not available)")
             
             # Schedule in main event loop (non-blocking)
             # Use lambda to defer coroutine creation until we're sure we can schedule it
-            print(f"[EVENT] Scheduling handler in main loop...")
+            print("[EVENT] Scheduling handler in main loop...")
             _schedule_async(lambda: handler.handle_message_event(data), "message_handler")
-            print(f"[EVENT] Handler scheduled (non-blocking)")
+            print("[EVENT] Handler scheduled (non-blocking)")
         
         def on_p2_im_chat_member_bot_added_v1(data: lark.im.v1.P2ImChatMemberBotAddedV1) -> None:
             """Handle bot added to chat."""
@@ -3866,7 +4379,7 @@ class FeishuSDKServer:
         
         def on_p2_card_action_trigger(data: P2CardActionTrigger) -> None:
             """Handle card action trigger (button click)."""
-            print(f"\n[EVENT] Card action triggered!")
+            print("\n[EVENT] Card action triggered!")
             try:
                 action = data.event.action
                 action_value = action.value
@@ -3972,8 +4485,8 @@ async def run_sdk_server(
     
     try:
         await server.start()
-        print(f"\n🚀 Feishu SDK server started!")
-        print(f"   Mode: SDK Long Connection (WebSocket)")
+        print("\n🚀 Feishu SDK server started!")
+        print("   Mode: SDK Long Connection (WebSocket)")
         print(f"   Accounts: {', '.join(config.accounts.keys())}")
         print("\n✅ No webhook URL needed!")
         print("✅ No tunnel/穿透 tools required!")

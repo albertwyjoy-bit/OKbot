@@ -274,16 +274,21 @@ class MessageRenderer:
             search_type=search_type,
         )
     
-    def render_text_response(self, text: str) -> dict[str, Any]:
+    def render_text_response(
+        self,
+        text: str,
+        page_info: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
         """Render a text response as a card.
         
         Args:
             text: The response text
+            page_info: Optional pagination info {"current": 1, "total": 3}
             
         Returns:
             Card JSON
         """
-        return build_response_card(text, is_markdown=True)
+        return build_response_card(text, is_markdown=True, page_info=page_info)
     
     def render_text_part(self, text_part: TextPart) -> dict[str, Any]:
         """Render a TextPart as a card.
