@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from loguru import logger
 
@@ -12,6 +13,42 @@ from kosong.chat_provider import (
 from kosong.message import ContentPart, Message, ToolCall
 from kosong.tooling import Tool
 from kosong.utils.aio import Callback, callback
+
+
+def _format_message_for_log(message: Message, max_content_length: int = 500) -> dict[str, Any]:
+    """Format a message for logging, truncating long content."""
+    content_preview = message.extract_text()
+    if len(content_preview) > max_content_length:
+        content_preview = content_preview[:max_content_length] + "..."
+
+    result: dict[str, Any] = {
+        "role": message.role,
+        "content": content_preview,
+    }
+
+    if message.tool_calls:
+        result["tool_calls"] = [
+            {"id": tc.id, "function": tc.function.name} for tc in message.tool_calls
+        ]
+
+    if message.tool_call_id:
+        result["tool_call_id"] = message.tool_call_id
+
+    return result
+
+
+def _format_tools_for_log(tools: Sequence[Tool], max_length: int = 300) -> list[dict[str, Any]]:
+    """Format tools for logging, truncating long descriptions."""
+    result = []
+    for tool in tools:
+        tool_info: dict[str, Any] = {
+            "name": tool.name,
+            "description": tool.description,
+        }
+        if tool.description and len(tool.description) > max_length:
+            tool_info["description"] = tool.description[:max_length] + "..."
+        result.append(tool_info)
+    return result
 
 
 async def generate(
@@ -49,6 +86,33 @@ async def generate(
     message = Message(role="assistant", content=[])
     pending_part: StreamedMessagePart | None = None  # message part that is currently incomplete
 
+    # Log LLM call information at INFO level
+    system_prompt_preview = system_prompt
+    if len(system_prompt_preview) > 500:
+        system_prompt_preview = system_prompt_preview[:500] + "..."
+
+    logger.info(
+        "LLM Request | model={model} | system_prompt={system_prompt} | "
+        "tools_count={tools_count} | history_count={history_count}",
+        model=chat_provider.model_name,
+        system_prompt=system_prompt_preview,
+        tools_count=len(tools),
+        history_count=len(history),
+    )
+
+    # Log detailed messages info at DEBUG level for verbose logging
+    logger.debug(
+        "LLM Messages | messages={messages}",
+        messages=[_format_message_for_log(msg) for msg in history],
+    )
+
+    # Log tools info at DEBUG level
+    if tools:
+        logger.debug(
+            "LLM Tools | tools={tools}",
+            tools=_format_tools_for_log(tools),
+        )
+
     logger.trace("Generating with history: {history}", history=history)
     stream = await chat_provider.generate(system_prompt, tools, history)
     async for part in stream:
@@ -73,6 +137,31 @@ async def generate(
 
     if not message.content and not message.tool_calls:
         raise APIEmptyResponseError("The API returned an empty response.")
+
+    # Log response at INFO level
+    response_preview = message.extract_text()
+    if len(response_preview) > 500:
+        response_preview = response_preview[:500] + "..."
+
+    tool_calls_info = None
+    if message.tool_calls:
+        tool_calls_info = [{"id": tc.id, "function": tc.function.name} for tc in message.tool_calls]
+
+    usage_info = None
+    if stream.usage:
+        usage_info = {
+            "input": stream.usage.input,
+            "output": stream.usage.output,
+            "total": stream.usage.total,
+        }
+
+    logger.info(
+        "LLM Response | id={id} | response={response} | tool_calls={tool_calls} | usage={usage}",
+        id=stream.id,
+        response=response_preview,
+        tool_calls=tool_calls_info,
+        usage=usage_info,
+    )
 
     return GenerateResult(
         id=stream.id,
