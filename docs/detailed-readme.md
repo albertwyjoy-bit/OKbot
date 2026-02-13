@@ -162,6 +162,27 @@ OKbot 支持两种工具授权模式，通过 `/yolo` 命令随时切换：
 - **安全可靠**：敏感操作需要人工确认，避免误操作
 - **灵活切换**：发送 `/yolo` 随时在两种模式间切换
 
+### 🧠 Plan Mode（规划模式）
+
+Plan Mode 是一种**系统性权限管理机制**，用于规范 AI 在规划和分析阶段的行为，防止在执行前意外修改系统状态。
+
+**核心特性**：
+- **权限分级控制**：进入 Plan Mode 后，只允许使用只读工具（ReadFile、Grep、Glob、SearchWeb、FetchURL）
+- **禁止修改操作**：所有写入操作（WriteFile、Shell 等）和 MCP 工具均被禁用
+- **专用规划文件**：允许编辑特定的规划文件（`~/.kimi/plans/{session_id}.md`），用于记录分析思路和执行方案
+- **强制退出确认**：退出 Plan Mode 需要用户显式批准，即使 YOLO 模式开启也不例外
+
+**使用方式**：
+1. 发送 `/plan` 进入 Plan Mode
+2. AI 进行只读分析，将规划写入专用文件
+3. 完成规划后，调用 `PlanExit` 工具申请退出
+4. 用户批准后，恢复正常执行模式
+
+**适用场景**：
+- 复杂任务开始前，先进行全面的代码分析和方案设计
+- 需要多方确认的执行计划，避免误操作
+- 学习/审计场景，只想查看系统状态而不修改
+
 ### 🛠️ MCP 工具生态
 - **多 MCP 服务器支持**：可同时连接多个 MCP 服务器，工具名自动添加 `{server}__` 前缀彻底解决重名冲突
   - `midscene-android__Tap` / `midscene-web__Tap` - 解决多服务器 `Tap` 工具冲突
@@ -299,7 +320,38 @@ default_model = "glm-4"
 
 > **注意**：即使使用 GLM 作为对话模型，**SearchWeb 搜索工具仍依赖 Kimi Code 平台的搜索服务**。如需完整功能，建议开通 Kimi Code Plan。
 
-#### 2.3 飞书应用凭证（必需）
+#### 2.3 MiniMax 2.5 配置（可选）
+
+MiniMax 2.5 是 MiniMax 推出的新一代大语言模型，支持超长上下文（最高 200k tokens）和强大的代码能力。
+
+- **申请地址**：https://www.minimaxi.com/platform
+- **操作步骤**：
+  1. 注册/登录 MiniMax 开放平台
+  2. 进入「账户管理」→「API Key」页面
+  3. 创建新的 API Key
+- **模型支持**：`MiniMax-M2.5`（代码专用模型，支持 200k 上下文）
+
+**配置 MiniMax 作为对话模型（可选）**：
+
+在 `~/.kimi/config.toml` 中添加：
+
+```toml
+[models.minimax-m2-5]
+provider = "minimax"
+model = "MiniMax-M2.5"
+max_context_size = 204800  # 200k 上下文
+capabilities = ["thinking"]
+
+[providers.minimax]
+type = "anthropic"
+base_url = "https://api.minimaxi.com/anthropic"
+api_key = "your-minimax-api-key"  # 替换为你的 MiniMax API Key
+
+# 设置默认模型为 MiniMax（可选）
+# default_model = "minimax-m2-5"
+```
+
+#### 2.4 飞书应用凭证（必需）
 
 后面步骤会详细说明如何创建飞书应用并获取 App ID 和 App Secret。
 
