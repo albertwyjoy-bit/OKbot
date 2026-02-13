@@ -1,141 +1,393 @@
-# Kimi Code CLI
+# OKbot - AI Coding Agent Guide
 
-## Quick commands (use uv)
+## Project Overview
 
-- `make prepare` (sync deps for all workspace packages and install git hooks)
-- `make format`
-- `make check`
-- `make test`
-- `make ai-test`
-- `make build` / `make build-bin`
+OKbot is a Feishu (Lark) integration extension for [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli), allowing users to interact with Kimi CLI through Feishu messages. It extends the original Kimi Code CLI with:
 
-If running tools directly, use `uv run ...`.
+- **Feishu Integration**: Full SDK-based WebSocket connection (no webhook/tunnel needed)
+- **Cross-platform Session Continuation**: Seamlessly switch between CLI and Feishu
+- **Scheduler**: Natural language cron-based job scheduling
+- **Voice Messages**: Zhipu AI ASR integration for voice recognition
+- **Device Control**: PC browser (Chrome) and Android device control via MCP
+- **Hot Reload**: Dynamic Skills and MCP server configuration updates without restart
 
-## Project overview
+**Project Structure**:
+```
+OKbot/
+├── src/kimi_cli/           # Main CLI package
+│   ├── feishu/             # Feishu integration core (SDK client/server)
+│   ├── scheduler/          # Cron-based job scheduling system
+│   ├── web/                # Web UI backend (FastAPI)
+│   ├── soul/               # Core agent runtime
+│   ├── tools/              # Built-in tools
+│   ├── ui/                 # UI implementations (shell/print/acp)
+│   └── agents/             # Agent specifications
+├── packages/               # Workspace packages
+│   ├── kosong/             # LLM abstraction layer
+│   ├── kaos/               # OS abstraction (local/SSH)
+│   └── kimi-code/          # Meta package wrapper
+├── sdks/kimi-sdk/          # Kimi API SDK
+├── web/                    # Web UI frontend (React + Vite)
+├── .agents/skills/         # Built-in skills
+├── tests/                  # Test suite
+├── docs/                   # Documentation
+└── install.sh              # One-click installation script
+```
 
-Kimi Code CLI is a Python CLI agent for software engineering workflows. It supports an interactive
-shell UI, ACP server mode for IDE integrations, and MCP tool loading.
+## Technology Stack
 
-## Tech stack
+- **Language**: Python 3.12+ (configured for 3.14 type checking)
+- **CLI Framework**: Typer
+- **Async Runtime**: asyncio
+- **LLM Framework**: kosong (custom abstraction)
+- **Web Backend**: FastAPI + uvicorn + websockets
+- **Web Frontend**: React + TypeScript + Vite + Tailwind CSS
+- **MCP Integration**: fastmcp
+- **Logging**: loguru
+- **Package Management**: uv + uv_build
+- **Binary Build**: PyInstaller
+- **Testing**: pytest + pytest-asyncio
+- **Linting**: ruff (E, F, UP, B, SIM, I rules)
+- **Type Checking**: pyright + ty
 
-- Python 3.12+ (tooling configured for 3.14)
-- CLI framework: Typer
-- Async runtime: asyncio
-- LLM framework: kosong
-- MCP integration: fastmcp
-- Logging: loguru
-- Package management/build: uv + uv_build; PyInstaller for binaries
-- Tests: pytest + pytest-asyncio; lint/format: ruff; types: pyright + ty
+## Build and Development Commands
 
-## Architecture overview
+**Setup**:
+```bash
+# Full setup with dependencies and git hooks
+make prepare
 
-- **CLI entry**: `src/kimi_cli/cli.py` (Typer) parses flags (UI mode, agent spec, config, MCP)
-  and routes into `KimiCLI` in `src/kimi_cli/app.py`.
-- **App/runtime setup**: `KimiCLI.create` loads config (`src/kimi_cli/config.py`), chooses a
-  model/provider (`src/kimi_cli/llm.py`), builds a `Runtime` (`src/kimi_cli/soul/agent.py`),
-  loads an agent spec, restores `Context`, then constructs `KimiSoul`.
-- **Agent specs**: YAML under `src/kimi_cli/agents/` loaded by `src/kimi_cli/agentspec.py`.
-  Specs can `extend` base agents, select tools by import path, and define fixed subagents.
-  System prompts live alongside specs; builtin args include `KIMI_NOW`, `KIMI_WORK_DIR`,
-  `KIMI_WORK_DIR_LS`, `KIMI_AGENTS_MD`, `KIMI_SKILLS` (this file is injected via
-  `KIMI_AGENTS_MD`).
-- **Tooling**: `src/kimi_cli/soul/toolset.py` loads tools by import path, injects dependencies,
-  and runs tool calls. Built-in tools live in `src/kimi_cli/tools/` (shell, file, web, todo,
-  multiagent, dmail, think). MCP tools are loaded via `fastmcp`; CLI management is in
-  `src/kimi_cli/mcp.py` and stored in the share dir.
-- **Subagents**: `LaborMarket` in `src/kimi_cli/soul/agent.py` manages fixed and dynamic
-  subagents. The Task tool (`src/kimi_cli/tools/multiagent/`) spawns them.
-- **Core loop**: `src/kimi_cli/soul/kimisoul.py` is the main agent loop. It accepts user input,
-  handles slash commands (`src/kimi_cli/soul/slash.py`), appends to `Context`
-  (`src/kimi_cli/soul/context.py`), calls the LLM (kosong), runs tools, and performs compaction
-  (`src/kimi_cli/soul/compaction.py`) when needed.
-- **Approvals**: `src/kimi_cli/soul/approval.py` mediates user approvals for tool actions; the
-  soul forwards approval requests over `Wire` for UI handling.
-- **UI/Wire**: `src/kimi_cli/soul/run_soul` connects `KimiSoul` to a `Wire`
-  (`src/kimi_cli/wire/`) so UI loops can stream events. UIs live in `src/kimi_cli/ui/`
-  (shell/print/acp/wire).
-- **Shell UI**: `src/kimi_cli/ui/shell/` handles interactive TUI input, shell command mode,
-  and slash command autocomplete; it is the default interactive experience.
-- **Slash commands**: Soul-level commands live in `src/kimi_cli/soul/slash.py`; shell-level
-  commands live in `src/kimi_cli/ui/shell/slash.py`. The shell UI exposes both and dispatches
-  based on the registry. Standard skills register `/skill:<skill-name>` and load `SKILL.md`
-  as a user prompt; flow skills register `/flow:<skill-name>` and execute the embedded flow.
+# Install pre-commit hooks only
+make install-prek
+```
 
-## Major modules and interfaces
+**Development Servers** (for Web UI):
+```bash
+# Start web backend (with reload)
+make web-back
 
-- `src/kimi_cli/app.py`: `KimiCLI.create(...)` and `KimiCLI.run(...)` are the main programmatic
-  entrypoints; this is what UI layers use.
-- `src/kimi_cli/soul/agent.py`: `Runtime` (config, session, builtins), `Agent` (system prompt +
-  toolset), and `LaborMarket` (subagent registry).
-- `src/kimi_cli/soul/kimisoul.py`: `KimiSoul.run(...)` is the loop boundary; it emits Wire
-  messages and executes tools via `KimiToolset`.
-- `src/kimi_cli/soul/context.py`: conversation history + checkpoints; used by DMail for
-  checkpointed replies.
-- `src/kimi_cli/soul/toolset.py`: load tools, run tool calls, bridge to MCP tools.
-- `src/kimi_cli/ui/*`: shell/print/acp frontends; they consume `Wire` messages.
-- `src/kimi_cli/wire/*`: event types and transport used between soul and UI.
+# Start web frontend (Vite dev server)
+make web-front
+```
 
-## Repo map
+**Code Quality**:
+```bash
+# Format all code
+make format
+make format-kimi-cli
+make format-kosong
+make format-pykaos
+make format-kimi-sdk
+make format-web
 
-- `src/kimi_cli/agents/`: built-in agent YAML specs and prompts
-- `src/kimi_cli/prompts/`: shared prompt templates
-- `src/kimi_cli/soul/`: core runtime/loop, context, compaction, approvals
-- `src/kimi_cli/tools/`: built-in tools
-- `src/kimi_cli/ui/`: UI frontends (shell/print/acp/wire)
-- `src/kimi_cli/acp/`: ACP server components
-- `packages/kosong/`, `packages/kaos/`: workspace deps
-  + Kosong is an LLM abstraction layer designed for modern AI agent applications.
-    It unifies message structures, asynchronous tool orchestration, and pluggable
-    chat providers so you can build agents with ease and avoid vendor lock-in.
-  + PyKAOS is a lightweight Python library providing an abstraction layer for agents
-    to interact with operating systems. File operations and command executions via KAOS
-    can be easily switched between local environment and remote systems over SSH.
-- `tests/`, `tests_ai/`: test suites
-- `klips`: Kimi Code CLI Improvement Proposals
+# Run checks (ruff + pyright + ty)
+make check
+make check-kimi-cli
+make check-kosong
+make check-pykaos
+make check-kimi-sdk
+make check-web
+```
 
-## Conventions and quality
+**Testing**:
+```bash
+# Run all tests
+make test
 
-- Python >=3.12 (ty config uses 3.14); line length 100.
-- Ruff handles lint + format (rules: E, F, UP, B, SIM, I); pyright + ty for type checks.
-- Tests use pytest + pytest-asyncio; files are `tests/test_*.py`.
-- CLI entry points: `kimi` / `kimi-cli` -> `src/kimi_cli/cli.py`.
-- User config: `~/.kimi/config.toml`; logs, sessions, and MCP config live in `~/.kimi/`.
+# Run specific package tests
+make test-kimi-cli    # Includes tests/ and tests_e2e/
+make test-kosong      # Includes doctests
+make test-pykaos
+make test-kimi-sdk
+```
 
-## Git commit messages
+**Building**:
+```bash
+# Build Python packages for release
+make build
+make build-kimi-cli
+make build-kosong
+make build-pykaos
+make build-kimi-sdk
 
-Conventional Commits format:
+# Build web UI
+make build-web
 
+# Build standalone binaries
+make build-bin          # One-file mode
+make build-bin-onedir   # One-directory mode
+```
+
+**AI-powered Tasks**:
+```bash
+# Run AI test suite
+make ai-test
+
+# Generate changelog
+make gen-changelog
+
+# Generate user docs
+make gen-docs
+```
+
+## Code Style Guidelines
+
+- **Line Length**: 100 characters maximum
+- **Import Style**: Use `from __future__ import annotations` in all files
+- **Type Hints**: Strict type checking enabled; all functions must be typed
+- **Docstrings**: Google style preferred
+- **Async**: Prefer async/await for I/O operations
+
+**Ruff Rules**:
+- `E` - pycodestyle
+- `F` - Pyflakes
+- `UP` - pyupgrade
+- `B` - flake8-bugbear
+- `SIM` - flake8-simplify
+- `I` - isort
+
+**Per-file Ignores**:
+- Tests: `E501` (line too long)
+- FastAPI files: `B008` (function call in default argument - for Depends())
+
+## Project Architecture
+
+### Core Runtime (`src/kimi_cli/soul/`)
+
+The agent runtime is built around these key components:
+
+1. **KimiSoul** (`kimisoul.py`): Main agent loop that processes user input, calls LLM, executes tools
+2. **Runtime** (`agent.py`): Container for config, OAuth, LLM, session, skills, and environment
+3. **Context** (`context.py`): Conversation history with checkpoint support for DMail
+4. **Toolset** (`toolset.py`): Tool loading and execution, MCP integration
+5. **Approval** (`approval.py`): User approval mediation for tool actions
+6. **Compaction** (`compaction.py`): Context window management
+
+### Feishu Integration (`src/kimi_cli/feishu/`)
+
+- **SDK Client** (`sdk_client.py`): Feishu SDK wrapper for API calls
+- **SDK Server** (`sdk_server.py`): WebSocket event handling and message routing
+- **Card Builder** (`card_builder.py`): Interactive Feishu card generation
+- **Message Renderer** (`message_renderer.py`): Message formatting for Feishu
+- **Config** (`config.py`): Feishu-specific configuration
+
+Key features:
+- Uses Feishu SDK long connection (WebSocket) - no webhook/tunnel needed
+- Supports text, image, file, and voice messages
+- Interactive cards for approvals, model switching, etc.
+- Session continuation between CLI and Feishu
+
+### Scheduler (`src/kimi_cli/scheduler/`)
+
+A cron-based job scheduling system:
+
+- **Scheduler** (`scheduler.py`): Main scheduler logic
+- **CronEngine** (`cron_engine.py`): Cron expression parsing and execution
+- **Dispatcher** (`dispatcher.py`): Message dispatching and session management
+- **Session** (`session.py`): Scheduled task session handling
+- **Store** (`store.py`): Job and result persistence
+- **Models** (`models.py`): Data models for jobs and notifications
+
+Features:
+- Natural language cron expression parsing
+- Silent task execution with independent sessions
+- Queue-based notification delivery
+- File generation and delivery support
+
+### Tools (`src/kimi_cli/tools/`)
+
+Built-in tool categories:
+
+- **file/**: File operations (read, write, replace, glob, grep)
+- **shell/**: Shell command execution (bash, PowerShell)
+- **web/**: Web operations (search, fetch)
+- **multiagent/**: Subagent spawning and management
+- **feishu/**: Feishu-specific tools
+- **scheduler_tool.py**: Scheduler integration tools
+- **todo/**: Todo list management
+- **think/**: Reasoning tool
+- **dmail/**: Checkpointed reply system
+
+### UI Layer (`src/kimi_cli/ui/`)
+
+Multiple UI implementations:
+
+- **shell/**: Interactive TUI (default) with autocomplete and slash commands
+- **print/**: Non-interactive print mode for scripts
+- **acp/**: Agent Communication Protocol server mode
+
+### Agent Specifications (`src/kimi_cli/agents/`)
+
+Agent configs in YAML format:
+
+- **default/**: Default agent with full toolset
+- **okabe/**: Alternative agent configuration
+
+Spec format includes: name, system prompt path, tools list, subagents definition.
+
+### Workspace Packages
+
+- **kosong**: LLM abstraction layer with provider unification
+- **pykaos**: OS abstraction for local and remote (SSH) operations
+- **kimi-sdk**: Lightweight SDK for Kimi API
+
+## Testing Strategy
+
+**Test Organization**:
+- `tests/`: Unit and integration tests
+- `tests_e2e/`: End-to-end tests
+- `tests_ai/`: AI-powered test suite
+
+**Test Configuration**:
+- pytest with asyncio_mode = auto
+- Uses pytest-asyncio for async test support
+- inline-snapshot for snapshot testing
+
+**Running Tests**:
+```bash
+# All tests
+pytest tests -vv
+pytest tests_e2e -vv
+
+# With coverage (if configured)
+pytest tests --cov=kimi_cli
+```
+
+## Configuration
+
+### User Configuration (`~/.kimi/config.toml`)
+
+Main config file for Kimi CLI with providers, models, and settings.
+
+### Feishu Configuration (`~/.kimi/feishu.toml`)
+
+```toml
+host = "127.0.0.1"
+port = 18789
+default_account = "bot"
+
+[accounts.bot]
+app_id = "cli_xxxxx"
+app_secret = "xxxxxxxx"
+auto_approve = true
+```
+
+### Environment Variables
+
+- `KIMI_BASE_URL`: Override API base URL
+- `KIMI_API_KEY`: Override API key
+- `KIMI_MODEL_NAME`: Override model name
+- `ZHIPU_API_KEY`: For ASR voice recognition
+
+## Deployment
+
+### PyInstaller Binary
+
+```bash
+make build-bin         # Single executable
+make build-bin-onedir  # Directory mode (faster startup)
+```
+
+### Python Package
+
+```bash
+make build
+# Distributes: kimi-cli, kimi-code, kosong, pykaos, kimi-sdk
+```
+
+### Nix
+
+```bash
+nix build .#kimi-cli
+```
+
+### Feishu Server Startup
+
+```bash
+python -m kimi_cli.feishu
+```
+
+Or use the convenience command:
+```bash
+kimi feishu
+```
+
+## Security Considerations
+
+- **OAuth Token Management**: Automatic refresh via OAuthManager
+- **Credential Storage**: Uses system keyring for secure storage
+- **Approval System**: YOLO mode (auto-approve) can be toggled per account
+- **Access Control**: Configurable allowed_users and allowed_chats in Feishu config
+- **Webhook Security**: Optional encrypt_key and verification_token for Feishu webhooks
+
+## Versioning
+
+**Minor-bump-only scheme** (`MAJOR.MINOR.PATCH`):
+- Patch is always `0`
+- Minor is bumped for all changes (features, fixes, etc.)
+- Major only changed by explicit decision
+
+Example: `1.9.0` → `1.10.0` → `1.11.0`
+
+## Git Conventions
+
+**Commit Message Format** (Conventional Commits):
 ```
 <type>(<scope>): <subject>
 ```
 
-Allowed types:
-`feat`, `fix`, `test`, `refactor`, `chore`, `style`, `docs`, `perf`, `build`, `ci`, `revert`.
+Types: `feat`, `fix`, `test`, `refactor`, `chore`, `style`, `docs`, `perf`, `build`, `ci`, `revert`
 
-## Versioning
+## Skills System
 
-The project follows a **minor-bump-only** versioning scheme (`MAJOR.MINOR.PATCH`):
+Skills are reusable capabilities in `.agents/skills/`:
 
-- **Patch** version is always `0`. Never bump it.
-- **Minor** version is bumped for any change: new features, improvements, bug fixes, etc.
-- **Major** version is only changed by explicit manual decision; it stays unchanged during
-  normal development.
+- Each skill has a `SKILL.md` file with instructions
+- Skills auto-discovered from user home and project directories
+- Hot-reloadable without restart
 
-Examples: `0.68.0` → `0.69.0` → `0.70.0`; never `0.68.1`.
+**Available Skills** (23 built-in):
+- algorithmic-art, android-app-pilot, canvas-design, codex-worker
+- doc-coauthoring, docx, frontend-design, gen-changelog
+- gen-docs, gen-rust, kimi-cli-help, mac-filesearch, mcp-builder
+- pdf, pptx, pull-request, release, skill-creator
+- theme-factory, translate-docs, web-artifacts-builder
+- worktree-status, xlsx
 
-This rule applies to all packages in the repo (root, `packages/*`, `sdks/*`) as well as release
-and skill workflows.
+## MCP Integration
 
-## Release workflow
+- MCP servers configured in `~/.kimi/mcp.json`
+- Hot-reload supported via `/update-mcp` command
+- Tool name prefixing: `{server}__{tool}` to avoid conflicts
+- Supports both local stdio and remote SSE transports
 
-1. Ensure `main` is up to date (pull latest).
-2. Create a release branch, e.g. `bump-0.68` or `bump-pykaos-0.5.3`.
-3. Update `CHANGELOG.md`: rename `[Unreleased]` to `[0.68] - YYYY-MM-DD`.
-4. Update `pyproject.toml` version.
-5. Run `uv sync` to align `uv.lock`.
-6. Commit the branch and open a PR.
-7. Merge the PR, then switch back to `main` and pull latest.
-8. Tag and push:
-   - `git tag 0.68` or `git tag pykaos-0.5.3`
-   - `git push --tags`
-9. GitHub Actions handles the release after tags are pushed.
+## Development Notes
+
+1. **First-time Setup**: Run `make prepare` after cloning
+2. **Pre-commit Hooks**: Automatically run format and check
+3. **Type Checking**: pyright runs in strict mode for src/kimi_cli
+4. **Async Patterns**: All I/O should be async; use kaos for file operations
+5. **Session Management**: Sessions stored in `.kimi/sessions/` under work_dir
+6. **Logging**: Logs to `~/.kimi/logs/kimi.log` with rotation
+
+## Common Tasks
+
+**Add a new tool**:
+1. Create module in `src/kimi_cli/tools/<category>/`
+2. Implement function with `@tool` decorator from kosong
+3. Add to agent spec tools list
+
+**Add a new skill**:
+1. Create directory in `.agents/skills/<skill-name>/`
+2. Write `SKILL.md` with instructions
+3. No restart needed - skills auto-discovered
+
+**Add Feishu message handler**:
+1. Extend `sdk_server.py` event handlers
+2. Use `card_builder.py` for interactive UI
+3. Update message renderer for formatting
+
+**Debug Feishu integration**:
+```bash
+LOG_LEVEL=DEBUG python -m kimi_cli.feishu
+```

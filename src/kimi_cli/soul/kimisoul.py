@@ -196,7 +196,7 @@ class KimiSoul:
         try:
             self._agent.refresh_system_prompt()
             logger.info("System prompt refreshed with new skills")
-        except Exception as e:
+        except Exception:
             logger.warning("Failed to refresh system prompt: {e}")
         
         logger.info("KimiSoul reloaded {count} skills, {slash_count} slash commands", 
@@ -212,9 +212,9 @@ class KimiSoul:
         Returns:
             Tuple of (servers_connected, total_tools, list of connected server names)
         """
-        from pathlib import Path
-        from kimi_cli.share import get_share_dir
         from fastmcp.mcp_config import MCPConfig
+
+        from kimi_cli.share import get_share_dir
         
         logger.info("Running reload_mcp")
         
@@ -383,6 +383,7 @@ class KimiSoul:
                     sender=request.sender,
                     tool_call_id=request.tool_call_id,
                     display=request.display,
+                    mandatory=request.mandatory,
                 )
                 wire_send(wire_request)
                 # We wait for the request to be resolved over the wire, which means that,
@@ -460,6 +461,44 @@ class KimiSoul:
             reraise=True,
         )
         async def _kosong_step_with_retry() -> StepResult:
+            # Log the tools being used for this LLM call
+            tool_names = [tool.name for tool in self._agent.toolset.tools]
+            logger.info("LLM call tools: {tool_names}", tool_names=tool_names)
+
+            # Log system prompt at INFO level
+            system_prompt = self._agent.system_prompt
+            if system_prompt:
+                # Truncate long system prompt for readability
+                max_len = 2000
+                prompt_display = system_prompt
+                if len(system_prompt) > max_len:
+                    prompt_display = system_prompt[:max_len] + f"... ({len(system_prompt) - max_len} chars truncated)"
+                logger.info("LLM call system prompt:\n{system_prompt}", system_prompt=prompt_display)
+
+            # Log the messages being sent to LLM at DEBUG level only
+            history = self._context.history
+            logger.debug("LLM call messages count: {count}", count=len(history))
+            for i, msg in enumerate(history):
+                text = msg.extract_text(sep="\n")
+                # Truncate long messages for readability
+                max_len = 1000
+                if len(text) > max_len:
+                    text = text[:max_len] + f"... ({len(text) - max_len} chars truncated)"
+                logger.debug(
+                    "  Message[{idx}] role={role} | content={content}",
+                    idx=i,
+                    role=msg.role,
+                    content=text if text else "(no text content)",
+                )
+                # Log tool_calls if present
+                if msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        logger.debug(
+                            "    ToolCall id={id} function={name}",
+                            id=tc.id,
+                            name=tc.function.name,
+                        )
+
             # run an LLM step (may be interrupted)
             return await kosong.step(
                 chat_provider,
