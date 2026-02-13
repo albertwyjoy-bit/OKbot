@@ -1,173 +1,239 @@
-# Kimi Code CLI
+# OKbot - 飞书版 Kimi Code CLI
 
-[![Commit Activity](https://img.shields.io/github/commit-activity/w/MoonshotAI/kimi-cli)](https://github.com/MoonshotAI/kimi-cli/graphs/commit-activity)
-[![Checks](https://img.shields.io/github/check-runs/MoonshotAI/kimi-cli/main)](https://github.com/MoonshotAI/kimi-cli/actions)
-[![Version](https://img.shields.io/pypi/v/kimi-cli)](https://pypi.org/project/kimi-cli/)
-[![Downloads](https://img.shields.io/pypi/dw/kimi-cli)](https://pypistats.org/packages/kimi-cli)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/MoonshotAI/kimi-cli)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-blue)](https://www.python.org/)
+[![Kimi CLI](https://img.shields.io/badge/Kimi%20CLI-v1.9.0-orange)](https://github.com/MoonshotAI/kimi-cli)
+[![Feishu](https://img.shields.io/badge/Feishu-Lark%20SDK-green)](https://open.feishu.cn/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)](https://opensource.org/licenses/Apache-2.0)
 
-[Kimi Code](https://www.kimi.com/code/) | [Documentation](https://moonshotai.github.io/kimi-cli/en/) | [文档](https://moonshotai.github.io/kimi-cli/zh/)
+> **随时随地，通过飞书操控 Kimi CLI。**
 
-Kimi Code CLI is an AI agent that runs in the terminal, helping you complete software development tasks and terminal operations. It can read and edit code, execute shell commands, search and fetch web pages, and autonomously plan and adjust actions during execution.
+📺 **视频介绍**: [Bilibili - OKbot 功能演示](https://www.bilibili.com/video/BV1ZJcczHExX/)
 
-## Getting Started
+OKbot 是 [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli) 的飞书扩展版本，让你**通过飞书与 Kimi CLI 实时交互**，随时随地操控 PC 和 Android 设备。
 
-See [Getting Started](https://moonshotai.github.io/kimi-cli/en/guides/getting-started.html) for how to install and start using Kimi Code CLI.
+[📖 详细文档](./docs/detailed-readme.md) · [🚀 快速开始](#快速开始) · [🎬 功能演示](#功能演示)
 
-## Key Features
+---
 
-### Shell command mode
+## 核心特性
 
-Kimi Code CLI is not only a coding agent, but also a shell. You can switch the shell command mode by pressing `Ctrl-X`. In this mode, you can directly run shell commands without leaving Kimi Code CLI.
+| 特性 | 说明 |
+|------|------|
+| 🧠 **Plan Mode** | 系统性权限管理，`/plan` 进入规划模式，禁止修改操作确保分析阶段安全 |
+| 🕐 **定时任务** | 自然语言创建定时任务，Agent 自动执行，支持文件自动生成 |
+| 🔄 **跨端接续** | CLI 上开发到一半随时切飞书继续，100% 复用 Kimi CLI Session |
+| 🛠️ **动态 Skills** | 飞书中随时让 AI 帮你写 Skills，热更新立即生效 |
+| 🔄 **MCP 热更新** | 运行时动态添加/删除 MCP 服务器，无需重启 |
+| ✅ **灵活授权** | YOLO 自动批准（默认）和交互式卡片授权两种模式 |
+| 🎤 **语音消息** | 支持飞书语音，使用智谱 ASR 自动识别 |
+| 💬 **富媒体** | 支持图片、文件收发；移动端直接操控 PC |
+| 🤖 **设备操控** | 支持控制 PC 浏览器（Chrome）和 Android 手机 |
 
-![](./docs/media/shell-mode.gif)
+---
 
-> [!NOTE]
-> Built-in shell commands like `cd` are not supported yet.
+## 快速开始
 
-### VS Code extension
+### 一键安装（推荐）
 
-Kimi Code CLI can be integrated with [Visual Studio Code](https://code.visualstudio.com/) via the [Kimi Code VS Code Extension](https://marketplace.visualstudio.com/items?itemName=moonshot-ai.kimi-code).
-
-![VS Code Extension](./docs/media/vscode.png)
-
-### IDE integration via ACP
-
-Kimi Code CLI supports [Agent Client Protocol] out of the box. You can use it together with any ACP-compatible editor or IDE.
-
-[Agent Client Protocol]: https://github.com/agentclientprotocol/agent-client-protocol
-
-To use Kimi Code CLI with ACP clients, make sure to run Kimi Code CLI in the terminal and send `/login` to complete the login first. Then, you can configure your ACP client to start Kimi Code CLI as an ACP agent server with command `kimi acp`.
-
-For example, to use Kimi Code CLI with [Zed](https://zed.dev/) or [JetBrains](https://blog.jetbrains.com/ai/2025/12/bring-your-own-ai-agent-to-jetbrains-ides/), add the following configuration to your `~/.config/zed/settings.json` or `~/.jetbrains/acp.json` file:
-
-```json
-{
-  "agent_servers": {
-    "Kimi Code CLI": {
-      "command": "kimi",
-      "args": ["acp"],
-      "env": {}
-    }
-  }
-}
+```bash
+git clone https://github.com/albertwyjoy-bit/OKbot.git
+cd OKbot
+./install.sh
 ```
 
-Then you can create Kimi Code CLI threads in IDE's agent panel.
+### 手动安装
 
-![](./docs/media/acp-integration.gif)
+```bash
+# 1. 克隆项目
+git clone https://github.com/albertwyjoy-bit/OKbot.git
+cd OKbot
 
-### Zsh integration
+# 2. 创建环境
+conda create -n okbot python=3.12 -y
+conda activate okbot
+pip install -e ".[dev]"
+pip install lark-oapi
 
-You can use Kimi Code CLI together with Zsh, to empower your shell experience with AI agent capabilities.
-
-Install the [zsh-kimi-cli](https://github.com/MoonshotAI/zsh-kimi-cli) plugin via:
-
-```sh
-git clone https://github.com/MoonshotAI/zsh-kimi-cli.git \
-  ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/kimi-cli
+# 3. 配置飞书应用凭证
+# 创建 ~/.kimi/feishu.toml（参考 feishu.example.toml）
 ```
 
-> [!NOTE]
-> If you are using a plugin manager other than Oh My Zsh, you may need to refer to the plugin's README for installation instructions.
+### 启动服务
 
-Then add `kimi-cli` to your Zsh plugin list in `~/.zshrc`:
-
-```sh
-plugins=(... kimi-cli)
+```bash
+python -m kimi_cli.feishu
 ```
 
-After restarting Zsh, you can switch to agent mode by pressing `Ctrl-X`.
+首次运行会引导完成 Kimi OAuth 授权。
 
-### MCP support
+---
 
-Kimi Code CLI supports MCP (Model Context Protocol) tools.
+## 功能演示
 
-**`kimi mcp` sub-command group**
+### 跨端 Session 接续
 
-You can manage MCP servers with `kimi mcp` sub-command group. For example:
+CLI ↔ 飞书无缝切换，任务随时带走：
 
-```sh
-# Add streamable HTTP server:
-kimi mcp add --transport http context7 https://mcp.context7.com/mcp --header "CONTEXT7_API_KEY: ctx7sk-your-key"
+```bash
+# CLI 端创建 session
+$ kimi chat
+# ... 对话中，session ID: abc123...
 
-# Add streamable HTTP server with OAuth authorization:
-kimi mcp add --transport http --auth oauth linear https://mcp.linear.app/mcp
+# 飞书端接续
+/sessions          # 查看可用 sessions
+/continue abc123   # 接续指定 session
 
-# Add stdio server:
-kimi mcp add --transport stdio chrome-devtools -- npx chrome-devtools-mcp@latest
-
-# List added MCP servers:
-kimi mcp list
-
-# Remove an MCP server:
-kimi mcp remove chrome-devtools
-
-# Authorize an MCP server:
-kimi mcp auth linear
+# 创建新会话
+/new               # 清空上下文，获取新的 Session ID
 ```
 
-**Ad-hoc MCP configuration**
+📹 [查看演示视频](./docs/detailed-readme.md#跨端-session-接续)
 
-Kimi Code CLI also supports ad-hoc MCP server configuration via CLI option.
+### 操控 PC 浏览器
 
-Given an MCP config file in the well-known MCP config format like the following:
+通过飞书发送自然语言指令，在 PC 端自动操控浏览器：
 
-```json
-{
-  "mcpServers": {
-    "context7": {
-      "url": "https://mcp.context7.com/mcp",
-      "headers": {
-        "CONTEXT7_API_KEY": "YOUR_API_KEY"
-      }
-    },
-    "chrome-devtools": {
-      "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest"]
-    }
-  }
-}
+> "打开 Chrome，访问 GitHub，搜索 kimi-cli"
+
+📹 [查看演示视频](./docs/detailed-readme.md#操控-pc-浏览器)
+
+### 模型切换
+
+无需重启，随时切换对话模型和 Thinking 模式：
+
+```
+/model
 ```
 
-Run `kimi` with `--mcp-config-file` option to connect to the specified MCP servers:
+执行后会显示交互式卡片，支持：
+- 切换不同模型（Kimi、GLM 等）
+- 开启/关闭 Thinking 模式
+- 实时生效，无需重启服务
 
-```sh
-kimi --mcp-config-file /path/to/mcp.json
+### 定时任务
+
+用自然语言创建定时任务，OKbot 自动解析执行：
+
+> "每天早上9点调研科技新闻并生成报告"
+> "每30分钟提醒我喝水"
+
+📖 [定时任务详细文档](./docs/scheduler_file_handling.md)
+
+---
+
+## 常用命令
+
+| 命令 | 说明 |
+|------|------|
+| `/help` | 显示帮助信息 |
+| `/plan` | 进入 Plan Mode（规划模式，禁止修改操作） |
+| `/stop` | 打断当前操作（保留上下文） |
+| `/clear` | 清空上下文 |
+| `/new` | 创建新会话（获取新的 Session ID） |
+| `/model` | 切换模型和 Thinking 模式 |
+| `/yolo` | 切换自动批准模式 |
+| `/cron` | 管理定时任务（list/remove/toggle） |
+| `/sessions` | 列出 CLI sessions |
+| `/continue <id>` | 接续指定 session |
+| `/id` | 查看当前 session ID |
+| `/mcp` | 查看 MCP 状态 |
+| `/update-mcp` | 热更新 MCP 配置 |
+| `/update-skill` | 重新加载 Skills |
+
+---
+
+## 项目结构
+
+```
+OKbot/
+├── src/kimi_cli/
+│   ├── feishu/          # 飞书集成核心模块
+│   ├── scheduler/       # 定时任务模块
+│   └── tools/feishu/    # Feishu 工具集
+├── docs/
+│   ├── detailed-readme.md      # 📖 详细文档
+│   ├── scheduler_file_handling.md  # 定时任务文档
+│   └── voice-messages.md       # 语音功能文档
+├── feishu.example.toml  # 飞书配置示例
+└── install.sh           # 一键安装脚本
 ```
 
-### More
+---
 
-See more features in the [Documentation](https://moonshotai.github.io/kimi-cli/en/).
+## 配置说明
 
-## Development
+### 必需配置
 
-To develop Kimi Code CLI, run:
+1. **Kimi Code Plan**（推荐）：https://kimi.com/code
+2. **飞书应用凭证**：创建应用并获取 App ID / App Secret
+3. **智谱 API Key**（可选）：用于语音和图像识别
 
-```sh
-git clone https://github.com/MoonshotAI/kimi-cli.git
-cd kimi-cli
+📖 [详细配置指南](./docs/detailed-readme.md#步骤-2申请-api-key推荐)
 
-make prepare  # prepare the development environment
+### 快速配置
+
+```toml
+# ~/.kimi/feishu.toml
+host = "127.0.0.1"
+port = 18789
+default_account = "bot"
+
+[accounts.bot]
+app_id = "cli_xxxxx"
+app_secret = "xxxxxxxx"
+auto_approve = true
 ```
 
-Then you can start working on Kimi Code CLI.
+---
 
-Refer to the following commands after you make changes:
+## 文档导航
 
-```sh
-uv run kimi  # run Kimi Code CLI
+| 文档 | 说明 |
+|------|------|
+| [📖 完整 README](./docs/detailed-readme.md) | 详细安装步骤、配置说明、使用指南 |
+| [🧠 Plan Mode](./docs/detailed-readme.md#-plan-mode规划模式) | 规划模式使用说明和权限管理 |
+| [🕐 定时任务](./docs/scheduler_file_handling.md) | 定时任务功能详细说明 |
+| [🎤 语音消息](./docs/voice-messages.md) | 语音功能配置和使用 |
+| [🤖 MiniMax 2.5 配置](./docs/detailed-readme.md#23-minimax-25-配置可选) | MiniMax 2.5 模型接入指引 |
+| [🛠️ MCP 配置](./docs/detailed-readme.md#步骤-4安装并配置-mcp-服务器可选但推荐) | MCP 服务器配置指南 |
+| [🔧 高级配置](./docs/detailed-readme.md#高级配置) | 工作目录、Skills、代理等高级配置 |
 
-make format  # format code
-make check  # run linting and type checking
-make test  # run tests
-make test-kimi-cli  # run Kimi Code CLI tests only
-make test-kosong  # run kosong tests only
-make test-pykaos  # run pykaos tests only
-make build-web  # build the web UI and sync it into the package (requires Node.js/npm)
-make build  # build python packages
-make build-bin  # build standalone binary
-make help  # show all make targets
-```
+---
 
-Note: `make build` and `make build-bin` automatically run `make build-web` to embed the web UI.
+## 为什么选 OKbot？
+
+- **无缝衔接**：CLI 和飞书共享同一个 Session，随时切换设备继续工作
+- **移动端操控 PC**：通过手机飞书控制电脑浏览器和 Android 设备
+- **零停机更新**：Skills 和 MCP 配置热更新，无需重启服务
+- **生产级稳定**：OAuth 自动刷新、连接保活、错误自动恢复
+
+---
+
+## 常见问题
+
+**Q: Plan Mode 是什么？如何使用？**
+> Plan Mode（规划模式）通过系统性权限管理规范模型行为。进入后只允许只读操作（查看文件、搜索等），禁止任何修改操作（写入文件、执行命令等）。使用 `/plan` 进入，完成规划后使用 `PlanExit` 工具退出。
+> 📖 [详细说明](./docs/detailed-readme.md#-plan-mode规划模式)
+
+**Q: 如何配置 MiniMax 2.5 模型？**
+> 在 `~/.kimi/config.toml` 中添加 MiniMax 提供商配置，支持 `MiniMax-Text-01` 等模型。
+> 📖 [配置指引](./docs/detailed-readme.md#23-minimax-25-配置可选)
+
+**Q: 如何配置 GLM 作为对话模型？**
+> 参考 [GLM 配置说明](./docs/detailed-readme.md#22-%E6%99%BA%E8%B0%B1-ai-api-key%E5%8F%AF%E9%80%89%E7%94%A8%E4%BA%8E%E8%AF%AD%E9%9F%B3%E5%92%8C%E5%9B%BE%E5%83%8F%E7%90%86%E8%A7%A3)
+
+**Q: MCP 工具名称冲突？**
+> 已自动添加 `{server}__` 前缀，如 `midscene-web__Tap`
+
+**Q: 如何打断正在执行的任务？**
+> 发送 `/stop` 命令，类似 CLI 中的 Ctrl+C
+
+📖 [更多 FAQ](./docs/detailed-readme.md#%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98)
+
+---
+
+## 许可证
+
+本项目基于 [Apache License 2.0](LICENSE) 开源。
+
+原始项目 [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli) 版权归 Moonshot AI 所有。
