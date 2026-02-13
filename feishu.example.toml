@@ -1,0 +1,60 @@
+# OKbot 飞书配置文件示例
+# 复制此文件到 ~/.kimi/feishu.toml 并填入你的实际配置
+
+# 服务器配置
+host = "127.0.0.1"
+port = 18789
+default_account = "bot"
+
+# 工作目录 (可选，会话默认工作目录)
+# work_dir = "/path/to/workdir"
+
+# Skills 目录 (可选，默认自动发现)
+# 用户级 skills: "~/.claude/skills"
+# 项目级 skills: ".agents/skills"
+
+# 账号配置
+[accounts.bot]
+# 飞书应用凭证 (从飞书开发者后台获取)
+app_id = "cli_xxxxxxxx"
+app_secret = "xxxxxxxx"
+
+# 加密密钥 (可选，用于 webhook 加密)
+# encrypt_key = ""
+
+# 验证令牌 (可选，用于事件订阅验证)
+# verification_token = ""
+
+# 访问控制 (可选，限制允许的用户/群组)
+# allowed_users = ["user_open_id_1", "user_open_id_2"]
+# allowed_chats = ["chat_id_1", "chat_id_2"]
+
+# 行为设置
+show_tool_calls = true         # 在消息中显示工具调用
+show_thinking = true           # 在消息中显示思考过程
+auto_approve = true            # 默认启用 YOLO 自动批准模式（可通过 /yolo 命令切换）
+
+# ============================================================================
+# 语音识别设置 (GLM-ASR-2512)
+# ============================================================================
+# 使用智谱 AI 的 GLM-ASR-2512 模型进行语音识别
+# 
+# 配置方法（二选一）：
+# 
+# 方法 1: 环境变量（推荐，更安全）
+#   在启动 OKbot 前设置环境变量：
+#   export ZHIPU_API_KEY="your-zhipu-api-key"
+#
+# 方法 2: 配置文件
+#   取消下方注释并填写 API Key：
+#   asr_api_key = "your-zhipu-api-key"
+#
+# 获取 API Key: https://open.bigmodel.cn/
+# ============================================================================
+# asr_api_key = ""
+
+# 更多账号示例
+# [accounts.another_bot]
+# app_id = "cli_yyyyyyyy"
+# app_secret = "yyyyyyyy"
+# asr_api_key = "your-zhipu-api-key"
