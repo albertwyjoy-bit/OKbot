@@ -132,10 +132,13 @@ $ kimi chat
 | `/new` | 创建新会话（获取新的 Session ID） |
 | `/model` | 切换模型和 Thinking 模式 |
 | `/yolo` | 切换自动批准模式 |
+| `/cron` | 管理定时任务（list/remove/toggle） |
 | `/sessions` | 列出 CLI sessions |
 | `/continue <id>` | 接续指定 session |
+| `/id` | 查看当前 session ID |
 | `/mcp` | 查看 MCP 状态 |
 | `/update-mcp` | 热更新 MCP 配置 |
+| `/update-skill` | 重新加载 Skills |
 
 ---
 

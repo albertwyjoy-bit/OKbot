@@ -645,6 +645,7 @@ python -m kimi_cli.feishu
 | `/new` | **创建新会话** - 清空上下文，获取新的 Session ID |
 | `/model` | **切换模型** - 切换对话模型和 Thinking 模式（无需重启） |
 | `/yolo` | **切换授权模式** - 开启/关闭 YOLO 自动批准模式 |
+| `/plan` | **进入规划模式** - 只读分析模式，禁止修改操作，需 `PlanExit` 退出 |
 | `/cron` | **定时任务管理** - list/remove/toggle（创建任务直接用自然语言） |
 | `/sessions` | **跨端接续** - 列出所有可用的 CLI sessions |
 | `/continue <id>` | **跨端接续** - 接续指定的 CLI session |
@@ -665,6 +666,7 @@ python -m kimi_cli.feishu
 - `/new` 命令：创建新会话，清空当前上下文并获取新的 Session ID
 - `/model` 命令：交互式切换模型和 Thinking 模式，实时生效无需重启
 - `/yolo` 命令：切换 YOLO 自动批准模式（开启/关闭工具调用确认卡片）
+- `/plan` 命令：进入 Plan Mode 规划模式，只允许只读操作
 - `/cron` 命令：管理定时任务（查看/删除/暂停，创建直接用自然语言）
 - `/mcp` 命令：查看 MCP 服务器状态（Feishu 本地处理）
 - `/update-mcp` 命令：热更新 MCP 工具（修改 mcp.json 后执行）
