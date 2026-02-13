@@ -80,11 +80,17 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "esbuild": "0.19.12",
     "hast": "^1.0.0",
     "rollup-plugin-visualizer": "6.0.3",
     "typescript": "~5.9.3",
     "ultracite": "^7.1.1",
     "vite": "^7.2.4",
     "vite-plugin-node-polyfills": "0.24.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": "0.19.12"
+    }
   }
 }

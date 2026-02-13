@@ -12,6 +12,7 @@ WEB_DIR = ROOT / "web"
 DIST_DIR = WEB_DIR / "dist"
 NODE_MODULES = WEB_DIR / "node_modules"
 STATIC_DIR = ROOT / "src" / "kimi_cli" / "web" / "static"
+PNPM_LOCK = WEB_DIR / "pnpm-lock.yaml"
 
 STRICT_VERSION = os.environ.get("KIMI_WEB_STRICT_VERSION", "").lower() in {"1", "true", "yes"}
 
@@ -42,23 +43,41 @@ def find_version_in_dist(version: str) -> bool:
     return found_plain
 
 
-def resolve_npm() -> str | None:
+def resolve_package_manager() -> tuple[str, str] | None:
+    """Resolve package manager (pnpm or npm).
+    
+    Returns:
+        Tuple of (command, install_subcommand) or None if not found.
+        install_subcommand is 'install' for pnpm or 'ci' for npm.
+    """
+    # Check for pnpm if pnpm-lock.yaml exists
+    if PNPM_LOCK.exists():
+        pnpm = shutil.which("pnpm")
+        if pnpm:
+            return (pnpm, "install")
+        print(
+            "Warning: pnpm-lock.yaml found but pnpm not available. "
+            "Falling back to npm.",
+            file=sys.stderr,
+        )
+    
+    # Fall back to npm
     candidates = ["npm"]
     if os.name == "nt":
         candidates.extend(["npm.cmd", "npm.exe", "npm.bat"])
     for candidate in candidates:
         npm = shutil.which(candidate)
         if npm:
-            return npm
+            return (npm, "ci")
     return None
 
 
-def run_npm(npm: str, args: list[str]) -> int:
+def run_npm(cmd: str, args: list[str]) -> int:
     try:
-        result = subprocess.run([npm, *args], check=False)
+        result = subprocess.run([cmd, *args], check=False)
     except FileNotFoundError:
         print(
-            "npm not found or failed to execute. Install Node.js (npm) and ensure it is on PATH.",
+            f"{cmd} not found or failed to execute. Install Node.js and ensure it is on PATH.",
             file=sys.stderr,
         )
         return 1
@@ -66,10 +85,12 @@ def run_npm(npm: str, args: list[str]) -> int:
 
 
 def main() -> int:
-    npm = resolve_npm()
-    if npm is None:
-        print("npm not found. Install Node.js (npm) to build the web UI.", file=sys.stderr)
+    pkg_manager_result = resolve_package_manager()
+    if pkg_manager_result is None:
+        print("npm/pnpm not found. Install Node.js to build the web UI.", file=sys.stderr)
         return 1
+    
+    pkg_manager, install_cmd = pkg_manager_result
 
     expected_version = read_pyproject_version()
     explicit_expected = os.environ.get("KIMI_WEB_EXPECT_VERSION")
@@ -81,11 +102,13 @@ def main() -> int:
         return 1
 
     if not NODE_MODULES.exists():
-        returncode = run_npm(npm, ["--prefix", str(WEB_DIR), "ci"])
+        print(f"Installing dependencies with {pkg_manager}...")
+        returncode = run_npm(pkg_manager, ["--prefix", str(WEB_DIR), install_cmd])
         if returncode != 0:
             return returncode
 
-    returncode = run_npm(npm, ["--prefix", str(WEB_DIR), "run", "build"])
+    print("Building web UI...")
+    returncode = run_npm(pkg_manager, ["--prefix", str(WEB_DIR), "run", "build"])
     if returncode != 0:
         return returncode
 

@@ -225,14 +225,68 @@ if [ -n "$PNPM_CMD" ]; then
     
     $PNPM_CMD install -g chrome-devtools-mcp
     print_success "chrome-devtools-mcp 全局安装完成"
+    
+    # 检查并修复 macOS esbuild 兼容性
+    # esbuild 0.20+ 需要 macOS 12.0+，旧版系统需要使用 0.19.x
+    if [ "$OS" = "macOS" ]; then
+        # 获取 macOS 版本
+        MACOS_VERSION=$(sw_vers -productVersion 2>/dev/null || echo "")
+        if [ -n "$MACOS_VERSION" ]; then
+            MACOS_MAJOR=$(echo "$MACOS_VERSION" | cut -d. -f1)
+            
+            # 检测是否需要降级 esbuild (macOS < 12.0)
+            if [ "$MACOS_MAJOR" -lt 12 ]; then
+                print_warning "检测到旧版 macOS ($MACOS_VERSION)，esbuild 0.20+ 需要 macOS 12.0+"
+                print_info "准备重新安装兼容的依赖..."
+                cd web
+                
+                # 彻底清理
+                print_info "清理旧依赖..."
+                rm -rf node_modules pnpm-lock.yaml .pnpm-store
+                
+                # 修改 package.json 添加 overrides
+                print_info "配置 esbuild 版本锁定..."
+                # 使用 node 修改 package.json
+                node -e '
+                const fs = require("fs");
+                const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+                pkg.pnpm = pkg.pnpm || {};
+                pkg.pnpm.overrides = pkg.pnpm.overrides || {};
+                pkg.pnpm.overrides.esbuild = "0.19.12";
+                fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
+                console.log("package.json 已更新");
+                '
+                
+                # 重新安装
+                print_info "重新安装依赖 (使用 esbuild 0.19.12)..."
+                $PNPM_CMD install
+                
+                cd ..
+                print_success "依赖已重新安装"
+            fi
+        fi
+    fi
+    
+    # 构建 Web UI
+    print_info "构建 Web UI..."
+    if [ -f "scripts/build_web.py" ]; then
+        python scripts/build_web.py
+        if [ $? -eq 0 ]; then
+            print_success "Web UI 构建完成"
+        else
+            print_warning "Web UI 构建失败，但 OKbot 仍可运行"
+        fi
+    else
+        print_warning "未找到 build_web.py 脚本，跳过 Web UI 构建"
+    fi
 else
-    print_step "步骤 4/7: 跳过 Node.js 依赖安装"
+    print_step "步骤 4/8: 跳过 Node.js 依赖安装"
     print_warning "未检测到包管理器，请手动运行: pnpm install 或 npm install"
     print_warning "如需 Chrome DevTools 支持，请手动安装: npm install -g chrome-devtools-mcp"
 fi
 
 # ==================== 步骤 5: 配置智谱 API Key ====================
-print_step "步骤 5/7: 配置智谱 AI API Key (可选)"
+print_step "步骤 5/8: 配置智谱 AI API Key (可选)"
 
 echo "智谱 AI API Key 用于："
 echo "  - 语音消息识别 (ASR)"
@@ -271,7 +325,7 @@ else
 fi
 
 # ==================== 步骤 6: 配置飞书应用 ====================
-print_step "步骤 6/7: 配置飞书应用"
+print_step "步骤 6/8: 配置飞书应用"
 
 echo "飞书应用是 OKbot 与飞书通信的桥梁。"
 echo ""
@@ -339,7 +393,7 @@ EOF
 fi
 
 # ==================== 步骤 7: MCP 配置 ====================
-print_step "步骤 7/7: MCP 服务器配置 (可选)"
+print_step "步骤 7/8: MCP 服务器配置 (可选)"
 
 echo "MCP 服务器扩展 OKbot 能力，支持："
 echo "  - Chrome 浏览器控制"
@@ -548,7 +602,7 @@ if [ -z "$SKIP_MCP_CONFIG" ]; then
 fi
 
 # ==================== 完成 ====================
-print_step "🎉 安装完成!"
+print_step "步骤 8/8: 安装完成!"
 
 echo -e "${GREEN}OKbot 安装成功！${NC}\n"
 
