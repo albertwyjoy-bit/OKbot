@@ -256,6 +256,18 @@ class Scheduler:
             self._executing_jobs.add(job.id)
         
         try:
+            # 关键修复：重新从 store 中获取任务，验证任务是否仍然存在
+            # 避免竞态条件：任务在调度后、执行前被删除
+            current_job = await self._job_store.get(job.id)
+            if current_job is None:
+                logger.warning(f"Job {job.id} was deleted before execution, skipping")
+                return
+            if not current_job.is_active:
+                logger.warning(f"Job {job.id} is inactive, skipping execution")
+                return
+            
+            # 使用从 store 获取的最新任务数据
+            job = current_job
             logger.info(f"Job triggered: {job.id}")
             
             # 如果设置了 reminder_text，直接发送提醒消息，不经过 Agent
@@ -270,7 +282,7 @@ class Scheduler:
             
             # 构造 Mock 消息（用于 Agent 执行）
             mock_message = IncomingMessage(
-                text=f"[定时任务] {job.description}",
+                text=f"请完成以下任务，该任务全程静默执行，请不要在运行中要求用户回复，遇到错误自己尝试解决。 \n\n具体任务描述如下：{job.description}",
                 source="scheduled",
                 source_id=job.id,
                 chat_id=job.chat_id,

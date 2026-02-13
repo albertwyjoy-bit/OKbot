@@ -257,6 +257,14 @@ class SessionManager:
         """移除定时任务会话"""
         async with self._lock:
             if session_id in self._scheduled_sessions:
+                session = self._scheduled_sessions[session_id]
+                # 清理 session 中的 Soul（关闭 MCP 连接）
+                try:
+                    if hasattr(session, '_cleanup_soul'):
+                        await session._cleanup_soul()
+                except Exception as e:
+                    logger.warning(f"Error cleaning up session {session_id}: {e}")
+                
                 del self._scheduled_sessions[session_id]
                 logger.debug(f"Removed scheduled session: {session_id}")
     

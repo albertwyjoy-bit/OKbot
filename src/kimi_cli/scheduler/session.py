@@ -64,6 +64,10 @@ class ScheduledTaskSession:
         # 等待队列
         self._pending_notifications: list[PendingNotification] = []
         self._notifications_lock = asyncio.Lock()
+        
+        # Soul 缓存 - 复用同一个 Soul 避免重复创建 MCP 连接
+        self._cached_soul: Any | None = None
+        self._soul_lock = asyncio.Lock()
     
     def is_processing(self) -> bool:
         """检测当前会话是否正在处理任务"""
@@ -158,20 +162,41 @@ class ScheduledTaskSession:
         
         logger.info(f"Silently executing scheduled task: {job_id}")
         
-        # 创建临时的 KimiSoul（独立的 Session ID）
-        temp_soul = await self._create_temp_soul()
+        # 获取或创建 KimiSoul（复用缓存的 Soul）
+        soul = await self._get_or_create_soul()
         
-        if not temp_soul:
+        if not soul:
             return ScheduledResult(
                 job_id=job_id,
                 success=False,
-                error="Failed to create temporary soul for scheduled task",
+                error="Failed to create soul for scheduled task",
             )
+        
+        # 检测并获取 MCP 资源锁
+        from kimi_cli.scheduler.mcp_resource_lock import get_mcp_lock_manager
+        lock_manager = get_mcp_lock_manager()
+        
+        # 从 toolset 检测需要哪些 MCP 资源锁
+        required_locks: list[str] = []
+        try:
+            if hasattr(soul, '_agent') and soul._agent and hasattr(soul._agent, 'toolset'):
+                toolset = soul._agent.toolset
+                required_locks = lock_manager.detect_required_locks_from_toolset(toolset)
+                if required_locks:
+                    logger.info(f"Task {job_id} requires MCP resource locks: {required_locks}")
+        except Exception as e:
+            logger.warning(f"Failed to detect MCP locks for task {job_id}: {e}")
+        
+        # 获取 MCP 资源锁
+        if required_locks:
+            logger.info(f"Acquiring MCP resource locks for task {job_id}: {required_locks}")
+            await lock_manager.acquire(required_locks)
+            logger.info(f"Acquired MCP resource locks for task {job_id}: {required_locks}")
         
         try:
             # 执行但不发送中间消息
             # 使用 run_silent 方法来获取最终结果
-            result_output = await self._run_soul_silent(temp_soul, message.text)
+            result_output = await self._run_soul_silent(soul, message.text)
             
             # 检测输出中提到的文件路径
             detected_files = self._extract_file_paths(result_output)
@@ -193,8 +218,11 @@ class ScheduledTaskSession:
                 error=str(e),
             )
         finally:
-            # 清理临时 soul
-            await self._cleanup_temp_soul(temp_soul)
+            # 释放 MCP 资源锁
+            if required_locks:
+                lock_manager.release(required_locks)
+                logger.info(f"Released MCP resource locks for task {job_id}: {required_locks}")
+            # 注意：不清理 Soul，让它复用
     
     async def _execute_silently(self, message: IncomingMessage) -> ScheduledResult:
         """
@@ -222,31 +250,52 @@ class ScheduledTaskSession:
                 self._running = False
                 self._idle_event.set()  # 标记为空闲
     
-    async def _create_temp_soul(self) -> Any | None:
-        """创建临时的 KimiSoul 用于定时任务执行"""
-        try:
-            from kimi_cli.feishu.sdk_server import SDKMessageHandler
+    async def _get_or_create_soul(self) -> Any | None:
+        """获取或创建 KimiSoul（复用缓存的 Soul）
+        
+        复用 Soul 可以避免重复创建 MCP 连接，防止 Midscene 等 MCP server 被频繁重启。
+        """
+        async with self._soul_lock:
+            if self._cached_soul is not None:
+                logger.debug(f"Reusing cached soul for session {self.session_id}")
+                return self._cached_soul
             
-            # 使用 feishu_handler 的方法创建 soul
-            if hasattr(self._feishu_handler, '_create_soul_for_session'):
-                # 创建一个唯一的 session key 用于临时 soul
-                temp_session_key = f"scheduled_{uuid.uuid4().hex[:8]}"
-                return await self._feishu_handler._create_soul_for_session(temp_session_key)
-            else:
-                logger.error("Feishu handler does not have _create_soul_for_session method")
-                return None
+            try:
+                from kimi_cli.feishu.sdk_server import SDKMessageHandler
                 
-        except Exception as e:
-            logger.exception(f"Failed to create temporary soul: {e}")
-            return None
+                # 使用 feishu_handler 的方法创建 soul
+                if hasattr(self._feishu_handler, '_create_soul_for_session'):
+                    # 使用固定的 session key，确保 session 复用
+                    temp_session_key = f"scheduled_{self.user_id}_{self.chat_id[:8]}"
+                    soul = await self._feishu_handler._create_soul_for_session(temp_session_key)
+                    self._cached_soul = soul
+                    logger.info(f"Created and cached soul for session {self.session_id}")
+                    return soul
+                else:
+                    logger.error("Feishu handler does not have _create_soul_for_session method")
+                    return None
+                    
+            except Exception as e:
+                logger.exception(f"Failed to create soul: {e}")
+                return None
     
-    async def _cleanup_temp_soul(self, soul: Any) -> None:
-        """清理临时 soul"""
-        try:
-            # 如果需要清理操作，在这里实现
-            pass
-        except Exception as e:
-            logger.warning(f"Error cleaning up temporary soul: {e}")
+    async def _cleanup_soul(self) -> None:
+        """清理缓存的 soul（在 session 销毁时调用）"""
+        async with self._soul_lock:
+            if self._cached_soul is not None:
+                try:
+                    # 清理 toolset 中的 MCP 连接
+                    if (hasattr(self._cached_soul, '_agent') and 
+                        self._cached_soul._agent and 
+                        hasattr(self._cached_soul._agent, 'toolset')):
+                        toolset = self._cached_soul._agent.toolset
+                        if hasattr(toolset, 'cleanup'):
+                            await toolset.cleanup()
+                            logger.info(f"Cleaned up MCP connections for session {self.session_id}")
+                except Exception as e:
+                    logger.warning(f"Error cleaning up soul: {e}")
+                finally:
+                    self._cached_soul = None
     
     def _extract_file_paths(self, output: str | None) -> list[str]:
         """从输出中提取文件路径
