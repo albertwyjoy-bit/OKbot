@@ -40,3 +40,6 @@ target/
 node_modules/
 static/
 .memo/
+
+# Midscene run logs and reports
+midscene_run/
