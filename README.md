@@ -188,10 +188,10 @@ auto_approve = true
 | 文档 | 说明 |
 |------|------|
 | [📖 完整 README](./docs/detailed-readme.md) | 详细安装步骤、配置说明、使用指南 |
-| [🧠 Plan Mode](./docs/detailed-readme.md#plan-mode) | 规划模式使用说明和权限管理 |
+| [🧠 Plan Mode](./docs/detailed-readme.md#-plan-mode规划模式) | 规划模式使用说明和权限管理 |
 | [🕐 定时任务](./docs/scheduler_file_handling.md) | 定时任务功能详细说明 |
 | [🎤 语音消息](./docs/voice-messages.md) | 语音功能配置和使用 |
-| [🤖 MiniMax 2.5 配置](./docs/detailed-readme.md#minimax-25-配置) | MiniMax 2.5 模型接入指引 |
+| [🤖 MiniMax 2.5 配置](./docs/detailed-readme.md#23-minimax-25-配置可选) | MiniMax 2.5 模型接入指引 |
 | [🛠️ MCP 配置](./docs/detailed-readme.md#步骤-4安装并配置-mcp-服务器可选但推荐) | MCP 服务器配置指南 |
 | [🔧 高级配置](./docs/detailed-readme.md#高级配置) | 工作目录、Skills、代理等高级配置 |
 
@@ -210,11 +210,11 @@ auto_approve = true
 
 **Q: Plan Mode 是什么？如何使用？**
 > Plan Mode（规划模式）通过系统性权限管理规范模型行为。进入后只允许只读操作（查看文件、搜索等），禁止任何修改操作（写入文件、执行命令等）。使用 `/plan` 进入，完成规划后使用 `PlanExit` 工具退出。
-> 📖 [详细说明](./docs/detailed-readme.md#plan-mode)
+> 📖 [详细说明](./docs/detailed-readme.md#-plan-mode规划模式)
 
 **Q: 如何配置 MiniMax 2.5 模型？**
 > 在 `~/.kimi/config.toml` 中添加 MiniMax 提供商配置，支持 `MiniMax-Text-01` 等模型。
-> 📖 [配置指引](./docs/detailed-readme.md#minimax-25-配置)
+> 📖 [配置指引](./docs/detailed-readme.md#23-minimax-25-配置可选)
 
 **Q: 如何配置 GLM 作为对话模型？**
 > 参考 [GLM 配置说明](./docs/detailed-readme.md#22-%E6%99%BA%E8%B0%B1-ai-api-key%E5%8F%AF%E9%80%89%E7%94%A8%E4%BA%8E%E8%AF%AD%E9%9F%B3%E5%92%8C%E5%9B%BE%E5%83%8F%E7%90%86%E8%A7%A3)
