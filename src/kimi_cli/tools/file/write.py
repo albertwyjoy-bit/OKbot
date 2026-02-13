@@ -112,13 +112,28 @@ class WriteFile(CallableTool2[Params]):
                 else FileActions.EDIT_OUTSIDE
             )
 
-            # Request approval
-            if not await self._approval.request(
+            # Request approval (plan mode: auto-approve if writing to plan file)
+            if not await self._approval.request_write_approval(
                 self.name,
-                action,
+                str(p),
                 f"Write file `{p}`",
                 display=diff_blocks,
             ):
+                # In plan mode, provide a helpful error message
+                if self._approval.is_plan_mode():
+                    plan_file = self._approval.get_plan_file_path()
+                    if plan_file:
+                        return ToolError(
+                            message=(
+                                f"In plan mode, you can only write to the plan file: `{plan_file}`. "
+                                f"Exit plan mode to write to other files."
+                            ),
+                            brief="Write restricted in plan mode",
+                        )
+                    return ToolError(
+                        message="Plan mode is active but no plan file is configured.",
+                        brief="Plan file not configured",
+                    )
                 return ToolRejectedError()
 
             # Write content to file

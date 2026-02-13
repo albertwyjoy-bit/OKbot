@@ -211,6 +211,18 @@ if [ -n "$PNPM_CMD" ]; then
     
     # 全局安装 chrome-devtools-mcp
     print_info "全局安装 chrome-devtools-mcp..."
+    
+    # 检查并配置 pnpm 全局环境（如果是 pnpm）
+    if [ "$PNPM_CMD" = "pnpm" ]; then
+        # 运行 pnpm setup 来自动配置全局环境
+        print_info "配置 pnpm 全局环境..."
+        pnpm setup 2>/dev/null || true
+        # 设置 PNPM_HOME
+        export PNPM_HOME="${PNPM_HOME:-$HOME/.local/share/pnpm}"
+        mkdir -p "$PNPM_HOME"
+        export PATH="$PNPM_HOME:$PATH"
+    fi
+    
     $PNPM_CMD install -g chrome-devtools-mcp
     print_success "chrome-devtools-mcp 全局安装完成"
 else

@@ -80,3 +80,148 @@ async def yolo(soul: KimiSoul, args: str):
     else:
         soul.runtime.approval.set_yolo(True)
         wire_send(TextPart(text="You only live once! All actions will be auto-approved."))
+
+
+@registry.command
+async def plan(soul: KimiSoul, args: str):
+    """Enter plan mode - analyze and plan without executing write operations"""
+    import os
+    from pathlib import Path
+    
+    # Check if already in plan mode
+    if soul.runtime.approval.is_plan_mode():
+        wire_send(TextPart(text="Already in plan mode. Use `PlanExit` tool to exit."))
+        return
+    
+    # Get session ID for plan file name
+    session_id = soul.runtime.session.id
+    plans_dir = Path.home() / ".kimi" / "plans"
+    plan_file = plans_dir / f"{session_id}.md"
+    
+    # Create plans directory if not exists
+    try:
+        plans_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        logger.error("Failed to create plans directory: {e}")
+        wire_send(TextPart(text=f"❌ Failed to create plans directory: {e}"))
+        return
+    
+    # Create empty plan file if not exists
+    try:
+        if not plan_file.exists():
+            plan_file.write_text(f"# Plan for Session {session_id}\n\n", encoding="utf-8")
+    except Exception as e:
+        logger.error("Failed to create plan file: {e}")
+        wire_send(TextPart(text=f"❌ Failed to create plan file: {e}"))
+        return
+    
+    # Enable plan mode
+    soul.runtime.approval.set_plan_mode(True, str(plan_file))
+    
+    # Notify user
+    wire_send(TextPart(
+        text=f"📝 **Entered Plan Mode**\n\n"
+             f"Plan file: `{plan_file}`\n\n"
+             f"In plan mode:\n"
+             f"• Read-only tools are allowed (ReadFile, Grep, Search, etc.)\n"
+             f"• WriteFile is allowed **only** for the plan file\n"
+             f"• All other write operations are blocked\n\n"
+             f"Use `PlanExit` tool when you're ready to proceed with execution."
+    ))
+    
+    # Add system message to context with plan prompt and file path
+    plan_message_content = (
+        f"{prompts.PLAN}\n\n"
+        f"Current editable plan file: {plan_file}"
+    )
+    
+    await soul.context.append_message(Message(
+        role="user",
+        content=[system(plan_message_content)]
+    ))
+    
+    logger.info("Entered plan mode, plan file: {plan_file}", plan_file=plan_file)
+
+
+@registry.command(name="update-skill")
+async def update_skill(soul: KimiSoul, args: str):
+    """Reload skills from disk and update system prompt.
+    
+    Use this command after adding, removing, or modifying skills.
+    The new skills will be available immediately via /skill:name commands.
+    """
+    logger.info("Running `/update-skill`")
+    wire_send(TextPart(text="🔄 Reloading skills from disk..."))
+    
+    try:
+        count, skills_formatted = await soul.reload_skills()
+        
+        # Build summary message
+        skill_names = list(soul.runtime.skills.keys())
+        skills_list = ", ".join(f"`{name}`" for name in skill_names[:10])
+        if len(skill_names) > 10:
+            skills_list += f", and {len(skill_names) - 10} more"
+        
+        message = f"""✅ Skills reloaded successfully!
+
+**Loaded {count} skills:**
+{skills_list}
+
+**New skills are now available via:**
+• `/skill:name` - Use a specific skill
+• Direct mention in conversation
+
+The system prompt has been updated with new skill metadata."""
+        
+        wire_send(TextPart(text=message))
+        
+    except Exception as e:
+        logger.exception("Failed to reload skills")
+        wire_send(TextPart(text=f"❌ Failed to reload skills: {e}"))
+
+
+@registry.command(name="update-mcp")
+async def update_mcp(soul: KimiSoul, args: str):
+    """Reload MCP tools from global config file.
+    
+    Use this command after adding, removing, or modifying MCP servers in `~/.kimi/mcp.json`.
+    This will disconnect existing MCP connections and reconnect with the new configuration.
+    """
+    logger.info("Running `/update-mcp`")
+    wire_send(TextPart(text="🔄 Reloading MCP tools from config..."))
+    
+    try:
+        servers_count, tools_count, server_names = await soul.reload_mcp()
+        
+        # Build summary message
+        if servers_count == 0:
+            message = """⚠️ No MCP servers connected.
+
+Please check:
+• `~/.kimi/mcp.json` exists and contains valid MCP server configurations
+• Run `kimi mcp add` to add MCP servers
+• Run `kimi mcp list` to see configured servers"""
+        else:
+            servers_list = ", ".join(f"`{name}`" for name in server_names[:5])
+            if len(server_names) > 5:
+                servers_list += f", and {len(server_names) - 5} more"
+            
+            message = f"""✅ MCP tools reloaded successfully!
+
+**Connected {servers_count} servers ({tools_count} tools):**
+{servers_list}
+
+MCP tools are now available immediately.
+Use `/mcp` to check server status."""
+        
+        wire_send(TextPart(text=message))
+        
+    except FileNotFoundError as e:
+        wire_send(TextPart(text=f"""❌ MCP config file not found.
+
+Please create `~/.kimi/mcp.json` first.
+
+Error: {e}"""))
+    except Exception as e:
+        logger.exception("Failed to reload MCP tools")
+        wire_send(TextPart(text=f"❌ Failed to reload MCP tools: {e}"))
