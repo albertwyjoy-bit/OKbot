@@ -28,6 +28,7 @@ OKbot 是 [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli) 的飞书扩�
 | 🎤 **语音消息** | 支持飞书语音，使用智谱 ASR 自动识别 |
 | 💬 **富媒体** | 支持图片、文件收发；移动端直接操控 PC |
 | 🤖 **设备操控** | 支持控制 PC 浏览器（Chrome）和 Android 手机 |
+| 🎨 **文生图** | 自然语言生成图片，支持火山引擎 Ark 等图像生成服务 |
 
 ---
 
@@ -119,6 +120,15 @@ $ kimi chat
 
 📖 [定时任务详细文档](./docs/scheduler_file_handling.md)
 
+### 文生图
+
+通过自然语言描述生成图片：
+
+> "生成一张夕阳下的海滩，金色阳光洒在沙滩上，远处有椰树"
+> "画一只戴着墨镜的猫，赛博朋克风格，霓虹灯光背景"
+
+📖 [文生图配置说明](./docs/detailed-readme.md#24-%E7%81%AB%E5%B1%B1%E5%BC%95%E6%93%8E-ark-api-key%E5%8F%AF%E9%80%89%E7%94%A8%E4%BA%8E%E6%96%87%E7%94%9F%E5%9B%BE)
+
 ---
 
 ## 常用命令
@@ -167,8 +177,23 @@ OKbot/
 1. **Kimi Code Plan**（推荐）：https://kimi.com/code
 2. **飞书应用凭证**：创建应用并获取 App ID / App Secret
 3. **智谱 API Key**（可选）：用于语音和图像识别
+4. **火山引擎 Ark**（可选）：用于文生图功能
 
 📖 [详细配置指南](./docs/detailed-readme.md#步骤-2申请-api-key推荐)
+
+### 文生图配置（可选）
+
+在 `~/.kimi/config.toml` 中配置：
+
+```toml
+[services.image_generation]
+enabled = true                          # 是否启用文生图
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"            # 火山引擎 Ark API Key
+model = "doubao-seedream-4-5-251128"    # 图像生成模型
+```
+
+📖 [详细配置说明](./docs/detailed-readme.md#24-%E7%81%AB%E5%B1%B1%E5%BC%95%E6%93%8E-ark-api-key%E5%8F%AF%E9%80%89%E7%94%A8%E4%BA%8E%E6%96%87%E7%94%9F%E5%9B%BE)
 
 ### 快速配置
 
@@ -194,7 +219,8 @@ auto_approve = true
 | [🧠 Plan Mode](./docs/detailed-readme.md#-plan-mode规划模式) | 规划模式使用说明和权限管理 |
 | [🕐 定时任务](./docs/scheduler_file_handling.md) | 定时任务功能详细说明 |
 | [🎤 语音消息](./docs/voice-messages.md) | 语音功能配置和使用 |
-| [🤖 MiniMax 2.5 配置](./docs/detailed-readme.md#23-minimax-25-配置可选) | MiniMax 2.5 模型接入指引 |
+| [🎨 文生图配置](./docs/detailed-readme.md#24-%E7%81%AB%E5%B1%B1%E5%BC%95%E6%93%8E-ark-api-key%E5%8F%AF%E9%80%89%E7%94%A8%E4%BA%8E%E6%96%87%E7%94%9F%E5%9B%BE) | 文生图功能配置说明 |
+| [🤖 MiniMax 2.5 配置](./docs/detailed-readme.md#25-minimax-25-配置可选) | MiniMax 2.5 模型接入指引 |
 | [🛠️ MCP 配置](./docs/detailed-readme.md#步骤-4安装并配置-mcp-服务器可选但推荐) | MCP 服务器配置指南 |
 | [🔧 高级配置](./docs/detailed-readme.md#高级配置) | 工作目录、Skills、代理等高级配置 |
 
@@ -218,9 +244,15 @@ auto_approve = true
 **Q: 如何配置 MiniMax 2.5 模型？**
 > 在 `~/.kimi/config.toml` 中添加 MiniMax 提供商配置，支持 `MiniMax-Text-01` 等模型。
 > 📖 [配置指引](./docs/detailed-readme.md#23-minimax-25-配置可选)
+>
+> **注意**：配置步骤编号在详细文档中有所变化，MiniMax 仍为 2.3，飞书凭证现为 2.5。
 
 **Q: 如何配置 GLM 作为对话模型？**
 > 参考 [GLM 配置说明](./docs/detailed-readme.md#22-%E6%99%BA%E8%B0%B1-ai-api-key%E5%8F%AF%E9%80%89%E7%94%A8%E4%BA%8E%E8%AF%AD%E9%9F%B3%E5%92%8C%E5%9B%BE%E5%83%8F%E7%90%86%E8%A7%A3)
+
+**Q: 如何配置文生图功能？**
+> 需要申请火山引擎 Ark API Key，并在 `~/.kimi/config.toml` 中配置 `services.image_generation`。
+> 📖 [配置说明](./docs/detailed-readme.md#24-%E7%81%AB%E5%B1%B1%E5%BC%95%E6%93%8E-ark-api-key%E5%8F%AF%E9%80%89%E7%94%A8%E4%BA%8E%E6%96%87%E7%94%9F%E5%9B%BE)
 
 **Q: MCP 工具名称冲突？**
 > 已自动添加 `{server}__` 前缀，如 `midscene-web__Tap`

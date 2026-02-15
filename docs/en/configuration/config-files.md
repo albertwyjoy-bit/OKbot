@@ -30,7 +30,7 @@ The configuration file contains the following top-level configuration items:
 | `providers` | `table` | API provider configuration |
 | `models` | `table` | Model configuration |
 | `loop_control` | `table` | Agent loop control parameters |
-| `services` | `table` | External service configuration (search, fetch) |
+| `services` | `table` | External service configuration (search, fetch, image generation) |
 | `mcp` | `table` | MCP client configuration |
 
 ### Complete configuration example
@@ -63,6 +63,11 @@ api_key = "sk-xxx"
 [services.moonshot_fetch]
 base_url = "https://api.kimi.com/coding/v1/fetch"
 api_key = "sk-xxx"
+
+[services.image_generation]
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"
+model = "doubao-seedream-4-5-251128"
 
 [mcp.client]
 tool_call_timeout_ms = 60000
@@ -145,6 +150,35 @@ Configures web fetch service. When enabled, the `FetchURL` tool prioritizes usin
 | `base_url` | `string` | Yes | Fetch service API URL |
 | `api_key` | `string` | Yes | API key |
 | `custom_headers` | `table` | No | Custom HTTP headers to attach to requests |
+
+#### `image_generation`
+
+Configures image generation service. When enabled, the `GenerateImage` tool becomes available. Supports services compatible with OpenAI Images API such as Volcengine Ark.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | No | Whether to enable the image generation tool, defaults to `true`; set to `false` to disable (even if API Key is configured) |
+| `base_url` | `string` | No | Image generation service API URL, defaults to `"https://ark.cn-beijing.volces.com/api/v3"` |
+| `api_key` | `string` | Yes | API key |
+| `model` | `string` | No | Default model name to use, defaults to `"doubao-seedream-4-5-251128"` |
+| `custom_headers` | `table` | No | Custom HTTP headers to attach to requests |
+
+Example:
+
+```toml
+[services.image_generation]
+enabled = true
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"
+model = "doubao-seedream-4-5-251128"
+```
+
+Disable image generation:
+
+```toml
+[services.image_generation]
+enabled = false
+```
 
 ::: tip
 When configuring the Kimi Code platform using the `/login` command, search and fetch services are automatically configured.

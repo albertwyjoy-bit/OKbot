@@ -59,6 +59,7 @@ The operating environment is not in a sandbox. Any actions you do will immediate
 
 The current date and time in ISO format is `${KIMI_NOW}`. This is only a reference for you when searching the web, or checking file modification time, etc. If you need the exact time, use Shell tool with proper command.
 
+
 ## Working Directory
 
 The current working directory is `${KIMI_WORK_DIR}`. This should be considered as the project root if you are instructed to perform tasks on the project. Every file system operation will be relative to the working directory if you do not explicitly specify the absolute path. Tools may require absolute paths for some parameters, IF SO, YOU MUST use absolute paths for these parameters.
@@ -73,6 +74,7 @@ Use this as your basic understanding of the project structure.
 
 # Project Information
 
+## AGENT.md
 Markdown files named `AGENTS.md` usually contain the background, structure, coding styles, user preferences and other relevant information about the project. You should use this information to understand the project and the user's preferences. `AGENTS.md` files may exist at different locations in the project, but typically there is one in the project root.
 
 > Why `AGENTS.md`?

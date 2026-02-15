@@ -23,6 +23,7 @@
 | 🎤 **语音消息** | 支持飞书语音消息，使用智谱 ASR 自动识别为文字，随时随地语音操控 |
 | 💬 **富媒体交互** | 支持图片、文件收发；移动端直接操控 PC，双向实时通信 |
 | 🤖 **设备操控** | 支持控制 PC 浏览器（Chrome）和 Android 手机，通过自然语言指令操作 |
+| 🎨 **文生图** | 通过自然语言描述生成图片，支持火山引擎 Ark 等图像生成服务 |
 | 🔧 **MCP 工具隔离** | 多 MCP 服务器场景下自动添加 `{server}__` 前缀，彻底解决工具重名冲突问题 |
 
 > 🌟 **Forked from**: [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli)
@@ -283,8 +284,17 @@ OKbot 基于 Kimi Code CLI，**强烈推荐使用 Kimi Code Plan**，因为内�
 
 - **`SearchWeb`**（网页搜索）：需要配置搜索服务，**Kimi Code 平台自动配置**
 - **`FetchURL`**（网页抓取）：如果配置了抓取服务会优先使用，否则使用本地 HTTP 请求
+- **`GenerateImage`**（文生图）：需要配置图像生成服务（如火山引擎 Ark），**可选功能**
 
 这意味着即使配置了其他模型（如 GLM）作为对话模型，**SearchWeb 工具仍然依赖 Kimi Code 平台的搜索服务**。如需使用完整的联网搜索能力，建议开通 Kimi Code Plan。
+
+**各工具依赖总结**：
+
+| 工具 | 依赖服务 | 是否必需 |
+|------|---------|---------|
+| `SearchWeb` | Kimi Code 搜索服务 | 推荐（影响联网搜索能力） |
+| `FetchURL` | 抓取服务 / 本地 HTTP | 可选（本地 HTTP 为 fallback） |
+| `GenerateImage` | 火山引擎 Ark / 其他图像生成服务 | 可选（不配置则不加载） |
 
 #### 2.2 智谱 AI API Key（可选，用于语音和图像理解）
 
@@ -351,7 +361,37 @@ api_key = "your-minimax-api-key"  # 替换为你的 MiniMax API Key
 # default_model = "minimax-m2-5"
 ```
 
-#### 2.4 飞书应用凭证（必需）
+#### 2.4 火山引擎 Ark API Key（可选，用于文生图）
+
+用于**文生图**功能，通过自然语言描述生成图片。
+
+- **申请地址**：https://console.volcengine.com/ark/
+- **操作步骤**：
+  1. 注册/登录火山引擎控制台
+  2. 进入「方舟」→「模型广场」
+  3. 开通图像生成模型（如 doubao-seedream-4-5-251128）
+  4. 创建 API Key
+- **模型支持**：doubao-seedream-4-5-251128 等图像生成模型
+
+**配置文生图功能**（在 `~/.kimi/config.toml` 中）：
+
+```toml
+[services.image_generation]
+enabled = true                          # 是否启用文生图工具
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"            # 替换为你的 Ark API Key
+model = "doubao-seedream-4-5-251128"    # 默认使用的模型
+```
+
+**禁用文生图**：
+如果不想使用文生图功能，可以将 `enabled` 设为 `false`（即使配置了 API Key 也不会加载该工具）：
+
+```toml
+[services.image_generation]
+enabled = false
+```
+
+#### 2.5 飞书应用凭证（必需）
 
 后面步骤会详细说明如何创建飞书应用并获取 App ID 和 App Secret。
 

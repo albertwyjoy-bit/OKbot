@@ -30,7 +30,7 @@ kimi --config '{"default_model": "kimi-for-coding", "providers": {...}, "models"
 | `providers` | `table` | API 供应商配置 |
 | `models` | `table` | 模型配置 |
 | `loop_control` | `table` | Agent 循环控制参数 |
-| `services` | `table` | 外部服务配置（搜索、抓取） |
+| `services` | `table` | 外部服务配置（搜索、抓取、图像生成） |
 | `mcp` | `table` | MCP 客户端配置 |
 
 ### 完整配置示例
@@ -63,6 +63,11 @@ api_key = "sk-xxx"
 [services.moonshot_fetch]
 base_url = "https://api.kimi.com/coding/v1/fetch"
 api_key = "sk-xxx"
+
+[services.image_generation]
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"
+model = "doubao-seedream-4-5-251128"
 
 [mcp.client]
 tool_call_timeout_ms = 60000
@@ -145,6 +150,35 @@ capabilities = ["thinking", "image_in"]
 | `base_url` | `string` | 是 | 抓取服务 API URL |
 | `api_key` | `string` | 是 | API 密钥 |
 | `custom_headers` | `table` | 否 | 请求时附加的自定义 HTTP 头 |
+
+#### `image_generation`
+
+配置图像生成服务，启用后 `GenerateImage` 工具可用。支持火山引擎 Ark 等兼容 OpenAI Images API 的服务。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | 否 | 是否启用文生图工具，默认为 `true`；设为 `false` 可禁用该工具（即使配置了 API Key） |
+| `base_url` | `string` | 否 | 图像生成服务 API URL，默认为 `"https://ark.cn-beijing.volces.com/api/v3"` |
+| `api_key` | `string` | 是 | API 密钥 |
+| `model` | `string` | 否 | 默认使用的模型名称，默认为 `"doubao-seedream-4-5-251128"` |
+| `custom_headers` | `table` | 否 | 请求时附加的自定义 HTTP 头 |
+
+示例：
+
+```toml
+[services.image_generation]
+enabled = true
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+api_key = "your-ark-api-key"
+model = "doubao-seedream-4-5-251128"
+```
+
+禁用文生图功能：
+
+```toml
+[services.image_generation]
+enabled = false
+```
 
 ::: tip 提示
 使用 `/login` 命令配置 Kimi Code 平台时，搜索和抓取服务会自动配置。

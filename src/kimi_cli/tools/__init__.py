@@ -79,6 +79,10 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("url"):
                 return None
             key_argument = str(curr_args["url"])
+        case "GenerateImage":
+            if not isinstance(curr_args, dict) or not curr_args.get("prompt"):
+                return None
+            key_argument = str(curr_args["prompt"])
         case _:
             if isinstance(json_content, streamingjson.Lexer):
                 # lexer.json_content is list[str] based on streamingjson source code

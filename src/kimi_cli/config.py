@@ -117,6 +117,25 @@ class MoonshotFetchConfig(BaseModel):
         return v.get_secret_value()
 
 
+class ImageGenerationConfig(BaseModel):
+    """Image generation service configuration (e.g., Volcengine Ark)."""
+
+    enabled: bool = True
+    """Whether to enable the image generation tool. Set to false to disable even when configured."""
+    base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    """Base URL for image generation API."""
+    api_key: SecretStr = SecretStr("")
+    """API key for image generation service."""
+    model: str = "doubao-seedream-4-5-251128"
+    """Default model to use for image generation."""
+    custom_headers: dict[str, str] | None = None
+    """Custom headers to include in API requests."""
+
+    @field_serializer("api_key", when_used="json")
+    def dump_secret(self, v: SecretStr):
+        return v.get_secret_value()
+
+
 class Services(BaseModel):
     """Services configuration."""
 
@@ -124,6 +143,8 @@ class Services(BaseModel):
     """Moonshot Search configuration."""
     moonshot_fetch: MoonshotFetchConfig | None = None
     """Moonshot Fetch configuration."""
+    image_generation: ImageGenerationConfig | None = None
+    """Image generation service configuration."""
 
 
 class MCPClientConfig(BaseModel):
