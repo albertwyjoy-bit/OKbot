@@ -16,6 +16,7 @@
 | 特性 | 说明 |
 |------|------|
 | 🕐 **定时任务** | **重磅新功能！** 自然语言创建定时任务，Agent 智能执行或定时提醒，支持文件自动生成与引用 |
+| 🧠 **Memory 系统** | 长期记忆支持，基于 claude-mem 架构，跨会话上下文检索与自动注入 |
 | 🔄 **跨端接续** | 100% 复用 Kimi CLI 机制，CLI 上开发到一半随时切飞书继续，任务随时带走 |
 | 🛠️ **动态 Skills** | 飞书中随时让 AI 帮你写 Skills，热更新立即生效，边用边迭代 |
 | 🔄 **MCP 热更新** | 运行时动态添加/删除/修改 MCP 服务器配置，无需重启立即生效 |
@@ -183,6 +184,45 @@ Plan Mode 是一种**系统性权限管理机制**，用于规范 AI 在规划�
 - 复杂任务开始前，先进行全面的代码分析和方案设计
 - 需要多方确认的执行计划，避免误操作
 - 学习/审计场景，只想查看系统状态而不修改
+
+### 🧠 Memory 系统（长期记忆）
+
+OKbot 内置强大的长期记忆系统，基于 claude-mem 架构设计，支持跨会话记忆检索和上下文注入。
+
+**核心特性**：
+- **三重存储架构**：
+  - **Observations**：工具级别的原子记忆，每次工具调用自动生成
+  - **Session Summaries**：会话级别的摘要，记录请求/完成/学习/下一步
+  - **User Prompts**：用户输入的原始请求记录
+- **混合检索**：Filter → Rank → Intersect 模式，支持元数据过滤 + 语义搜索
+- **四级 Memory Tools**：
+  - `SearchMemory` - 全文语义搜索记忆
+  - `TimelineMemory` - 获取时间线上下文
+  - `GetObservations` - 批量获取详情
+  - `SaveMemory` - 手动保存重要发现
+- **异步写入机制**：
+  - Observation/Prompt：异步保存，不阻塞主流程
+  - Summary：同步等待（30s 超时），确保数据完整性
+- **智能分类**：基于 LLM 自动分类工具调用类型（bugfix/feature/refactor/change/discovery/decision）
+- **Project 隔离**：基于工作目录的项目级记忆隔离
+
+**典型使用场景**：
+- **跨会话恢复**：CLI ↔ 飞书切换时自动加载历史上下文，任务随时带走
+- **智能提醒**：自动检索相关历史记忆辅助当前任务
+- **手动保存**：使用 `SaveMemory` 主动记录重要发现或决策
+- **三层检索**：Search → Timeline → Get 高效获取记忆详情，节省约 10x tokens
+
+**配置示例**：
+```toml
+[memory]
+enabled = true                    # 启用记忆系统
+provider = "glm"                  # 嵌入模型: kimi, glm, qwen, openai
+model = "embedding-3"             # 具体模型名
+max_observations_in_context = 5   # 上下文中最多包含的 observations
+max_summaries_in_context = 3      # 上下文中最多包含的 summaries
+```
+
+> 📖 详细文档：[docs/memory.md](./memory.md)
 
 ### 🛠️ MCP 工具生态
 - **多 MCP 服务器支持**：可同时连接多个 MCP 服务器，工具名自动添加 `{server}__` 前缀彻底解决重名冲突
@@ -866,38 +906,78 @@ OKbot 在原始 [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli) 基础�
 OKbot/                              # Forked from kimi-cli
 ├── src/kimi_cli/
 │   ├── feishu/                     # ⭐ 新增：飞书集成核心模块
-│   │   ├── sdk_client.py           # 飞书 SDK 客户端（消息收发）
+│   │   ├── sdk_client.py           # 飞书 SDK 客户端（消息收发、文件处理）
 │   │   ├── sdk_server.py           # WebSocket 长连接服务器
 │   │   ├── config.py               # 飞书配置管理（多账号支持）
+│   │   ├── message_renderer.py     # 消息渲染处理
+│   │   ├── card_builder.py         # 交互式卡片构建
+│   │   ├── post_message.py         # 消息发送辅助
 │   │   └── __main__.py             # 飞书模式入口
 │   │
-│   ├── cli/feishu.py               # ⭐ 新增：飞书相关 CLI 命令
+│   ├── cli/                        # CLI 命令模块
+│   │   ├── feishu.py               # ⭐ 新增：飞书相关 CLI 命令
+│   │   ├── mcp.py                  # MCP 服务器管理命令
+│   │   └── ...                     # 其他 CLI 命令
+│   │
+│   ├── memory/                     # ⭐ 新增：长期记忆系统模块
+│   │   ├── agent.py                # MemoryAgent 主控（异步队列）
+│   │   ├── search.py               # 混合检索（Filter→Rank→Intersect）
+│   │   ├── schema.py               # SQLite + FTS5 数据库 Schema
+│   │   ├── types.py                # 数据模型（Observation/Summary/Prompt）
+│   │   ├── embedding_providers.py  # 多提供商嵌入模型（Kimi/GLM/Qwen/OpenAI）
+│   │   └── __init__.py             # 模块导出
 │   │
 │   ├── scheduler/                  # ⭐ 新增：定时任务模块
 │   │   ├── scheduler.py            # 主调度器
 │   │   ├── cron_engine.py          # Cron 引擎（支持秒级/分钟级）
-│   │   ├── session.py              # 定时任务执行会话
+│   │   ├── session.py              # 定时任务执行会话管理
+│   │   ├── dispatcher.py           # 任务分发器
 │   │   ├── models.py               # 数据模型
 │   │   ├── commands.py             # /cron 命令处理
+│   │   ├── store.py                # 任务存储
+│   │   ├── history.py              # 执行历史记录
+│   │   ├── integration.py          # 系统集成
+│   │   └── mcp_resource_lock.py    # MCP 资源锁管理
+│   │
+│   ├── soul/                       # 核心 Agent 运行时
+│   │   ├── agent.py                # Runtime 和 Agent 管理
+│   │   ├── kimisoul.py             # 主 Agent 循环（含 Memory 事件提取）
+│   │   ├── toolset.py              # 工具集管理（含 MCP 前缀隔离）
+│   │   ├── slash.py                # Slash 命令处理（含 /update-skill）
+│   │   ├── approval.py             # 工具授权管理
+│   │   ├── context.py              # 对话上下文管理
+│   │   ├── compaction.py           # 上下文压缩
 │   │   └── ...
 │   │
-│   ├── tools/feishu/               # ⭐ 新增：Feishu 工具集
-│   │   ├── send_message.py         # 发送消息到飞书
-│   │   ├── send_file.py            # 发送文件/图片
+│   ├── tools/                      # 工具模块
+│   │   ├── feishu/                 # ⭐ 新增：Feishu 工具集
+│   │   │   └── __init__.py         # 发送消息/文件等工具
+│   │   ├── memory_tools.py         # ⭐ 新增：Memory 系统 MCP 风格工具
+│   │   │                           # SearchMemory / TimelineMemory / 
+│   │   │                           # GetObservations / SaveMemory
+│   │   ├── scheduler_tool.py       # ⭐ 新增：定时任务智能工具
+│   │   ├── file/                   # 文件操作工具
+│   │   ├── shell/                  # Shell 命令工具
+│   │   ├── web/                    # 网页搜索/抓取工具
+│   │   ├── multiagent/             # 多 Agent 任务工具
 │   │   └── ...
 │   │
-│   ├── tools/scheduler_tool.py     # ⭐ 新增：定时任务智能工具
+│   ├── skill/                      # Skills 管理模块
+│   │   └── flow/                   # Flow Skills 支持
 │   │
-│   ├── auth/oauth.py               # 修改：增加 Kimi OAuth 自动刷新
+│   ├── auth/                       # 认证模块
+│   │   ├── oauth.py                # Kimi OAuth 管理（含自动刷新）
+│   │   └── platforms.py            # 多平台认证支持
 │   │
-│   └── soul/                       # 修改：支持动态 Skills 热更新
-│       ├── agent.py                # 修改：Runtime 添加 reload_skills()
-│       ├── kimisoul.py             # 修改：KimiSoul 添加 reload_skills()
-│       ├── slash.py                # 修改：添加 /update-skill 命令
-│       └── toolset.py              # 修改：MCP 工具名自动添加前缀
-│                                     例如：midscene-web__Tap
+│   ├── ui/                         # 用户界面模块
+│   │   ├── shell/                  # Shell 交互界面
+│   │   └── ...
+│   │
+│   └── wire/                       # 通信协议模块
+│       └── ...
 │
 ├── feishu.example.toml             # ⭐ 新增：飞书配置示例
+├── docs/memory.md                  # ⭐ 新增：Memory 系统文档
 ├── docs/voice-messages.md          # ⭐ 新增：语音功能文档
 └── docs/scheduler_file_handling.md # ⭐ 新增：定时任务文档
 ```
@@ -906,10 +986,15 @@ OKbot/                              # Forked from kimi-cli
 
 | 模块 | 改动类型 | 说明 |
 |------|----------|------|
-| `feishu/` | 新增 | 飞书 SDK 集成，支持消息收发、文件传输、语音识别 |
+| `feishu/` | 新增 | 飞书 SDK 集成，支持消息收发、文件传输、语音识别、交互式卡片 |
+| `memory/` | 新增 | 长期记忆系统，基于 claude-mem 架构，支持跨会话上下文检索 |
 | `scheduler/` | 新增 | 定时任务模块，支持 Cron 表达式、Agent 执行、文件生成与引用 |
 | `tools/feishu/` | 新增 | Feishu 专用工具，供 AI 调用发送消息/文件 |
+| `tools/memory_tools.py` | 新增 | Memory 系统 MCP 风格工具（Search/Timeline/Get/Save） |
+| `tools/scheduler_tool.py` | 新增 | 定时任务智能工具，自然语言创建定时任务 |
+| `skill/` | 扩展 | Flow Skills 支持，新增流程图生成能力 |
 | 动态 Skills | 新增 | 运行时热更新 Skills（`/update-skill`），无需重启服务 |
+| Memory 集成 | 修改 | KimiSoul 添加 Memory 事件提取，Runtime 添加 MemoryAgent |
 | OAuth 刷新 | 修改 | 每 60 秒自动检查刷新，支持长对话场景 |
 | MCP 前缀 | 修改 | 自动添加 `{server}__` 前缀，避免多服务器工具名冲突 |
 | Session 共享 | 复用 | 完全复用 Kimi CLI 的 Session 机制，支持跨端接续 |

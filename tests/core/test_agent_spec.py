@@ -33,8 +33,7 @@ def test_load_default_agent_spec():
             "kimi_cli.tools.file:WriteFile",
             "kimi_cli.tools.file:StrReplaceFile",
             "kimi_cli.tools.web:SearchWeb",
-            "kimi_cli.tools.web:FetchURL",
-        ]
+            "kimi_cli.tools.web:FetchURL", "kimi_cli.tools.image_generation:GenerateImage", "kimi_cli.tools.plan:PlanExit"]
     )
     subagents = {
         name: (spec.path.relative_to(DEFAULT_AGENT_FILE.parent).as_posix(), spec.description)
@@ -72,8 +71,7 @@ def test_load_default_agent_spec():
             "kimi_cli.tools.file:WriteFile",
             "kimi_cli.tools.file:StrReplaceFile",
             "kimi_cli.tools.web:SearchWeb",
-            "kimi_cli.tools.web:FetchURL",
-        ]
+            "kimi_cli.tools.web:FetchURL", "kimi_cli.tools.image_generation:GenerateImage", "kimi_cli.tools.plan:PlanExit"]
     )
     sub_subagents = {
         name: (spec.path.relative_to(DEFAULT_AGENT_FILE.parent).as_posix(), spec.description)
@@ -162,8 +160,7 @@ agent:
                 "kimi_cli.tools.file:WriteFile",
                 "kimi_cli.tools.file:StrReplaceFile",
                 "kimi_cli.tools.web:SearchWeb",
-                "kimi_cli.tools.web:FetchURL",
-            ]
+                "kimi_cli.tools.web:FetchURL", "kimi_cli.tools.image_generation:GenerateImage", "kimi_cli.tools.plan:PlanExit"]
         )
         assert spec.exclude_tools == snapshot(
             ["kimi_cli.tools.web:SearchWeb", "kimi_cli.tools.web:FetchURL"]

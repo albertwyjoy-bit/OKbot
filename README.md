@@ -28,6 +28,7 @@ OKbot 是 [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli) 的飞书扩�
 | 🎤 **语音消息** | 支持飞书语音，使用智谱 ASR 自动识别 |
 | 💬 **富媒体** | 支持图片、文件收发；移动端直接操控 PC |
 | 🤖 **设备操控** | 支持控制 PC 浏览器（Chrome）和 Android 手机 |
+| 🧠 **Memory 系统** | 长期记忆支持，跨会话上下文检索，基于 GLM/Kimi 嵌入模型 |
 | 🎨 **文生图** | 自然语言生成图片，支持火山引擎 Ark 等图像生成服务 |
 
 ---
@@ -217,6 +218,7 @@ auto_approve = true
 |------|------|
 | [📖 完整 README](./docs/detailed-readme.md) | 详细安装步骤、配置说明、使用指南 |
 | [🧠 Plan Mode](./docs/detailed-readme.md#-plan-mode规划模式) | 规划模式使用说明和权限管理 |
+| [🧠 Memory 系统](./docs/memory.md) | 长期记忆系统配置和使用指南 |
 | [🕐 定时任务](./docs/scheduler_file_handling.md) | 定时任务功能详细说明 |
 | [🎤 语音消息](./docs/voice-messages.md) | 语音功能配置和使用 |
 | [🎨 文生图配置](./docs/detailed-readme.md#24-%E7%81%AB%E5%B1%B1%E5%BC%95%E6%93%8E-ark-api-key%E5%8F%AF%E9%80%89%E7%94%A8%E4%BA%8E%E6%96%87%E7%94%9F%E5%9B%BE) | 文生图功能配置说明 |

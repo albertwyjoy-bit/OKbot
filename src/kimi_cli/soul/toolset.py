@@ -254,9 +254,14 @@ class KimiToolset:
                     # once we encounter a keyword-only parameter, we stop injecting dependencies
                     break
                 # all positional parameters should be dependencies to be injected
-                if param.annotation not in dependencies:
-                    raise ValueError(f"Tool dependency not found: {param.annotation}")
-                args.append(dependencies[param.annotation])
+                # Handle string annotations (from __future__ import annotations)
+                annotation = param.annotation
+                if isinstance(annotation, str):
+                    # Try to find the actual type from module globals
+                    annotation = getattr(module, annotation, annotation)
+                if annotation not in dependencies:
+                    raise ValueError(f"Tool dependency not found: {annotation}")
+                args.append(dependencies[annotation])
         return tool_cls(*args)
 
     # TODO(rc): remove `in_background` parameter and always load in background

@@ -80,6 +80,7 @@ The operating environment is not in a sandbox. Any actions you do will immediate
 
 The current date and time in ISO format is `1970-01-01T00:00:00+00:00`. This is only a reference for you when searching the web, or checking file modification time, etc. If you need the exact time, use Shell tool with proper command.
 
+
 ## Working Directory
 
 The current working directory is `/path/to/work/dir`. This should be considered as the project root if you are instructed to perform tasks on the project. Every file system operation will be relative to the working directory if you do not explicitly specify the absolute path. Tools may require absolute paths for some parameters, IF SO, YOU MUST use absolute paths for these parameters.
@@ -94,6 +95,7 @@ Use this as your basic understanding of the project structure.
 
 # Project Information
 
+## AGENT.md
 Markdown files named `AGENTS.md` usually contain the background, structure, coding styles, user preferences and other relevant information about the project. You should use this information to understand the project and the user's preferences. `AGENTS.md` files may exist at different locations in the project, but typically there is one in the project root.
 
 > Why `AGENTS.md`?
@@ -626,6 +628,33 @@ Replace specific strings within a specified file.
                     "type": "object",
                 },
             ),
+            Tool(
+                name="PlanExit",
+                description="""\
+Exit plan mode and return to normal execution mode.
+    \n\
+Call this tool ONLY after:
+1. You have completed a comprehensive plan in `~/.kimi/plans/{session_id}.md`
+2. The user has reviewed and explicitly approved the plan
+3. The user has indicated they are ready to proceed with execution
+
+This will disable plan mode restrictions and allow all tools to be used normally.
+The plan file will be preserved for reference during execution.
+
+DO NOT call this tool until the user explicitly confirms they want to proceed.\
+""",
+                parameters={
+                    "description": "Parameters for PlanExit tool.",
+                    "properties": {
+                        "message": {
+                            "default": "",
+                            "description": "Optional message to include when exiting plan mode",
+                            "type": "string",
+                        }
+                    },
+                    "type": "object",
+                },
+            ),
         ]
     )
 
@@ -714,6 +743,7 @@ The operating environment is not in a sandbox. Any actions you do will immediate
 
 The current date and time in ISO format is `1970-01-01T00:00:00+00:00`. This is only a reference for you when searching the web, or checking file modification time, etc. If you need the exact time, use Shell tool with proper command.
 
+
 ## Working Directory
 
 The current working directory is `/path/to/work/dir`. This should be considered as the project root if you are instructed to perform tasks on the project. Every file system operation will be relative to the working directory if you do not explicitly specify the absolute path. Tools may require absolute paths for some parameters, IF SO, YOU MUST use absolute paths for these parameters.
@@ -728,6 +758,7 @@ Use this as your basic understanding of the project structure.
 
 # Project Information
 
+## AGENT.md
 Markdown files named `AGENTS.md` usually contain the background, structure, coding styles, user preferences and other relevant information about the project. You should use this information to understand the project and the user's preferences. `AGENTS.md` files may exist at different locations in the project, but typically there is one in the project root.
 
 > Why `AGENTS.md`?
@@ -794,6 +825,7 @@ At any time, you should be HELPFUL and POLITE, CONCISE and ACCURATE, PATIENT and
                     "StrReplaceFile",
                     "SearchWeb",
                     "FetchURL",
+                    "PlanExit",
                 ],
             ),
         ]

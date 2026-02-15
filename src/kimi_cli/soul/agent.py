@@ -18,6 +18,7 @@ from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.config import Config
 from kimi_cli.exception import MCPConfigError, SystemPromptTemplateError
 from kimi_cli.llm import LLM
+from kimi_cli.memory import MemoryAgent, ObservationInput, ObservationType, SummaryInput
 from kimi_cli.session import Session
 from kimi_cli.skill import Skill, discover_skills_from_roots, index_skills, resolve_skills_roots
 from kimi_cli.soul.approval import Approval
@@ -45,6 +46,8 @@ class BuiltinSystemPromptArgs:
     """The content of AGENTS.md."""
     KIMI_SKILLS: str
     """Formatted information about available skills."""
+    KIMI_MEMORY_CONTEXT: str
+    """Context from memory system (relevant past observations and summaries)."""
 
 
 async def load_agents_md(work_dir: KaosPath) -> str | None:
@@ -75,6 +78,7 @@ class Runtime:
     environment: Environment
     skills: dict[str, Skill]
     _skills_dir_override: KaosPath | None = None  # Store for reload
+    memory_agent: MemoryAgent | None = None  # Memory system agent
 
     async def reload_skills(self) -> tuple[int, str]:
         """Reload skills from disk and update builtin_args.
@@ -151,6 +155,30 @@ class Runtime:
             for skill in skills
         )
 
+        # Initialize memory agent if enabled
+        memory_agent = None
+        memory_context = ""
+        if config.memory.enabled:
+            try:
+                db_path = config.memory.db_path
+                memory_agent = MemoryAgent.create(
+                    db_path=db_path,
+                    embedding_provider=config.memory.provider,
+                    llm_client=llm.chat_provider if llm else None,
+                    project=str(session.work_dir),  # 🔴 传递 project（参考 claude-mem）
+                )
+                # Start memory agent and load context for continuing sessions
+                await memory_agent.start()
+                memory_context = await memory_agent.on_session_start(session.id)
+                if memory_context:
+                    logger.debug("Loaded memory context for session: {session_id}", 
+                               session_id=session.id)
+                logger.info("Memory system initialized with provider: {provider}", 
+                           provider=config.memory.provider)
+            except Exception as e:
+                logger.warning("Failed to initialize memory system: {e}", e=e)
+                memory_agent = None
+
         return Runtime(
             config=config,
             oauth=oauth,
@@ -162,6 +190,7 @@ class Runtime:
                 KIMI_WORK_DIR_LS=ls_output,
                 KIMI_AGENTS_MD=agents_md or "",
                 KIMI_SKILLS=skills_formatted or "No skills found.",
+                KIMI_MEMORY_CONTEXT=memory_context or "",
             ),
             denwa_renji=DenwaRenji(),
             approval=Approval(yolo=yolo),
@@ -169,6 +198,7 @@ class Runtime:
             environment=environment,
             skills=skills_by_name,
             _skills_dir_override=skills_dir,
+            memory_agent=memory_agent,
         )
 
     def copy_for_fixed_subagent(self) -> Runtime:
@@ -185,6 +215,7 @@ class Runtime:
             environment=self.environment,
             skills=self.skills,
             _skills_dir_override=self._skills_dir_override,
+            memory_agent=None,  # subagent does not have memory
         )
 
     def copy_for_dynamic_subagent(self) -> Runtime:
@@ -201,6 +232,7 @@ class Runtime:
             environment=self.environment,
             skills=self.skills,
             _skills_dir_override=self._skills_dir_override,
+            memory_agent=None,  # subagent does not have memory
         )
 
 
@@ -312,6 +344,23 @@ async def load_agent(
         logger.debug("Excluding tools: {tools}", tools=agent_spec.exclude_tools)
         tools = [tool for tool in tools if tool not in agent_spec.exclude_tools]
     toolset.load_tools(tools, tool_deps)
+
+    # Auto-register memory tools if memory is enabled
+    if runtime.memory_agent:
+        try:
+            from kimi_cli.tools.memory_tools import (
+                SearchMemory,
+                TimelineMemory,
+                GetObservations,
+                SaveMemory,
+            )
+            toolset.add(SearchMemory(runtime))
+            toolset.add(TimelineMemory(runtime))
+            toolset.add(GetObservations(runtime))
+            toolset.add(SaveMemory(runtime))
+            logger.debug("Memory tools auto-registered (memory enabled)")
+        except Exception as e:
+            logger.warning("Failed to auto-register memory tools: {e}", e=e)
 
     if mcp_configs:
         validated_mcp_configs: list[MCPConfig] = []

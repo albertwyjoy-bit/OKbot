@@ -31,9 +31,15 @@ def test_default_config_dump():
                 "max_ralph_iterations": 0,
                 "reserved_context_size": 50000,
             },
-            "services": {"moonshot_search": None, "moonshot_fetch": None},
-            "mcp": {"client": {"tool_call_timeout_ms": 60000}},
-        }
+            "services": {"moonshot_search": None, "moonshot_fetch": None, "image_generation": None},
+            "mcp": {"client": {"tool_call_timeout_ms": 60000}}, "memory": {
+    "enabled": True,
+    "provider": "kimi",
+    "model": None,
+    "db_path": None,
+    "max_observations_in_context": 5,
+    "max_summaries_in_context": 3,
+}}
     )
 
 

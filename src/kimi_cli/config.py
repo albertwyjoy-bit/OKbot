@@ -162,6 +162,17 @@ class MCPConfig(BaseModel):
     )
 
 
+class MemoryConfig(BaseModel):
+    """Memory system configuration."""
+
+    enabled: bool = Field(default=True, description="Enable memory system")
+    provider: str = Field(default="kimi", description="Embedding provider (kimi, glm, qwen, openai)")
+    model: str | None = Field(default=None, description="Embedding model name, None for provider default")
+    db_path: str | None = Field(default=None, description="Custom database path, None for default (~/.kimi/memory.db)")
+    max_observations_in_context: int = Field(default=5, ge=0, description="Max observations to include in context")
+    max_summaries_in_context: int = Field(default=3, ge=0, description="Max summaries to include in context")
+
+
 class Config(BaseModel):
     """Main configuration structure."""
 
@@ -180,6 +191,7 @@ class Config(BaseModel):
     loop_control: LoopControl = Field(default_factory=LoopControl, description="Agent loop control")
     services: Services = Field(default_factory=Services, description="Services configuration")
     mcp: MCPConfig = Field(default_factory=MCPConfig, description="MCP configuration")
+    memory: MemoryConfig = Field(default_factory=MemoryConfig, description="Memory system configuration")
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
