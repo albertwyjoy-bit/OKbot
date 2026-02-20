@@ -67,10 +67,11 @@ class SearchMemory(CallableTool2[SearchMemoryParams]):
             description="""Search memory for relevant past observations.
 
 Use this as Step 1 of the 3-layer memory retrieval workflow:
-1. SearchMemory(query) → Get index with IDs
+1. SearchMemory(query) → Get results with 'id' field (e.g., {"id": 27, ...})
 2. TimelineMemory(anchor=id) → Get context around interesting results  
-3. GetObservations(ids=[...]) → Fetch full details only for relevant items
+3. GetObservations(ids=[27, 28, ...]) → Use the EXACT 'id' values from step 1
 
+IMPORTANT: The 'id' values are specific integers (e.g., 27, 28, 31), NOT [1, 2, 3].
 This approach saves ~10x tokens by filtering before fetching full details."""
         )
         self._runtime = runtime
@@ -521,7 +522,7 @@ Timeline item types: 'observation' | 'summary' | 'prompt'"""
 # ============== Tool 3: GetObservations ==============
 
 class GetObservationsParams(BaseModel):
-    ids: list[int] = Field(description="Array of observation IDs to fetch full details for")
+    ids: list[int] = Field(description="Array of observation IDs to fetch full details for. MUST use the exact 'id' values returned by SearchMemory (e.g., [27, 28, 31]), NOT sequential numbers like [1, 2, 3].")
     orderBy: str = Field(
         default="date_desc",
         description="Sort order: date_desc, date_asc"
@@ -550,10 +551,15 @@ class GetObservations(CallableTool2[GetObservationsParams]):
         super().__init__(
             description="""Fetch full details for specific observation IDs.
 
+CRITICAL: The 'ids' parameter MUST be the exact integer IDs returned from SearchMemory results 
+(look for the 'id' field in each result, e.g., {"id": 27, "title": "..."}).
+
+DO NOT use sequential numbers like [1, 2, 3] - these are NOT valid observation IDs.
+
 Use this as Step 3 to get complete information:
-1. SearchMemory(query) → Get observation IDs
+1. SearchMemory(query) → Returns results with 'id' fields (e.g., 27, 28, 31)
 2. TimelineMemory(anchor=id) → Find relevant context
-3. GetObservations(ids=[123, 456]) → Fetch full details
+3. GetObservations(ids=[27, 28, 31]) → Use EXACT IDs from step 1
 
 ALWAYS batch IDs for 2+ items to minimize tool calls.
 Full details include: narrative, facts, concepts, files, etc."""

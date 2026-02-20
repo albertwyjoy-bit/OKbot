@@ -120,6 +120,7 @@ class Runtime:
                 KIMI_WORK_DIR_LS=self.builtin_args.KIMI_WORK_DIR_LS,
                 KIMI_AGENTS_MD=self.builtin_args.KIMI_AGENTS_MD,
                 KIMI_SKILLS=skills_formatted,
+                KIMI_MEMORY_CONTEXT=self.builtin_args.KIMI_MEMORY_CONTEXT,
             )
         )
         

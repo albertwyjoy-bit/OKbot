@@ -1,3 +1,4 @@
+import base64
 from pathlib import Path
 from typing import override
 
@@ -32,6 +33,36 @@ class Params(BaseModel):
         description="Whether to add watermark to the generated image. Defaults to True.",
         default=True,
     )
+    image: str | list[str] | None = Field(
+        description=(
+            "Reference image(s) for image-to-image generation. Supported by doubao-seedream-4.5/4.0 models.\n"
+            "- Single image: provide a file path or URL\n"
+            "- Multiple images: provide a list of file paths or URLs (2-14 images for seedream-4.5/4.0)\n"
+            "- Local files will be automatically converted to base64\n"
+            "- URLs must be accessible\n"
+            "Supported formats: jpeg, png, webp, bmp, tiff, gif"
+        ),
+        default=None,
+    )
+    sequential_image_generation: str = Field(
+        description=(
+            "Control sequential/group image generation (doubao-seedream-4.5/4.0 only).\n"
+            "- 'disabled' (default): Generate a single image\n"
+            "- 'auto': Automatically generate a sequence of related images (group)\n"
+            "When enabled with reference images, generates a group of images based on the input."
+        ),
+        default="disabled",
+    )
+    max_images: int = Field(
+        description=(
+            "Maximum number of images to generate in a group (doubao-seedream-4.5/4.0 only).\n"
+            "Only effective when sequential_image_generation is 'auto'.\n"
+            "Range: 1-15. Note: input reference images + generated images ≤ 15."
+        ),
+        default=4,
+        ge=1,
+        le=15,
+    )
 
 
 class ImageGenerationData(BaseModel):
@@ -46,6 +77,54 @@ class ImageGenerationResult(BaseModel):
 
     data: list[ImageGenerationData]
     """List of generated image data."""
+
+
+def _image_to_base64(image_path: str) -> str:
+    """Convert a local image file to base64 data URL."""
+    path = Path(image_path).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Image file not found: {image_path}")
+    
+    # Determine MIME type from extension
+    suffix = path.suffix.lower()
+    mime_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+        ".tiff": "image/tiff",
+        ".gif": "image/gif",
+    }
+    mime_type = mime_types.get(suffix, "image/jpeg")
+    
+    with open(path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+    
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def _process_image_input(image_input: str | list[str] | None) -> list[str] | str | None:
+    """Process image input - convert local paths to base64, keep URLs as-is."""
+    if image_input is None:
+        return None
+    
+    if isinstance(image_input, str):
+        # Single image - check if it's a URL or local path
+        if image_input.startswith(("http://", "https://", "data:image/")):
+            return image_input
+        else:
+            # Local file path
+            return _image_to_base64(image_input)
+    else:
+        # List of images
+        processed = []
+        for img in image_input:
+            if img.startswith(("http://", "https://", "data:image/")):
+                processed.append(img)
+            else:
+                processed.append(_image_to_base64(img))
+        return processed
 
 
 class GenerateImage(CallableTool2[Params]):
@@ -77,26 +156,62 @@ class GenerateImage(CallableTool2[Params]):
                 brief="Image generation not configured",
             )
 
+        # Process reference images
+        processed_images = None
+        if params.image:
+            try:
+                processed_images = _process_image_input(params.image)
+            except FileNotFoundError as e:
+                return builder.error(
+                    f"Reference image not found: {e}",
+                    brief="Reference image not found",
+                )
+            except Exception as e:
+                return builder.error(
+                    f"Failed to process reference image: {e}",
+                    brief="Failed to process reference image",
+                )
+
         headers = {
             "Authorization": f"Bearer {api_key}",
         }
         if self._config.custom_headers:
             headers.update(self._config.custom_headers)
 
+        # Build request body
+        request_body: dict = {
+            "model": model,
+            "prompt": params.prompt,
+            "size": params.size,
+            "response_format": "url",
+        }
+
+        # Add extra_body parameters
+        extra_body: dict = {
+            "watermark": params.watermark,
+        }
+
+        # Add reference images if provided
+        if processed_images:
+            extra_body["image"] = processed_images
+
+        # Add sequential image generation options for supported models
+        if model in ("doubao-seedream-4.5-251128", "doubao-seedream-4.5", 
+                     "doubao-seedream-4.0", "doubao-seedream-4.0-250615"):
+            extra_body["sequential_image_generation"] = params.sequential_image_generation
+            if params.sequential_image_generation == "auto":
+                extra_body["sequential_image_generation_options"] = {
+                    "max_images": params.max_images
+                }
+
+        request_body["extra_body"] = extra_body
+
         async with (
             new_client_session() as session,
             session.post(
                 f"{base_url}/images/generations",
                 headers=headers,
-                json={
-                    "model": model,
-                    "prompt": params.prompt,
-                    "size": params.size,
-                    "response_format": "url",
-                    "extra_body": {
-                        "watermark": params.watermark,
-                    },
-                },
+                json=request_body,
             ) as response,
         ):
             if response.status != 200:
@@ -115,18 +230,31 @@ class GenerateImage(CallableTool2[Params]):
                     brief="Failed to parse response",
                 )
 
-        if not result.data or not result.data[0].url:
+        if not result.data:
             return builder.error(
-                "No image URL returned from the generation service.",
+                "No image data returned from the generation service.",
                 brief="No image generated",
             )
 
-        image_url = result.data[0].url
-        builder.write(f"Image generated successfully!\n\n")
-        builder.write(f"URL: {image_url}\n\n")
-        builder.write(f"Prompt: {params.prompt}\n")
+        # Build success message
+        if params.sequential_image_generation == "auto" and len(result.data) > 1:
+            builder.write(f"Generated {len(result.data)} images successfully!\n\n")
+        else:
+            builder.write(f"Image generated successfully!\n\n")
+
+        for i, img_data in enumerate(result.data):
+            if hasattr(img_data, 'url') and img_data.url:
+                if len(result.data) > 1:
+                    builder.write(f"[{i + 1}] URL: {img_data.url}\n")
+                else:
+                    builder.write(f"URL: {img_data.url}\n")
+
+        builder.write(f"\nPrompt: {params.prompt}\n")
         builder.write(f"Size: {params.size}\n")
         builder.write(f"Model: {model}\n")
+        if processed_images:
+            num_ref_images = len(processed_images) if isinstance(processed_images, list) else 1
+            builder.write(f"Reference images: {num_ref_images}\n")
 
         return builder.ok()
 
