@@ -166,7 +166,7 @@ class MemoryConfig(BaseModel):
     """Memory system configuration."""
 
     enabled: bool = Field(default=True, description="Enable memory system")
-    provider: str = Field(default="kimi", description="Embedding provider (kimi, glm, qwen, openai)")
+    provider: str = Field(default="glm", description="Embedding provider (kimi, glm, qwen, openai)")
     model: str | None = Field(default=None, description="Embedding model name, None for provider default")
     db_path: str | None = Field(default=None, description="Custom database path, None for default (~/.kimi/memory.db)")
     max_observations_in_context: int = Field(default=5, ge=0, description="Max observations to include in context")
