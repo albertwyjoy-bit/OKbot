@@ -36,5 +36,8 @@
     "@playwright/test": "^1.58.1",
     "esbuild": "0.14.54",
     "tsx": "^4.21.0"
+  },
+  "dependencies": {
+    "pptxgenjs": "^4.0.1"
   }
 }
