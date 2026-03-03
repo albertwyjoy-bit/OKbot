@@ -493,9 +493,21 @@ class KimiSoul:
         assert self._runtime.llm is not None
         chat_provider = self._runtime.llm.chat_provider
 
+        async def _before_sleep(retry_state: RetryCallState) -> None:
+            """Called before each retry. Refresh OAuth token on 401 errors."""
+            exception = retry_state.outcome.exception() if retry_state.outcome else None
+            if isinstance(exception, APIStatusError) and exception.status_code == 401:
+                logger.warning("401 error detected, refreshing OAuth token before retry")
+                try:
+                    await self._runtime.oauth.ensure_fresh(self._runtime)
+                except Exception as refresh_err:
+                    logger.warning(f"Failed to refresh token before retry: {refresh_err}")
+            # Call the original retry log
+            self._retry_log("step", retry_state)
+
         @tenacity.retry(
             retry=retry_if_exception(self._is_retryable_error),
-            before_sleep=partial(self._retry_log, "step"),
+            before_sleep=_before_sleep,
             wait=wait_exponential_jitter(initial=0.3, max=5, jitter=0.5),
             stop=stop_after_attempt(self._loop_control.max_retries_per_step),
             reraise=True,
@@ -650,9 +662,21 @@ class KimiSoul:
             ChatProviderError: When the chat provider returns an error.
         """
 
+        async def _compact_before_sleep(retry_state: RetryCallState) -> None:
+            """Called before each retry. Refresh OAuth token on 401 errors."""
+            exception = retry_state.outcome.exception() if retry_state.outcome else None
+            if isinstance(exception, APIStatusError) and exception.status_code == 401:
+                logger.warning("401 error during compaction, refreshing OAuth token before retry")
+                try:
+                    await self._runtime.oauth.ensure_fresh(self._runtime)
+                except Exception as refresh_err:
+                    logger.warning(f"Failed to refresh token before retry: {refresh_err}")
+            # Call the original retry log
+            self._retry_log("compaction", retry_state)
+
         @tenacity.retry(
             retry=retry_if_exception(self._is_retryable_error),
-            before_sleep=partial(self._retry_log, "compaction"),
+            before_sleep=_compact_before_sleep,
             wait=wait_exponential_jitter(initial=0.3, max=5, jitter=0.5),
             stop=stop_after_attempt(self._loop_control.max_retries_per_step),
             reraise=True,
@@ -669,11 +693,11 @@ class KimiSoul:
         await self._context.append_message(compacted_messages)
         wire_send(CompactionEnd())
 
-    @staticmethod
-    def _is_retryable_error(exception: BaseException) -> bool:
+    def _is_retryable_error(self, exception: BaseException) -> bool:
         if isinstance(exception, (APIConnectionError, APITimeoutError, APIEmptyResponseError)):
             return True
         return isinstance(exception, APIStatusError) and exception.status_code in (
+            401,  # Unauthorized - token may have expired, retry after refresh
             429,  # Too Many Requests
             500,  # Internal Server Error
             502,  # Bad Gateway

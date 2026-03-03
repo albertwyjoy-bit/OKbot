@@ -191,6 +191,25 @@ This approach saves ~10x tokens by filtering before fetching full details."""
                 "results": results,
                 "hint": "Use TimelineMemory(anchor=id) or GetObservations(ids=[...]) for full details"
             }
+            
+            # 格式化结果为可读文本，让模型能看到关键信息
+            output_lines = []
+            output_lines.append(f"Search Results for '{params.query}':")
+            output_lines.append(f"Found {len(results)} items (showing up to {params.limit})")
+            output_lines.append("")
+            for i, r in enumerate(results, 1):
+                item_type = r.get('item_type', 'observation')
+                item_id = r.get('id')
+                title = r.get('title', r.get('request', r.get('prompt_text', 'N/A')))[:80]
+                output_lines.append(f"{i}. [{item_type.upper()}] ID: {item_id}")
+                output_lines.append(f"   Title: {title}")
+                if r.get('type'):
+                    output_lines.append(f"   Type: {r['type']}")
+                output_lines.append("")
+            output_lines.append("Use TimelineMemory(anchor=id) or GetObservations(ids=[...]) for full details.")
+            output_text = "\n".join(output_lines)
+            
+            builder.write(output_text)
             builder.extras(**result_data)
             return builder.ok(f"Found {len(results)} results for query '{params.query}'.")
             
@@ -384,6 +403,24 @@ Timeline item types: 'observation' | 'summary' | 'prompt'"""
                     anchor_idx = i
                     break
             
+            # Format timeline items for output
+            def format_timeline_item(item: dict) -> str:
+                item_type = item.get('item_type', 'unknown')
+                item_id = item.get('id')
+                is_anchor = item.get('is_anchor', False)
+                anchor_marker = " [ANCHOR]" if is_anchor else ""
+                
+                if item_type == 'observation':
+                    title = item.get('title', 'N/A')[:60]
+                    return f"  [{item_type}] ID: {item_id}{anchor_marker}\n    Title: {title}"
+                elif item_type == 'summary':
+                    request = item.get('request', 'N/A')[:60]
+                    return f"  [{item_type}] ID: {item_id}{anchor_marker}\n    Request: {request}"
+                elif item_type == 'prompt':
+                    text = item.get('prompt_text', 'N/A')[:60]
+                    return f"  [{item_type}] ID: {item_id}{anchor_marker}\n    Text: {text}"
+                return f"  [unknown] ID: {item_id}"
+            
             if anchor_idx is None:
                 # Anchor not in timeline, return all
                 result_data = {
@@ -393,6 +430,16 @@ Timeline item types: 'observation' | 'summary' | 'prompt'"""
                     "timeline": timeline_items,
                     "count": len(timeline_items),
                 }
+                
+                # Format output
+                output_lines = [f"Timeline for anchor '{params.anchor}' ({anchor_type}):"]
+                output_lines.append(f"Total items: {len(timeline_items)}")
+                output_lines.append("")
+                for item in timeline_items:
+                    output_lines.append(format_timeline_item(item))
+                    output_lines.append("")
+                builder.write("\n".join(output_lines))
+                
                 builder.extras(**result_data)
                 return builder.ok(f"Timeline for anchor '{params.anchor}' ({anchor_type}) with {len(timeline_items)} items.")
             
@@ -412,6 +459,18 @@ Timeline item types: 'observation' | 'summary' | 'prompt'"""
                 "window": {"before": params.depth_before, "after": params.depth_after},
                 "hint": "Use GetObservations(ids=[...]) for full details of interesting observation items"
             }
+            
+            # Format output
+            output_lines = [f"Timeline Context around '{anchor_title}':"]
+            output_lines.append(f"Anchor: {params.anchor} ({anchor_type})")
+            output_lines.append(f"Showing {len(context_items)} items (before: {params.depth_before}, after: {params.depth_after})")
+            output_lines.append("")
+            for item in context_items:
+                output_lines.append(format_timeline_item(item))
+                output_lines.append("")
+            output_lines.append("Use GetObservations(ids=[...]) for full details.")
+            builder.write("\n".join(output_lines))
+            
             builder.extras(**result_data)
             return builder.ok(f"Timeline context around '{anchor_title}' with {len(context_items)} items.")
             
@@ -522,7 +581,7 @@ Timeline item types: 'observation' | 'summary' | 'prompt'"""
 # ============== Tool 3: GetObservations ==============
 
 class GetObservationsParams(BaseModel):
-    ids: list[int] = Field(description="Array of observation IDs to fetch full details for. MUST use the exact 'id' values returned by SearchMemory (e.g., [27, 28, 31]), NOT sequential numbers like [1, 2, 3].")
+    ids: list[str | int] = Field(description="Array of IDs to fetch full details for. Use exact 'id' values from SearchMemory/TimelineMemory. Supports: observation IDs (27), summary IDs ('S123'), prompt IDs ('P456').")
     orderBy: str = Field(
         default="date_desc",
         description="Sort order: date_desc, date_asc"
@@ -540,7 +599,7 @@ class GetObservationsParams(BaseModel):
 
 class GetObservations(CallableTool2[GetObservationsParams]):
     """
-    Step 3: Fetch full details for specific observation IDs
+    Step 3: Fetch full details for specific IDs
     
     ALWAYS batch for 2+ items. Returns complete details (~500-1000 tokens/result).
     """
@@ -549,17 +608,19 @@ class GetObservations(CallableTool2[GetObservationsParams]):
 
     def __init__(self, runtime: Runtime):
         super().__init__(
-            description="""Fetch full details for specific observation IDs.
+            description="""Fetch full details for specific IDs.
 
-CRITICAL: The 'ids' parameter MUST be the exact integer IDs returned from SearchMemory results 
-(look for the 'id' field in each result, e.g., {"id": 27, "title": "..."}).
+CRITICAL: The 'ids' parameter MUST be the exact IDs returned from SearchMemory/TimelineMemory.
+- Observation IDs: 27, 28, 31 (numbers)
+- Summary IDs: "S123", "S456" (strings with S prefix)
+- Prompt IDs: "P789", "P101" (strings with P prefix)
 
-DO NOT use sequential numbers like [1, 2, 3] - these are NOT valid observation IDs.
+DO NOT use sequential numbers like [1, 2, 3] - these are NOT valid IDs.
 
 Use this as Step 3 to get complete information:
-1. SearchMemory(query) → Returns results with 'id' fields (e.g., 27, 28, 31)
-2. TimelineMemory(anchor=id) → Find relevant context
-3. GetObservations(ids=[27, 28, 31]) → Use EXACT IDs from step 1
+1. SearchMemory(query) → Returns results with 'id' fields
+2. TimelineMemory(anchor=id) → Find relevant context  
+3. GetObservations(ids=[27, "S123", "P456"]) → Use EXACT IDs from step 1
 
 ALWAYS batch IDs for 2+ items to minimize tool calls.
 Full details include: narrative, facts, concepts, files, etc."""
@@ -579,51 +640,155 @@ Full details include: narrative, facts, concepts, files, etc."""
         
         try:
             project_filter = params.project or memory.project
-            results = []
+            observations = []
+            summaries = []
+            prompts = []
             
-            for obs_id in params.ids:
-                obs = memory.db.get_observation(obs_id)
-                if obs:
-                    # Check project filter
-                    if project_filter and obs.project != project_filter:
-                        continue
-                        
-                    results.append({
-                        "id": obs.id,
-                        "type": obs.type.value,
-                        "title": obs.title,
-                        "subtitle": obs.subtitle,
-                        "narrative": obs.narrative,
-                        "facts": obs.facts,
-                        "concepts": obs.concepts,
-                        "files_read": obs.files_read,
-                        "files_modified": obs.files_modified,
-                        "tool_name": obs.tool_name,
-                        "prompt_number": obs.prompt_number,
-                        "created_at": obs.created_at.isoformat() if isinstance(obs.created_at, datetime) else str(obs.created_at),
-                    })
+            for raw_id in params.ids:
+                id_str = str(raw_id).strip()
+                
+                # Parse ID type
+                if id_str.upper().startswith('S'):
+                    # Summary ID: S123
+                    summary_id_str = id_str.upper().replace('#', '').replace('S', '')
+                    if summary_id_str.isdigit():
+                        summary = memory.db.get_summary(int(summary_id_str))
+                        if summary:
+                            if not project_filter or summary.project == project_filter:
+                                summaries.append({
+                                    "id": f"S{summary.id}",
+                                    "type": "summary",
+                                    "session_id": summary.session_id,
+                                    "request": summary.request,
+                                    "investigated": summary.investigated,
+                                    "learned": summary.learned,
+                                    "completed": summary.completed,
+                                    "next_steps": summary.next_steps,
+                                    "notes": summary.notes,
+                                    "prompt_number": summary.prompt_number,
+                                    "discovery_tokens": summary.discovery_tokens,
+                                    "created_at": summary.created_at.isoformat() if isinstance(summary.created_at, datetime) else str(summary.created_at),
+                                })
+                
+                elif id_str.upper().startswith('P'):
+                    # Prompt ID: P456
+                    prompt_id_str = id_str.upper().replace('#', '').replace('P', '')
+                    if prompt_id_str.isdigit():
+                        prompt = memory.db.get_prompt(int(prompt_id_str))
+                        if prompt:
+                            if not project_filter or prompt.project == project_filter:
+                                prompts.append({
+                                    "id": f"P{prompt.id}",
+                                    "type": "prompt",
+                                    "session_id": prompt.session_id,
+                                    "prompt_text": prompt.prompt_text,
+                                    "prompt_number": prompt.prompt_number,
+                                    "created_at": prompt.created_at.isoformat() if isinstance(prompt.created_at, datetime) else str(prompt.created_at),
+                                })
+                
+                elif id_str.isdigit():
+                    # Observation ID: 123
+                    obs = memory.db.get_observation(int(id_str))
+                    if obs:
+                        if not project_filter or obs.project == project_filter:
+                            observations.append({
+                                "id": obs.id,
+                                "type": obs.type.value,
+                                "item_type": "observation",
+                                "session_id": obs.session_id,
+                                "title": obs.title,
+                                "subtitle": obs.subtitle,
+                                "narrative": obs.narrative,
+                                "facts": obs.facts,
+                                "concepts": obs.concepts,
+                                "files_read": obs.files_read,
+                                "files_modified": obs.files_modified,
+                                "tool_name": obs.tool_name,
+                                "prompt_number": obs.prompt_number,
+                                "discovery_tokens": obs.discovery_tokens,
+                                "created_at": obs.created_at.isoformat() if isinstance(obs.created_at, datetime) else str(obs.created_at),
+                            })
+            
+            # Combine all results
+            all_results = observations + summaries + prompts
             
             # Sort results based on orderBy
             if params.orderBy == "date_desc":
-                results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+                all_results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
             elif params.orderBy == "date_asc":
-                results.sort(key=lambda x: x.get("created_at", ""))
+                all_results.sort(key=lambda x: x.get("created_at", ""))
             
             # Apply limit
             if params.limit:
-                results = results[:params.limit]
+                all_results = all_results[:params.limit]
             
             result_data = {
                 "requested": len(params.ids),
-                "found": len(results),
+                "found": len(all_results),
+                "by_type": {
+                    "observations": len(observations),
+                    "summaries": len(summaries),
+                    "prompts": len(prompts),
+                },
                 "filters": {
                     "project": project_filter,
                     "orderBy": params.orderBy,
                 },
-                "observations": results,
+                "results": all_results,
             }
+            
+            # Format output with full details
+            output_lines = []
+            output_lines.append(f"Observations Details (requested: {len(params.ids)}, found: {len(all_results)}):")
+            output_lines.append(f"Breakdown: {len(observations)} observations, {len(summaries)} summaries, {len(prompts)} prompts")
+            output_lines.append("")
+            
+            for i, item in enumerate(all_results, 1):
+                item_type = item.get('item_type') or item.get('type', 'unknown')
+                item_id = item.get('id')
+                output_lines.append(f"--- Item {i} [{item_type.upper()}] ID: {item_id} ---")
+                
+                if item_type == 'observation' or 'narrative' in item:
+                    # Observation fields
+                    output_lines.append(f"Title: {item.get('title', 'N/A')}")
+                    if item.get('subtitle'):
+                        output_lines.append(f"Subtitle: {item['subtitle']}")
+                    if item.get('narrative'):
+                        narrative = item['narrative'][:300] + "..." if len(item['narrative']) > 300 else item['narrative']
+                        output_lines.append(f"Narrative: {narrative}")
+                    if item.get('facts'):
+                        output_lines.append(f"Facts: {item['facts']}")
+                    if item.get('concepts'):
+                        output_lines.append(f"Concepts: {item['concepts']}")
+                    if item.get('files_modified'):
+                        output_lines.append(f"Files Modified: {item['files_modified']}")
+                    if item.get('tool_name'):
+                        output_lines.append(f"Tool: {item['tool_name']}")
+                
+                elif item_type == 'summary':
+                    # Summary fields
+                    output_lines.append(f"Request: {item.get('request', 'N/A')}")
+                    if item.get('investigated'):
+                        output_lines.append(f"Investigated: {item['investigated']}")
+                    if item.get('learned'):
+                        output_lines.append(f"Learned: {item['learned']}")
+                    if item.get('completed'):
+                        output_lines.append(f"Completed: {item['completed']}")
+                    if item.get('next_steps'):
+                        output_lines.append(f"Next Steps: {item['next_steps']}")
+                
+                elif item_type == 'prompt':
+                    # Prompt fields
+                    text = item.get('prompt_text', 'N/A')
+                    if len(text) > 300:
+                        text = text[:300] + "..."
+                    output_lines.append(f"Text: {text}")
+                
+                output_lines.append("")
+            
+            builder.write("\n".join(output_lines))
             builder.extras(**result_data)
-            return builder.ok(f"Found {len(results)} observations out of {len(params.ids)} requested.")
+            return builder.ok(f"Found {len(all_results)} items out of {len(params.ids)} requested (obs: {len(observations)}, sum: {len(summaries)}, prompt: {len(prompts)}).")
             
         except Exception as e:
             logger.error("Get observations failed: {e}", e=e)
