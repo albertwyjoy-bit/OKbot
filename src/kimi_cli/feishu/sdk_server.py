@@ -40,6 +40,7 @@ from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.config import load_config
 from kimi_cli.feishu.card_builder import split_content_for_cards
 from kimi_cli.feishu.config import FeishuAccountConfig, FeishuConfig
+from kimi_cli.feishu.context import cv_chat_id, cv_client
 from kimi_cli.feishu.message_renderer import create_renderer
 from kimi_cli.feishu.post_message import handle_post_message
 from kimi_cli.feishu.sdk_client import FeishuSDKClient
@@ -121,7 +122,7 @@ class SDKChatSession:
         print(f"[SESSION] Starting tool registration for chat {self.chat_id}")
         logger.info(f"[SESSION] Starting tool registration for chat {self.chat_id}")
         try:
-            from kimi_cli.tools.feishu import FeishuSendFile, FeishuSendMessage, set_feishu_client
+            from kimi_cli.tools.feishu import FeishuSendFile, FeishuSendMessage
             from kimi_cli.tools.scheduler_tool import (
                 CreateScheduledJob,
                 DeleteScheduledJob,
@@ -129,9 +130,9 @@ class SDKChatSession:
                 ToggleScheduledJob,
             )
             
-            # Set the global client reference for tools
-            set_feishu_client(self.client)
-            logger.info(f"[SESSION] Feishu client set for chat {self.chat_id}")
+            # Note: We no longer use set_feishu_client() here
+            # Context is now passed via ContextVar in handle_message()
+            logger.info(f"[SESSION] Feishu tools will use ContextVar for chat {self.chat_id}")
             
             # Add tools to soul's toolset if not already present
             # Access toolset through soul's agent
@@ -296,8 +297,14 @@ class SDKChatSession:
         print(f"[SESSION] Handling message: {message_text[:50]}...")
         logger.info(f"[SESSION] Handling message: {message_text[:50]}...")
         
-        # Set current chat ID for tool calls
+        # Set current chat ID for tool calls (legacy, keep for backward compatibility)
         self.client.set_current_chat_id(self.chat_id)
+        
+        # Set ContextVar for session isolation
+        # This ensures Feishu tools send messages to the correct chat
+        chat_token = cv_chat_id.set(self.chat_id)
+        client_token = cv_client.set(self.client)
+        logger.debug(f"[SESSION] ContextVar set: chat_id={self.chat_id}")
         
         # Handle interruption commands first (before lock) to allow stopping running tasks
         stripped = message_text.strip()
@@ -393,6 +400,11 @@ class SDKChatSession:
             async with self._lock:
                 self._running = False
                 self._cancel_event = None
+            
+            # Reset ContextVar to avoid polluting other tasks
+            cv_chat_id.reset(chat_token)
+            cv_client.reset(client_token)
+            logger.debug(f"[SESSION] ContextVar reset for chat_id={self.chat_id}")
             
             # Flush pending scheduled notifications
             # This sends any scheduled task results that were queued while we were busy
