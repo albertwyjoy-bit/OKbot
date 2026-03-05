@@ -42,6 +42,10 @@ class Shell:
             **{cmd.name: cmd for cmd in shell_slash_registry.list_commands()},
         }
         """Shell-level slash commands + soul-level slash commands. Name to command mapping."""
+        
+        # Set up steering message callback for CLI shell
+        if isinstance(soul, KimiSoul):
+            soul.on_steering_message = lambda: print("\n[📋 后台任务已完成，按 Enter 查看结果]")
 
     @property
     def available_slash_commands(self) -> dict[str, SlashCommand[Any]]:
