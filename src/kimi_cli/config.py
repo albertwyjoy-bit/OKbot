@@ -8,6 +8,7 @@ import tomlkit
 from pydantic import (
     AliasChoices,
     BaseModel,
+    ConfigDict,
     Field,
     SecretStr,
     ValidationError,
@@ -176,6 +177,9 @@ class MemoryConfig(BaseModel):
 class Config(BaseModel):
     """Main configuration structure."""
 
+    # 允许额外字段，防止用户自定义配置（如文生图接口）在保存时丢失
+    model_config = ConfigDict(extra="allow")
+
     is_from_default_location: bool = Field(
         default=False,
         description="Whether the config was loaded from the default location",
@@ -310,6 +314,8 @@ def load_config_from_string(config_string: str) -> Config:
 def save_config(config: Config, config_file: Path | None = None):
     """
     Save configuration to config file.
+    
+    会保留原始文件中不在模型定义中的额外字段（如用户自定义的文生图配置）。
 
     Args:
         config (Config): Config object to save.
@@ -318,7 +324,33 @@ def save_config(config: Config, config_file: Path | None = None):
     config_file = config_file or get_config_file()
     logger.debug("Saving config to file: {file}", file=config_file)
     config_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # 获取当前配置数据（包含额外字段）
     config_data = config.model_dump(mode="json", exclude_none=True)
+    
+    # 如果文件已存在，合并原始数据以保留额外字段
+    if config_file.exists():
+        try:
+            original_text = config_file.read_text(encoding="utf-8")
+            if config_file.suffix.lower() == ".json":
+                original_data = json.loads(original_text)
+            else:
+                original_data = tomlkit.loads(original_text)
+            
+            # 递归合并：原始数据作为基础，当前数据覆盖
+            def merge_dict(base: dict, override: dict) -> dict:
+                result = dict(base)
+                for key, value in override.items():
+                    if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                        result[key] = merge_dict(result[key], value)
+                    else:
+                        result[key] = value
+                return result
+            
+            config_data = merge_dict(original_data, config_data)
+        except Exception as e:
+            logger.warning("Failed to merge original config, using model data only: {e}", e=e)
+    
     with open(config_file, "w", encoding="utf-8") as f:
         if config_file.suffix.lower() == ".json":
             f.write(json.dumps(config_data, ensure_ascii=False, indent=2))
