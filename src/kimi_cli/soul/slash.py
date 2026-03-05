@@ -64,8 +64,26 @@ async def compact(soul: KimiSoul, args: str):
 
 @registry.command(aliases=["reset"])
 async def clear(soul: KimiSoul, args: str):
-    """Clear the context"""
+    """Clear the context and stop all background tasks.
+    
+    Note: Background tasks are stopped because the main agent "forgets" 
+    when context is cleared, and cannot process task results.
+    """
+    from kimi_cli.soul.followup import TaskManager
+    
     logger.info("Running `/clear`")
+    
+    # Shutdown all background tasks before clearing context
+    # (main agent will "forget" and cannot process task results)
+    session_id = soul.runtime.session.id
+    task_manager = TaskManager()
+    stopped_count = await task_manager.shutdown_session(session_id, timeout=5.0)
+    
+    if stopped_count > 0:
+        logger.info(f"Stopped {stopped_count} background tasks during /clear")
+        wire_send(TextPart(text=f"🛑 Stopped {stopped_count} background task(s)."))
+    
+    # Clear the context
     await soul.context.clear()
     wire_send(TextPart(text="The context has been cleared."))
     wire_send(StatusUpdate(context_usage=soul.status.context_usage))
@@ -225,3 +243,69 @@ Error: {e}"""))
     except Exception as e:
         logger.exception("Failed to reload MCP tools")
         wire_send(TextPart(text=f"❌ Failed to reload MCP tools: {e}"))
+
+
+@registry.command(name="tasks", aliases=["task"])
+async def tasks(soul: KimiSoul, args: str):
+    """List all background tasks for the current session.
+    
+    Use this command to view running, completed, or failed background tasks.
+    You can also filter by status: `/tasks running`, `/tasks completed`, etc.
+    """
+    from kimi_cli.soul.followup import TaskManager, TaskStatus
+    
+    logger.info("Running `/tasks`")
+    
+    session_id = soul.runtime.session.id
+    task_manager = TaskManager()
+    
+    # Parse optional status filter from args
+    status_filter = args.strip().lower() if args.strip() else None
+    valid_statuses = ["running", "completed", "failed", "stopped", "pending"]
+    
+    if status_filter and status_filter not in valid_statuses:
+        wire_send(TextPart(
+            text=f"⚠️ Invalid status filter: `{status_filter}`\n"
+            f"Valid filters: {', '.join(valid_statuses)}"
+        ))
+        return
+    
+    # Get tasks
+    tasks_list = task_manager.list_tasks(session_id, status=status_filter)
+    
+    if not tasks_list:
+        if status_filter:
+            wire_send(TextPart(text=f"📭 No {status_filter} tasks found."))
+        else:
+            wire_send(TextPart(text="📭 No background tasks.\n\nUse `Task` tool with `run_in_background=True` to start a background task."))
+        return
+    
+    # Build task table
+    lines = [f"📋 **Background Tasks** ({len(tasks_list)} total)\n"]
+    lines.append("| Task ID | Description | Status | Started |")
+    lines.append("|---------|-------------|--------|--------|")
+    
+    for task in tasks_list:
+        # Truncate description
+        desc = task.description[:30] + "..." if len(task.description) > 30 else task.description
+        
+        # Format status with emoji
+        status_emoji = {
+            TaskStatus.PENDING: "⏳",
+            TaskStatus.RUNNING: "🔄",
+            TaskStatus.COMPLETED: "✅",
+            TaskStatus.FAILED: "❌",
+            TaskStatus.STOPPED: "🛑",
+        }.get(task.status, "❓")
+        
+        # Format time
+        time_str = task.started_at.strftime("%H:%M:%S") if task.started_at else "N/A"
+        
+        lines.append(f"| `{task.task_id}` | {desc} | {status_emoji} {task.status.value} | {time_str} |")
+    
+    lines.append("\n**Commands:**")
+    lines.append("• `/tasks [status]` - List tasks (optionally filter by status)")
+    lines.append("• Use `TaskOutput` tool with task_id to view output")
+    lines.append("• Use `TaskStop` tool to stop a running task")
+    
+    wire_send(TextPart(text="\n".join(lines)))
