@@ -21,6 +21,26 @@ Examples:
 - When you need to analyze a huge codebase (> hundreds of thousands of lines), you can spawn multiple subagents each exploring on a different part of the codebase and gather the summarized results.
 - When you need to search the web for multiple queries, you can spawn multiple subagents for better efficiency.
 
+**Background Execution**
+
+You can run tasks in the background by setting `run_in_background: true`. This allows the main agent to continue processing while the subagent works on a long-running task.
+
+When a background task is started:
+- The task runs asynchronously without blocking the main agent
+- A task ID is returned for later reference
+- Task log is saved to a file
+- When the task completes, the result is automatically delivered to the main agent
+
+You can use `TaskList` to check running tasks, `TaskOutput` to view task output, and `TaskStop` to stop a running task.
+
+Example:
+```yaml
+description: "Analyze large codebase"
+subagent_name: "coder"
+prompt: "Analyze the src/ directory and find all TODO comments"
+run_in_background: true
+```
+
 **Available Subagents:**
 
 ${SUBAGENTS_MD}

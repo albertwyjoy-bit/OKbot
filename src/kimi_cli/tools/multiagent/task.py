@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.soul import MaxStepsReached, get_wire_or_none, run_soul
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
+from kimi_cli.soul.followup import SubagentTask, TaskManager
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.utils import load_desc
@@ -22,19 +23,6 @@ from kimi_cli.wire.types import (
 )
 
 # Maximum continuation attempts for task summary
-MAX_CONTINUE_ATTEMPTS = 1
-
-
-CONTINUE_PROMPT = """
-Your previous response was too brief. Please provide a more comprehensive summary that includes:
-
-1. Specific technical details and implementations
-2. Complete code examples if relevant
-3. Detailed findings and analysis
-4. All important information that should be aware of by the caller
-""".strip()
-
-
 class Params(BaseModel):
     description: str = Field(description="A short (3-5 word) description of the task")
     subagent_name: str = Field(
@@ -46,6 +34,10 @@ class Params(BaseModel):
             "You must provide a detailed prompt with all necessary background information "
             "because the subagent cannot see anything in your context."
         )
+    )
+    run_in_background: bool = Field(
+        default=False,
+        description="Whether to run the task in the background (non-blocking). When true, returns immediately with a task ID.",
     )
 
 
@@ -89,17 +81,71 @@ class Task(CallableTool2[Params]):
                 brief="Subagent not found",
             )
         agent = subagents[params.subagent_name]
+
         try:
-            result = await self._run_subagent(agent, params.prompt)
-            return result
+            if params.run_in_background:
+                # ===== 后台执行模式（新增）=====
+                return await self._run_in_background(agent, params)
+            else:
+                # ===== 同步执行模式（现有行为，保持兼容）=====
+                result = await self._run_subagent_sync(agent, params.prompt)
+                return result
         except Exception as e:
             return ToolError(
                 message=f"Failed to run subagent: {e}",
                 brief="Failed to run subagent",
             )
 
-    async def _run_subagent(self, agent: Agent, prompt: str) -> ToolReturnValue:
-        """Run subagent with optional continuation for task summary."""
+    async def _run_in_background(self, agent: Agent, params: Params) -> ToolReturnValue:
+        """在后台运行子 Agent.
+
+        Args:
+            agent: 子 Agent 配置
+            params: 任务参数
+
+        Returns:
+            ToolReturnValue 包含任务信息
+        """
+        # 创建后台任务
+        task = SubagentTask(
+            session_id=self._session.id,
+            description=params.description,
+            subagent_name=params.subagent_name,
+            agent=agent,
+            prompt=params.prompt,
+        )
+
+        # 启动后台任务（不等待）
+        await task.run_in_background()
+
+        # 注册到 TaskManager
+        TaskManager().add_task(self._session.id, task)
+
+        # 返回任务信息，让 LLM 知道任务已启动
+        return ToolOk(
+            output=(
+                f"后台任务已启动\n"
+                f"任务ID: {task.task_id}\n"
+                f"描述: {params.description}\n"
+                f"子 Agent: {params.subagent_name}\n"
+                f"日志保存到: {task.output_file}\n\n"
+                f"您可以通过以下方式查看进度:\n"
+                f"- 使用 TaskList 工具查看所有任务\n"
+                f"- 使用 TaskOutput 工具查询此任务输出\n"
+                f"- 任务完成后会自动通知您"
+            )
+        )
+
+    async def _run_subagent_sync(self, agent: Agent, prompt: str) -> ToolReturnValue:
+        """同步运行子 Agent（阻塞直到完成）.
+
+        Args:
+            agent: 子 Agent 配置
+            prompt: 任务提示
+
+        Returns:
+            ToolReturnValue 包含执行结果
+        """
         super_wire = get_wire_or_none()
         assert super_wire is not None
         current_tool_call = get_current_tool_call_or_none()
@@ -126,10 +172,11 @@ class Task(CallableTool2[Params]):
 
         subagent_context_file = await self._get_subagent_context_file()
         context = Context(file_backend=subagent_context_file)
-        soul = KimiSoul(agent, context=context)
+        # 子 Agent 不注册消息总线
+        soul = KimiSoul(agent, context=context, enable_message_bus=False)
 
         try:
-            await run_soul(soul, prompt, _ui_loop_fn, asyncio.Event())
+            await run_soul(soul, prompt, _ui_loop_fn, asyncio.Event(), is_main_agent=False)
         except MaxStepsReached as e:
             return ToolError(
                 message=(
@@ -137,6 +184,11 @@ class Task(CallableTool2[Params]):
                     "Please try splitting the task into smaller subtasks."
                 ),
                 brief="Max steps reached",
+            )
+        except Exception as e:
+            return ToolError(
+                message=f"Subagent execution failed: {type(e).__name__}: {e}",
+                brief=f"Subagent failed: {type(e).__name__}",
             )
 
         _error_msg = (
@@ -149,13 +201,9 @@ class Task(CallableTool2[Params]):
 
         final_response = context.history[-1].extract_text(sep="\n")
 
-        # Check if response is too brief, if so, run again with continuation prompt
-        n_attempts_remaining = MAX_CONTINUE_ATTEMPTS
-        if len(final_response) < 200 and n_attempts_remaining > 0:
-            await run_soul(soul, CONTINUE_PROMPT, _ui_loop_fn, asyncio.Event())
-
-            if len(context.history) == 0 or context.history[-1].role != "assistant":
-                return ToolError(message=_error_msg, brief="Failed to run subagent")
-            final_response = context.history[-1].extract_text(sep="\n")
+        # 截断过长输出（统一 10000 字符限制）
+        max_len = 10000
+        if len(final_response) > max_len:
+            final_response = final_response[:max_len] + "\n...truncated"
 
         return ToolOk(output=final_response)
