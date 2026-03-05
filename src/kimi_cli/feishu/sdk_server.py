@@ -104,6 +104,13 @@ class SDKChatSession:
         # Register Feishu tools for this session
         print(f"[SESSION] SDKChatSession.__init__ called for chat {chat_id}, calling _register_feishu_tools")
         self._register_feishu_tools()
+
+        # Bind steering callback to THIS chat session instance.
+        # Background task completion is published inside KimiSoul and should wake up
+        # the corresponding Feishu session, not the global message handler.
+        self.soul.on_steering_message = lambda: asyncio.create_task(self._handle_steering_message())
+        # If steering arrives while this session is busy, defer and replay once idle.
+        self._pending_steering_wakeup: bool = False
         
         # Scheduled task pending notifications queue
         # This stores results from scheduled tasks that need to be sent
@@ -400,6 +407,13 @@ class SDKChatSession:
             async with self._lock:
                 self._running = False
                 self._cancel_event = None
+                should_retry_steering = self._pending_steering_wakeup and (
+                    not self.soul.message_queue.steering_queue_empty()
+                )
+                if should_retry_steering:
+                    self._pending_steering_wakeup = False
+                    logger.info("[SESSION] Processing deferred steering message after user turn")
+                    asyncio.create_task(self._handle_steering_message())
             
             # Reset ContextVar to avoid polluting other tasks
             cv_chat_id.reset(chat_token)
@@ -746,6 +760,61 @@ class SDKChatSession:
             self.chat_id,
             "🧹 上下文已清空。可以开始新的对话了！",
         )
+    
+    async def _handle_steering_message(self) -> None:
+        """Handle steering message from background subagent when main agent is idle.
+        
+        This is called when a background task completes and the main agent is not
+        currently processing any user message.
+        """
+        logger.info("[STEERING] Handling steering message from background task")
+        
+        # Check if we're already processing something
+        async with self._lock:
+            if self._running:
+                self._pending_steering_wakeup = True
+                logger.debug("[STEERING] Main agent is running, defer auto-process until idle")
+                return
+            self._pending_steering_wakeup = False
+            self._running = True
+            self._cancel_event = asyncio.Event()
+        
+        try:
+            # IMPORTANT: must run through run_soul + wire UI loop so Feishu can receive output.
+            # Passing empty string skips normal user turn while still allowing queued steering
+            # messages to be processed (KimiSoul.run checks has_pending_messages()).
+            from kimi_cli.soul import run_soul
+
+            wire_file = None
+            if hasattr(self.soul, "_runtime") and self.soul._runtime.session:
+                wire_file = self.soul._runtime.session.wire_file
+
+            await run_soul(
+                self.soul,
+                "",
+                self._wire_loop_text_parts,
+                self._cancel_event,
+                wire_file=wire_file,
+            )
+        except Exception as e:
+            logger.exception(f"[STEERING] Error handling steering message: {e}")
+            await asyncio.to_thread(
+                self.client.send_text_message,
+                self.chat_id,
+                f"❌ 处理后台任务结果时出错: {e}",
+            )
+        finally:
+            async with self._lock:
+                self._running = False
+                self._cancel_event = None
+                should_retry = self._pending_steering_wakeup and (
+                    not self.soul.message_queue.steering_queue_empty()
+                )
+                if should_retry:
+                    self._pending_steering_wakeup = False
+                    logger.info("[STEERING] Re-triggering deferred steering processing")
+                    asyncio.create_task(self._handle_steering_message())
+            logger.info("[STEERING] Finished handling steering message")
     
     async def _handle_mcp_command(self, command: str) -> None:
         """Handle /mcp command to show MCP server status."""
@@ -2164,6 +2233,12 @@ Use `PlanExit` tool when you're ready to proceed with execution."""
         except Exception as e:
             error_msg = str(e)
             print(f"[_wire_loop_text_parts] Exception (wire closed): {e}")
+            # Best-effort flush: steering-only runs may not emit TurnEnd.
+            try:
+                await send_thinking()
+                await send_text()
+            except Exception as flush_err:
+                logger.debug(f"Failed to flush wire buffers on close: {flush_err}")
             # Wire loop ends normally on most exceptions (like QueueShutDown)
             # Only send error for serious errors that need user attention
             if "token limit" in error_msg.lower() or "exceeded" in error_msg.lower():
@@ -2514,6 +2589,8 @@ class SDKMessageHandler:
         
         soul = KimiSoul(agent, context=context)
         
+        # steering callback is bound in SDKChatSession.__init__
+        
         # Set work_dir on client for tools to use
         self.client.set_work_dir(str(work_dir))
         
@@ -2608,6 +2685,8 @@ class SDKMessageHandler:
         await context.restore()
         
         soul = KimiSoul(agent, context=context)
+        
+        # steering callback is bound in SDKChatSession.__init__
         
         # Set work_dir on client for tools to use
         self.client.set_work_dir(str(work_dir))
