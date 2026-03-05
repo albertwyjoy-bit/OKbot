@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -13,6 +14,21 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from kimi_cli.utils.logging import logger
 from kimi_cli.wire.protocol import WIRE_PROTOCOL_LEGACY_VERSION, WIRE_PROTOCOL_VERSION
 from kimi_cli.wire.types import WireMessage, WireMessageEnvelope
+
+
+# Global locks for file paths to prevent concurrent writes to the same file
+_wire_file_locks: dict[Path, asyncio.Lock] = {}
+_wire_file_locks_global = asyncio.Lock()
+
+
+async def _get_wire_file_lock(path: Path) -> asyncio.Lock:
+    """Get or create a lock for the given file path."""
+    # Normalize the path to ensure consistent locking
+    normalized_path = path.resolve()
+    async with _wire_file_locks_global:
+        if normalized_path not in _wire_file_locks:
+            _wire_file_locks[normalized_path] = asyncio.Lock()
+        return _wire_file_locks[normalized_path]
 
 
 class WireFileMetadata(BaseModel):
@@ -123,12 +139,17 @@ class WireFile:
 
     async def append_record(self, record: WireMessageRecord) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        needs_header = not self.path.exists() or self.path.stat().st_size == 0
-        async with aiofiles.open(self.path, mode="a", encoding="utf-8") as f:
-            if needs_header:
-                metadata = WireFileMetadata(protocol_version=self.protocol_version)
-                await f.write(_dump_line(metadata))
-            await f.write(_dump_line(record))
+        
+        # FIX: Use file-level lock to prevent race conditions when multiple
+        # concurrent tasks write to the same file (e.g., during concurrent subagent execution)
+        lock = await _get_wire_file_lock(self.path)
+        async with lock:
+            needs_header = not self.path.exists() or self.path.stat().st_size == 0
+            async with aiofiles.open(self.path, mode="a", encoding="utf-8") as f:
+                if needs_header:
+                    metadata = WireFileMetadata(protocol_version=self.protocol_version)
+                    await f.write(_dump_line(metadata))
+                await f.write(_dump_line(record))
 
 
 def _dump_line(model: BaseModel) -> str:
