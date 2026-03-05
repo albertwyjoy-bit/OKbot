@@ -124,12 +124,31 @@ async def run_soul(
     ui_loop_fn: UILoopFn,
     cancel_event: asyncio.Event,
     wire_file: WireFile | None = None,
+    is_main_agent: bool = True,
 ) -> None:
     """
     Run the soul with the given user input, connecting it to the UI loop with a `Wire`.
 
+    This function will automatically continue processing queued follow-up messages
+    (from Follow-up Queue) after the initial user_input is processed, until no more 
+    messages are pending.
+    
+    Note: 
+    - The auto-continuation only applies to the main agent. Background subagents
+      (is_main_agent=False) will not auto-process queued messages to avoid recursion.
+    - Steering Queue messages (background task results) are processed immediately
+      at tool call boundaries in _step(), not here.
+
     `cancel_event` is a outside handle that can be used to cancel the run. When the
     event is set, the run will be gracefully stopped and a `RunCancelled` will be raised.
+
+    Args:
+        soul: The soul to run
+        user_input: The user input to process
+        ui_loop_fn: The UI loop function to handle wire messages
+        cancel_event: Event to signal cancellation
+        wire_file: Optional wire file backend
+        is_main_agent: Whether this is the main agent (enables auto-continuation for background tasks)
 
     Raises:
         LLMNotSet: When the LLM is not set.
@@ -138,38 +157,70 @@ async def run_soul(
         MaxStepsReached: When the maximum number of steps is reached.
         RunCancelled: When the run is cancelled by the cancel event.
     """
+    from kimi_cli.soul.kimisoul import KimiSoul
+    
     wire = Wire(file_backend=wire_file)
     wire_token = _current_wire.set(wire)
 
     logger.debug("Starting UI loop with function: {ui_loop_fn}", ui_loop_fn=ui_loop_fn)
     ui_task = asyncio.create_task(ui_loop_fn(wire))
 
-    logger.debug("Starting soul run")
-    soul_task = asyncio.create_task(soul.run(user_input))
-
+    logger.debug("Starting soul run (is_main_agent={is_main})", is_main=is_main_agent)
+    
+    # Main run loop: process user input and then any queued background task results
+    soul_task: asyncio.Task[Any] | None = None
     cancel_event_task = asyncio.create_task(cancel_event.wait())
-    await asyncio.wait(
-        [soul_task, cancel_event_task],
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-
+    
     try:
-        if cancel_event.is_set():
-            logger.debug("Cancelling the run task")
-            soul_task.cancel()
-            try:
-                await soul_task
-            except asyncio.CancelledError:
-                raise RunCancelled from None
-        else:
-            assert soul_task.done()  # either stop event is set or the run task is done
+        # First, process the initial user input
+        soul_task = asyncio.create_task(soul.run(user_input))
+        
+        pending_tasks = {soul_task, cancel_event_task}
+        while pending_tasks:
+            done, pending_tasks = await asyncio.wait(
+                pending_tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            
+            if cancel_event_task in done:
+                # Cancel requested
+                if soul_task and not soul_task.done():
+                    logger.debug("Cancelling the soul task")
+                    soul_task.cancel()
+                    try:
+                        await soul_task
+                    except asyncio.CancelledError:
+                        pass
+                raise RunCancelled()
+            
+            if soul_task in done:
+                # Soul task completed - check result
+                try:
+                    soul_task.result()
+                except asyncio.CancelledError:
+                    raise RunCancelled() from None
+                
+                # Check if there are queued follow-up messages to process
+                # Only auto-continue for main agent, not for background subagents
+                # Note: Steering Queue messages are already processed at tool call boundaries
+                if is_main_agent and isinstance(soul, KimiSoul) and soul.has_pending_messages():
+                    logger.info("Auto-continuing to process follow-up messages")
+                    # Create a new task to process queued messages
+                    # Pass None to skip initial turn and directly process follow-up queue
+                    soul_task = asyncio.create_task(soul.run(None))
+                    pending_tasks = {soul_task, cancel_event_task}
+                else:
+                    # No more messages to process
+                    break
+        
+        # Clean up cancel_event_task
+        if not cancel_event_task.done():
             cancel_event_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await cancel_event_task
-            soul_task.result()  # this will raise if any exception was raised in the run task
+                
     finally:
         logger.debug("Shutting down the UI loop")
-        # shutting down the wire should break the UI loop
         wire.shutdown()
         await wire.join()
         try:

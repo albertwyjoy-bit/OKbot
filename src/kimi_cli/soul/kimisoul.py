@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import json
 from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import datetime
 from functools import partial
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+import aiofiles
 import kosong
 import tenacity
 from kosong import StepResult
@@ -17,7 +21,7 @@ from kosong.chat_provider import (
     APIStatusError,
     APITimeoutError,
 )
-from kosong.message import Message
+from kosong.message import Message, TextPart
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from kimi_cli.llm import ModelCapability
@@ -29,12 +33,21 @@ from kimi_cli.soul import (
     MaxStepsReached,
     Soul,
     StatusSnapshot,
+    get_wire_or_none,
     wire_send,
 )
 from kimi_cli.memory import MemoryAgent, ObservationInput, ObservationType, SummaryInput, UserPromptInput
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.compaction import SimpleCompaction
 from kimi_cli.soul.context import Context
+from kimi_cli.soul.followup import (
+    MAIN_AGENT_TARGET,
+    AgentMessageBus,
+    BackgroundTaskResultMessage,
+    MessageQueue,
+    TaskManager,
+    message_bus,
+)
 from kimi_cli.soul.message import check_message, system, tool_result_to_message
 from kimi_cli.soul.slash import registry as soul_slash_registry
 from kimi_cli.soul.toolset import KimiToolset
@@ -69,6 +82,13 @@ FLOW_COMMAND_PREFIX = "flow:"
 DEFAULT_MAX_FLOW_MOVES = 1000
 
 
+class AgentState(str, enum.Enum):
+    """主 Agent 状态."""
+
+    IDLE = "idle"  # 空闲
+    RUNNING = "running"  # 执行中
+
+
 type StepStopReason = Literal["no_tool_calls", "tool_rejected"]
 
 
@@ -96,6 +116,7 @@ class KimiSoul:
         agent: Agent,
         *,
         context: Context,
+        enable_message_bus: bool = True,
     ):
         """
         Initialize the soul.
@@ -103,6 +124,8 @@ class KimiSoul:
         Args:
             agent (Agent): The agent to run.
             context (Context): The context of the agent.
+            enable_message_bus: Whether to register message bus callback for background task results.
+                               Should be True for main agent, False for subagents.
         """
         self._agent = agent
         self._runtime = agent.runtime
@@ -121,10 +144,23 @@ class KimiSoul:
 
         self._slash_commands = self._build_slash_commands()
         self._slash_command_map = self._index_slash_commands(self._slash_commands)
-        
+
         # Memory tracking
         self._prompt_number = 0  # Incremented on each run()
         self._current_turn_tool_results: list[tuple] = []  # Track (ToolResult, ToolCall) tuples for observation extraction
+
+        # Dual queue design: Steering Queue + Follow-up Queue
+        self._message_queue = MessageQueue()
+        self._state = AgentState.IDLE
+
+        # Callback for steering message received (when agent is idle)
+        # This allows the host (e.g., feishu server) to auto-trigger processing
+        self.on_steering_message: Callable[[], None] | None = None
+
+        # Register message bus callback for background task results
+        # Only main agent should receive these messages, not subagents
+        if enable_message_bus:
+            self._register_message_bus()
 
     @property
     def name(self) -> str:
@@ -177,6 +213,99 @@ class KimiSoul:
     @property
     def wire_file(self) -> WireFile:
         return self._runtime.session.wire_file
+
+    @property
+    def state(self) -> AgentState:
+        """当前 Agent 状态."""
+        return self._state
+
+    @property
+    def message_queue(self) -> MessageQueue:
+        """消息队列."""
+        return self._message_queue
+
+    def has_pending_messages(self) -> bool:
+        """检查是否有待处理的消息（包括 steering 和 follow-up）."""
+        return (
+            not self._message_queue.steering_queue_empty()
+            or not self._message_queue.followup_queue_empty()
+        )
+
+    @property
+    def is_running(self) -> bool:
+        """检查 Agent 是否正在执行."""
+        return self._state == AgentState.RUNNING
+
+    def _register_message_bus(self, target: str = MAIN_AGENT_TARGET) -> None:
+        """注册消息总线回调.
+
+        Args:
+            target: 此 Agent 的标识，用于接收定向消息。默认为主 Agent。
+        """
+        session_id = self._runtime.session.id
+
+        async def on_background_task_complete(message: BackgroundTaskResultMessage) -> None:
+            """后台任务完成回调."""
+            logger.info(f"Received background task result: {message.task_id} ({message.status})")
+
+            # 将任务结果放入 Steering Queue
+            await self._message_queue.put_task_result(message)
+
+            # 安全地通知用户任务完成：此时主 Agent 可能处于 IDLE（wire 为 None），
+            # 必须先检查再发送，避免触发 AssertionError 导致后续回调无法执行。
+            wire = get_wire_or_none()
+            if wire is not None:
+                wire.soul_side.send(TextPart(
+                    text=f"📋 后台任务完成: {message.task_description}\n"
+                         f"任务ID: {message.task_id}\n"
+                         f"状态: {message.status}"
+                ))
+            else:
+                logger.debug(
+                    f"Wire is None when background task {message.task_id} completed; "
+                    "notification will be delivered when agent wakes up."
+                )
+
+            # 【关键】如果 Agent 空闲，触发回调让宿主自动处理
+            # 如果 Agent 正在运行，宿主可以在当前 run() 结束后再次调用 run() 来处理
+            if self._state == AgentState.IDLE and self.on_steering_message:
+                logger.info("Agent is idle, triggering on_steering_message callback")
+                try:
+                    self.on_steering_message()
+                except Exception as e:
+                    logger.exception(f"Error in on_steering_message callback: {e}")
+
+        self._message_bus_callback = on_background_task_complete
+        self._message_bus_target = target
+        message_bus.subscribe(session_id, on_background_task_complete, target=target)
+        logger.debug(f"Message bus callback registered for session: {session_id}, target: {target}")
+
+    def _unregister_message_bus(self) -> None:
+        """注销消息总线回调."""
+        session_id = self._runtime.session.id
+        target = getattr(self, '_message_bus_target', MAIN_AGENT_TARGET)
+        message_bus.unsubscribe(session_id, target=target)
+        logger.debug(f"Message bus callback unregistered for session: {session_id}, target: {target}")
+
+    async def _process_queued_messages(self) -> bool:
+        """处理 Follow-up Queue 中的消息.
+
+        在 turn 开始或结束时调用，处理用户的后续指令。
+
+        Returns:
+            是否处理了任何消息
+        """
+        processed = False
+
+        # 获取所有 follow-up 消息
+        followup_items = self._message_queue.get_followup_messages()
+
+        for item in followup_items:
+            await self._message_queue.inject_to_context(item, self._context)
+            processed = True
+            logger.debug(f"Follow-up message injected to context: {item.type}")
+
+        return processed
 
     async def _checkpoint(self):
         await self._context.checkpoint(self._checkpoint_with_user_message)
@@ -252,18 +381,60 @@ class KimiSoul:
         
         return servers_count, tools_count, server_names
 
-    async def run(self, user_input: str | list[ContentPart]):
+    async def run(self, user_input: str | list[ContentPart] | None = None):
+        """运行 Agent 处理用户输入和队列中的消息。
+        
+        参考 pi-mono 设计：
+        - user_input 被添加到 context 后启动 _agent_loop
+        - _agent_loop 内部处理 steering 和 followup 消息
+        """
         # Refresh OAuth tokens on each turn to avoid idle-time expirations.
         await self._runtime.oauth.ensure_fresh(self._runtime)
 
+        # 设置状态为运行中
+        self._state = AgentState.RUNNING
+
+        try:
+            # 处理用户输入（如果有）
+            if user_input is not None and user_input != "":
+                await self._run_single_turn(user_input)
+            elif self.has_pending_messages():
+                # 没有 user_input，但有 pending 消息（steering 或 followup）
+                # 启动 _agent_loop 来处理这些消息
+                # 参考 pi-mono: agentLoopContinue 模式
+                logger.info("Starting agent loop to process pending messages")
+                await self._agent_loop()
+            else:
+                logger.debug("No user input and no pending messages, nothing to do")
+
+            # 【关键修复】在结束前检查是否有新到达的 steering 消息
+            # 当子 Agent 在主 Agent 运行期间完成时，消息可能刚到达
+            if not self._message_queue.steering_queue_empty():
+                logger.info("Steering messages arrived after main processing, handling them")
+                await self._agent_loop()
+
+        finally:
+            # 恢复状态为空闲
+            self._state = AgentState.IDLE
+            # 兜底处理竞态：如果 steering 在 run() 收尾窗口到达，主动触发宿主回调
+            # 避免消息等到下一条用户输入才被处理。
+            if not self._message_queue.steering_queue_empty() and self.on_steering_message:
+                logger.info("Steering messages pending after turning IDLE, triggering callback")
+                try:
+                    self.on_steering_message()
+                except Exception as e:
+                    logger.exception(f"Error triggering deferred steering callback: {e}")
+
+    async def _run_single_turn(self, user_input: str | list[ContentPart]) -> None:
+        """执行单个 turn（从 run 方法中提取出来的逻辑）."""
         wire_send(TurnBegin(user_input=user_input))
         user_message = Message(role="user", content=user_input)
         text_input = user_message.extract_text(" ").strip()
-        
+
         # Increment prompt number
         self._prompt_number += 1
         current_prompt = self._prompt_number
-        
+
         # Clear tool results tracking for this turn
         self._current_turn_tool_results: list[tuple] = []
 
@@ -305,7 +476,7 @@ class KimiSoul:
                 logger.warning(f"Failed to generate summary: {e}")
 
         wire_send(TurnEnd())
-        
+
         # Log memory stats if enabled
         if self._runtime.memory_agent and summary_generated:
             try:
@@ -407,7 +578,14 @@ class KimiSoul:
         return _run_skill
 
     async def _agent_loop(self) -> TurnOutcome:
-        """The main agent loop for one run."""
+        """The main agent loop for one run.
+        
+        采用 pi-mono 风格的双重循环设计：
+        - 外层循环：处理 Follow-up Queue 的消息
+        - 内层循环：处理 Tool Calls + Steering Queue
+        
+        保持 OKbot 的 steering 检查时机：在 tool 执行完成后检查
+        """
         assert self._runtime.llm is not None
         if isinstance(self._agent.toolset, KimiToolset):
             await self._agent.toolset.wait_for_mcp_tools()
@@ -415,7 +593,6 @@ class KimiSoul:
         async def _pipe_approval_to_wire():
             while True:
                 request = await self._approval.fetch_request()
-                # Here we decouple the wire approval request and the soul approval request.
                 wire_request = ApprovalRequest(
                     id=request.id,
                     action=request.action,
@@ -426,72 +603,189 @@ class KimiSoul:
                     mandatory=request.mandatory,
                 )
                 wire_send(wire_request)
-                # We wait for the request to be resolved over the wire, which means that,
-                # for each soul, we will have only one approval request waiting on the wire
-                # at a time. However, be aware that subagents (which have their own souls) may
-                # also send approval requests to the root wire.
                 resp = await wire_request.wait()
                 self._approval.resolve_request(request.id, resp)
                 wire_send(ApprovalResponse(request_id=request.id, response=resp))
 
-        step_no = 0
+        # ========== 外层循环：处理 Follow-up Queue ==========
+        # 参考 pi-mono: 在循环开始前检查 steering 消息
+        pending_steering_items: list = self._message_queue.get_steering_messages()
+        
+        # 跟踪最终结果
+        last_outcome: StepOutcome | None = None
+        total_step_count = 0
+        
         while True:
-            step_no += 1
-            if step_no > self._loop_control.max_steps_per_turn:
-                raise MaxStepsReached(self._loop_control.max_steps_per_turn)
+            # ========== 内层循环：处理 Tool Calls + Steering ==========
+            step_no = 0
+            has_more_tool_calls = True
+            inner_loop_completed = False
+            
+            while has_more_tool_calls or pending_steering_items:
+                step_no += 1
+                total_step_count += 1
+                if step_no > self._loop_control.max_steps_per_turn:
+                    raise MaxStepsReached(self._loop_control.max_steps_per_turn)
 
-            wire_send(StepBegin(n=step_no))
-            approval_task = asyncio.create_task(_pipe_approval_to_wire())
-            back_to_the_future: BackToTheFuture | None = None
-            step_outcome: StepOutcome | None = None
-            try:
-                # compact the context if needed
-                reserved = self._loop_control.reserved_context_size
-                if self._context.token_count + reserved >= self._runtime.llm.max_context_size:
-                    logger.info("Context too long, compacting...")
-                    await self.compact_context()
+                # 【关键】参考 pi-mono: 在 LLM 调用前注入 pending steering 消息
+                if pending_steering_items:
+                    logger.info(f"Injecting {len(pending_steering_items)} pending steering message(s) before LLM call")
+                    for item in pending_steering_items:
+                        steering_msg = self._message_queue.create_steering_message(item)
+                        await self._context.append_message(steering_msg)
+                        logger.debug(f"Pending steering message injected: {item.type}")
+                    pending_steering_items = []
 
-                logger.debug("Beginning step {step_no}", step_no=step_no)
-                await self._checkpoint()
-                self._denwa_renji.set_n_checkpoints(self._context.n_checkpoints)
-                step_outcome = await self._step()
-            except BackToTheFuture as e:
-                back_to_the_future = e
-            except Exception:
-                # any other exception should interrupt the step
-                wire_send(StepInterrupted())
-                # break the agent loop
-                raise
-            finally:
-                approval_task.cancel()  # stop piping approval requests to the wire
-                with suppress(asyncio.CancelledError):
-                    try:
-                        await approval_task
-                    except Exception:
-                        logger.exception("Approval piping task failed")
+                wire_send(StepBegin(n=step_no))
+                approval_task = asyncio.create_task(_pipe_approval_to_wire())
+                back_to_the_future: BackToTheFuture | None = None
+                step_outcome: StepOutcome | None = None
+                
+                try:
+                    # compact the context if needed
+                    reserved = self._loop_control.reserved_context_size
+                    if self._context.token_count + reserved >= self._runtime.llm.max_context_size:
+                        logger.info("Context too long, compacting...")
+                        await self.compact_context()
 
-            if step_outcome is not None:
-                final_message = (
-                    step_outcome.assistant_message
-                    if step_outcome.stop_reason == "no_tool_calls"
-                    else None
-                )
-                return TurnOutcome(
-                    stop_reason=step_outcome.stop_reason,
-                    final_message=final_message,
-                    step_count=step_no,
-                )
+                    logger.debug("Beginning step {step_no}", step_no=step_no)
+                    await self._checkpoint()
+                    self._denwa_renji.set_n_checkpoints(self._context.n_checkpoints)
+                    step_outcome = await self._step()
+                except BackToTheFuture as e:
+                    back_to_the_future = e
+                except Exception:
+                    wire_send(StepInterrupted())
+                    raise
+                finally:
+                    approval_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        try:
+                            await approval_task
+                        except Exception:
+                            logger.exception("Approval piping task failed")
 
-            if back_to_the_future is not None:
-                await self._context.revert_to(back_to_the_future.checkpoint_id)
-                await self._checkpoint()
-                await self._context.append_message(back_to_the_future.messages)
+                # 处理 BackToTheFuture
+                if back_to_the_future is not None:
+                    await self._context.revert_to(back_to_the_future.checkpoint_id)
+                    await self._checkpoint()
+                    await self._context.append_message(back_to_the_future.messages)
+                    has_more_tool_calls = True
+                    continue
+
+                # 处理 step 结果
+                if step_outcome is not None:
+                    last_outcome = step_outcome
+                    if step_outcome.stop_reason == "no_tool_calls":
+                        # 没有更多 tool calls，准备结束内层循环
+                        has_more_tool_calls = False
+                        
+                        # 【关键】参考 pi-mono: 在 turn 结束后检查 steering 消息
+                        steering_after_turn = self._message_queue.get_steering_messages()
+                        if steering_after_turn:
+                            logger.info(f"Got {len(steering_after_turn)} steering message(s) after turn")
+                            pending_steering_items = steering_after_turn
+                            has_more_tool_calls = True
+                            continue
+                        
+                        inner_loop_completed = True
+                        break
+                    else:
+                        # tool_rejected 或其他停止原因
+                        has_more_tool_calls = False
+                        inner_loop_completed = True
+                        break
+                
+                # step_outcome is None: 有更多 tool calls，继续内层循环
+                has_more_tool_calls = True
+
+            # ========== 内层循环结束，检查 Follow-up Queue ==========
+            if inner_loop_completed:
+                followup_items = self._message_queue.get_followup_messages()
+                if followup_items:
+                    logger.info(f"Processing {len(followup_items)} follow-up message(s)")
+                    wire_send(TextPart(text="🔄 收到新的用户消息，正在处理..."))
+                    
+                    for item in followup_items:
+                        await self._message_queue.inject_to_context(item, self._context)
+                        logger.debug(f"Follow-up message injected: {item.type}")
+                    
+                    # 检查是否有新的 steering 消息
+                    if not pending_steering_items:
+                        pending_steering_items = self._message_queue.get_steering_messages()
+                    continue
+            
+            # 没有 follow-up 消息或内层循环未完成，外层循环结束
+            break
+
+        # 返回最终结果
+        if last_outcome and last_outcome.stop_reason == "no_tool_calls":
+            return TurnOutcome(
+                stop_reason="no_tool_calls",
+                final_message=last_outcome.assistant_message,
+                step_count=total_step_count,
+            )
+        else:
+            return TurnOutcome(
+                stop_reason=last_outcome.stop_reason if last_outcome else "tool_rejected",
+                final_message=None,
+                step_count=total_step_count,
+            )
+
+    def _get_llm_log_path(self) -> Path | None:
+        """获取 llm.log 文件路径，位于 workspace 目录下."""
+        try:
+            work_dir = self._runtime.session.work_dir
+            # 处理不同类型的路径（str, Path, KaosPath）
+            if hasattr(work_dir, "__fspath__"):
+                # Path 或 KaosPath 对象
+                return Path(work_dir) / "llm.log"
+            elif isinstance(work_dir, str):
+                return Path(work_dir) / "llm.log"
+            else:
+                # 尝试直接转换
+                return Path(str(work_dir)) / "llm.log"
+        except Exception as e:
+            logger.debug("Failed to get llm.log path: {e}", e=e)
+            return None
+
+    async def _log_llm_messages(self, system_prompt: str | None, messages: Sequence[Message]) -> None:
+        """将发送给LLM的message增量保存到 llm.log 文件.
+        
+        Args:
+            system_prompt: 系统提示词
+            messages: 发送给LLM的消息列表
+        """
+        log_path = self._get_llm_log_path()
+        if log_path is None:
+            logger.debug("llm.log path is None, skipping log")
+            return
+
+        try:
+            # 构建日志条目
+            log_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "system_prompt": system_prompt,
+                "messages": [msg.model_dump(exclude_none=True) for msg in messages],
+            }
+
+            # 增量写入文件（追加模式）
+            async with aiofiles.open(log_path, "a", encoding="utf-8") as f:
+                await f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+            
+            logger.info("LLM messages logged to {path}", path=log_path)
+        except Exception as e:
+            # 记录失败不应影响主流程，但打印警告
+            logger.warning("Failed to write llm.log: {e}", e=e)
 
     async def _step(self) -> StepOutcome | None:
         """Run a single step and return a stop outcome, or None to continue."""
         # already checked in `run`
         assert self._runtime.llm is not None
         chat_provider = self._runtime.llm.chat_provider
+
+        # 记录发送给LLM的messages到 llm.log
+        await self._log_llm_messages(self._agent.system_prompt, self._context.history)
 
         async def _before_sleep(retry_state: RetryCallState) -> None:
             """Called before each retry. Refresh OAuth token on 401 errors."""
@@ -538,6 +832,10 @@ class KimiSoul:
 
         # shield the context manipulation from interruption
         await asyncio.shield(self._grow_context(result, results))
+
+        # 【注意】Steering 消息的处理已移到 _agent_loop
+        # _agent_loop 会在 LLM 调用前统一注入 steering 消息
+        # 这样设计更清晰，符合 pi-mono 的双重循环模式
 
         rejected = any(isinstance(result.return_value, ToolRejectedError) for result in results)
         if rejected:
@@ -590,10 +888,17 @@ class KimiSoul:
         if self._runtime.memory_agent:
             logger.info("Memory agent is available")
         else:
-            logger.warning("Memory agent is NOT available")
+            logger.debug("Memory agent is NOT available")
 
         assert self._runtime.llm is not None
-        tool_messages = [tool_result_to_message(tr) for tr in tool_results]
+        
+        # Convert tool results to messages with error handling
+        try:
+            tool_messages = [tool_result_to_message(tr) for tr in tool_results]
+        except Exception as e:
+            logger.exception("Failed to convert tool results to messages: {e}")
+            raise
+            
         for tm in tool_messages:
             if missing_caps := check_message(tm, self._runtime.llm.capabilities):
                 logger.warning(
@@ -602,14 +907,30 @@ class KimiSoul:
                 )
                 raise LLMNotSupported(self._runtime.llm, list(missing_caps))
 
-        await self._context.append_message(result.message)
+        # Append assistant message
+        try:
+            await self._context.append_message(result.message)
+            logger.debug("Appended assistant message to context")
+        except Exception as e:
+            logger.exception("Failed to append assistant message: {e}")
+            raise
+            
+        # Update token count
         if result.usage is not None:
-            await self._context.update_token_count(result.usage.total)
+            try:
+                await self._context.update_token_count(result.usage.total)
+                logger.debug("Updated token count: {tokens}", tokens=result.usage.total)
+            except Exception as e:
+                logger.exception("Failed to update token count: {e}")
+                raise
 
-        logger.debug(
-            "Appending tool messages to context: {tool_messages}", tool_messages=tool_messages
-        )
-        await self._context.append_message(tool_messages)
+        try:
+            logger.debug("Appending {n} tool messages to context", n=len(tool_messages))
+            await self._context.append_message(tool_messages)
+            logger.debug("Successfully appended tool messages to context")
+        except Exception as e:
+            logger.exception("Failed to append tool messages: {e}")
+            raise
         # token count of tool results are not available yet
         
         # Extract and queue observations from tool results
