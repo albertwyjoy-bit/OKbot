@@ -160,17 +160,37 @@ class Context:
         self._next_checkpoint_id = 0
 
     async def append_message(self, message: Message | Sequence[Message]):
-        logger.debug("Appending message(s) to context: {message}", message=message)
         messages = [message] if isinstance(message, Message) else message
+        logger.debug("Appending {count} message(s) to context", count=len(messages))
+        
+        # Validate messages before adding to history
+        for idx, msg in enumerate(messages):
+            if not isinstance(msg, Message):
+                logger.error("Invalid message type at index {idx}: {type}", idx=idx, type=type(msg))
+                raise TypeError(f"Expected Message, got {type(msg)}")
+        
         self._history.extend(messages)
 
-        async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
-            for message in messages:
-                await f.write(message.model_dump_json(exclude_none=True) + "\n")
+        try:
+            async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
+                for msg in messages:
+                    try:
+                        json_str = msg.model_dump_json(exclude_none=True)
+                        await f.write(json_str + "\n")
+                    except Exception as e:
+                        logger.exception("Failed to serialize message: {e}")
+                        raise
+        except Exception as e:
+            logger.exception("Failed to append messages to file: {e}")
+            raise
 
     async def update_token_count(self, token_count: int):
         logger.debug("Updating token count in context: {token_count}", token_count=token_count)
         self._token_count = token_count
 
-        async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
-            await f.write(json.dumps({"role": "_usage", "token_count": token_count}) + "\n")
+        try:
+            async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
+                await f.write(json.dumps({"role": "_usage", "token_count": token_count}) + "\n")
+        except Exception as e:
+            logger.exception("Failed to update token count in file: {e}")
+            raise
