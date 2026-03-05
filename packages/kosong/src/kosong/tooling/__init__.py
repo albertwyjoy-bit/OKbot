@@ -125,9 +125,6 @@ class ToolReturnValue(BaseModel):
     display: list[DisplayBlock]
     """The content blocks to be displayed to the user."""
 
-    # For debugging/testing
-    extras: dict[str, JsonType] | None = None
-
     @property
     def brief(self) -> str:
         """Get the brief display block data, if any."""

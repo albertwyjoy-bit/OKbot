@@ -71,7 +71,6 @@ class ToolResultBuilder:
         self._n_lines = 0
         self._truncation_happened = False
         self._display: list[DisplayBlock] = []
-        self._extras: dict[str, JsonType] | None = None
 
     @property
     def is_full(self) -> bool:
@@ -131,12 +130,6 @@ class ToolResultBuilder:
         """Add display blocks to the tool result."""
         self._display.extend(blocks)
 
-    def extras(self, **extras: JsonType) -> None:
-        """Add extra data to the tool result."""
-        if self._extras is None:
-            self._extras = {}
-        self._extras.update(extras)
-
     def ok(self, message: str = "", *, brief: str = "") -> ToolReturnValue:
         """Create a ToolReturnValue with is_error=False and the current output."""
         output = "".join(self._buffer)
@@ -155,7 +148,6 @@ class ToolResultBuilder:
             output=output,
             message=final_message,
             display=([BriefDisplayBlock(text=brief)] if brief else []) + self._display,
-            extras=self._extras,
         )
 
     def error(self, message: str, *, brief: str) -> ToolReturnValue:
@@ -175,7 +167,6 @@ class ToolResultBuilder:
             output=output,
             message=final_message,
             display=([BriefDisplayBlock(text=brief)] if brief else []) + self._display,
-            extras=self._extras,
         )
 
 
