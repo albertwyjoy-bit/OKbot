@@ -1,424 +1,323 @@
-# Kimi Code CLI (OKbot - 飞书版)
+# AGENTS.md - OKbot Development Guide
 
-## Quick commands (use uv)
+> This file contains essential information for AI coding agents working on the OKbot project.
+> OKbot is a Feishu (Lark) extension for Kimi Code CLI.
 
-- `make prepare` - Sync deps for all workspace packages and install git hooks
-- `make format` - Auto-format all code (ruff for Python, biome for web)
-- `make check` - Run linting and type checks
-- `make test` - Run all test suites
-- `make ai-test` - Run AI-powered test suite
-- `make build` / `make build-bin` - Build Python packages or standalone binary
-- `make web-back` / `make web-front` - Start web backend/frontend dev servers
+## Project Overview
 
-If running tools directly, use `uv run ...`.
+**OKbot** is the Feishu (Lark) integration version of [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli). It allows users to interact with Kimi CLI through Feishu messages, enabling seamless cross-device task continuation between CLI and mobile.
 
-## Project overview
+### Key Features
+- **Feishu Integration**: WebSocket-based long connection for real-time messaging
+- **Cross-device Session Continuation**: Switch between CLI and Feishu seamlessly
+- **Scheduled Tasks**: Natural language cron job creation with AI execution
+- **Memory System**: Long-term memory based on claude-mem architecture
+- **Plan Mode**: Read-only analysis mode for safe planning
+- **MCP Hot Reload**: Dynamic MCP server management without restart
+- **Voice Messages**: GLM-ASR-2512 powered speech recognition
+- **Image Generation**: Volcano Engine Ark API integration
+- **Device Control**: PC browser (Chrome) and Android device manipulation
 
-**OKbot** is a Feishu (Lark) extension of [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli), 
-a Python CLI agent for software engineering workflows. It enables real-time interaction with 
-Kimi through Feishu messages, supporting cross-device session continuity, scheduled tasks, 
-MCP tool integration, and device control (PC browser and Android).
+## Technology Stack
 
-Key capabilities:
-- **Plan Mode**: `/plan` enters read-only analysis mode for safe code review
-- **Scheduled Tasks**: Natural language cron jobs with `scheduler/` module
-- **Cross-device Sessions**: Seamlessly switch between CLI and Feishu
-- **Dynamic Skills**: Hot-reloadable skill system under `.agents/skills/`
-- **MCP Hot-swap**: Runtime MCP server management without restart
-- **Memory System**: Long-term memory with embedding-based retrieval
-- **Device Control**: Chrome browser automation and Android device control
-- **Rich Media**: Image generation, voice messages (ASR), file attachments
+| Component | Technology |
+|-----------|------------|
+| Language | Python 3.12+ |
+| Package Manager | uv ( Astral's Python package manager) |
+| Web Framework | FastAPI + Uvicorn |
+| WebSocket | websockets library |
+| Feishu SDK | lark-oapi |
+| Task Scheduling | croniter |
+| Voice Recognition | GLM-ASR-2512 |
+| Frontend (Web UI) | React + TypeScript + Vite |
+| Build | uv_build, PyInstaller (optional) |
+| Nix Support | Full flake.nix configuration |
 
-## Tech stack
-
-### Core (Python)
-- **Python**: 3.12+ (tooling configured for 3.14)
-- **CLI framework**: Typer
-- **Async runtime**: asyncio
-- **LLM framework**: kosong (workspace package)
-- **MCP integration**: fastmcp
-- **HTTP client**: aiohttp, httpx
-- **Logging**: loguru
-- **Config**: tomlkit, PyYAML
-- **TUI**: prompt-toolkit, rich
-
-### Web UI (TypeScript/React)
-- **Framework**: React 19 + TypeScript
-- **Build tool**: Vite
-- **Styling**: Tailwind CSS 4
-- **UI components**: Radix UI + shadcn/ui patterns
-- **State**: React hooks + tanstack/react-table
-- **Lint/Format**: Biome
-
-### Package management
-- **Python**: uv + uv_build
-- **Node.js**: pnpm
-- **Nix**: flake.nix for reproducible dev environments
-
-### Testing & Quality
-- **Tests**: pytest + pytest-asyncio
-- **Lint/Format**: ruff (Python), biome (web)
-- **Type checking**: pyright + ty (Python), tsc (TypeScript)
-- **Git hooks**: pre-commit with custom hooks
-
-### Distribution
-- **Python packages**: uv build
-- **Standalone binary**: PyInstaller (kimi.spec)
-
-## Workspace structure
-
-This is a uv workspace with multiple packages:
+## Project Structure
 
 ```
-root (kimi-cli)
-├── packages/
-│   ├── kosong/          # LLM abstraction layer
-│   │   └── src/kosong/
-│   │       ├── chat_provider/    # Kimi, OpenAI, Anthropic, Google GenAI
-│   │       ├── tooling/          # Tool orchestration
-│   │       └── message.py        # Unified message types
-│   ├── kaos/            # OS abstraction layer (PyKAOS)
-│   │   └── src/kaos/
-│   │       ├── local.py          # Local file/execution
-│   │       └── ssh.py            # Remote via SSH
-│   └── kimi-code/       # Wrapper package for distribution
-├── sdks/
-│   └── kimi-sdk/        # Lightweight SDK for Kimi API
-└── web/                 # React-based web UI
-    ├── src/
-    ├── package.json
-    └── vite.config.ts
+OKbot/
+├── src/kimi_cli/                 # Main source code
+│   ├── feishu/                   # Feishu integration core
+│   │   ├── sdk_client.py         # Feishu SDK client
+│   │   ├── sdk_server.py         # WebSocket server implementation
+│   │   ├── card_builder.py       # Interactive card builders
+│   │   ├── config.py             # Configuration management
+│   │   └── message_renderer.py   # Message formatting
+│   ├── scheduler/                # Scheduled task system
+│   │   ├── scheduler.py          # Core scheduler
+│   │   ├── cron_engine.py        # Cron expression parsing
+│   │   ├── session.py            # Silent task sessions
+│   │   └── store.py              # Job persistence
+│   ├── wire/                     # Wire protocol for ACP
+│   │   ├── server.py             # Wire server implementation
+│   │   ├── types.py              # Protocol types
+│   │   └── jsonrpc.py            # JSON-RPC handling
+│   ├── soul/                     # Core agent implementation
+│   │   ├── kimisoul.py           # Main agent logic
+│   │   ├── agent.py              # Base agent
+│   │   └── approval.py           # Tool approval handling
+│   ├── memory/                   # Long-term memory system
+│   ├── tools/                    # Tool implementations
+│   │   ├── file/                 # File operations
+│   │   ├── web/                  # Web search/fetch
+│   │   ├── shell/                # Shell execution
+│   │   ├── feishu/               # Feishu-specific tools
+│   │   └── scheduler_tool.py     # Task scheduling tool
+│   ├── web/                      # Web UI backend
+│   └── ui/                       # CLI UI components
+├── packages/                     # Workspace packages
+│   ├── kosong/                   # Core utility library
+│   ├── kaos/                     # Agent OS primitives
+│   └── kimi-code/                # Kimi Code package
+├── sdks/kimi-sdk/                # Kimi SDK
+├── web/                          # Web frontend (React/Vite)
+├── tests/                        # Unit tests
+│   ├── okbot/                    # Feishu integration tests
+│   ├── scheduler/                # Scheduler tests
+│   ├── core/                     # Core functionality tests
+│   └── tools/                    # Tool tests
+├── tests_e2e/                    # End-to-end tests
+├── docs/                         # Documentation
+├── klips/                        # OKbot Enhancement Proposals
+└── .agents/skills/               # Project skills for AI
 ```
 
-## Architecture overview
+## Build Commands
 
-### Entry points
-- **CLI**: `src/kimi_cli/cli/__main__.py` → `cli.py` (Typer) → `app.py::KimiCLI`
-- **Feishu bot**: `src/kimi_cli/feishu/__main__.py` → Feishu SDK client/server
-- **Web**: `src/kimi_cli/web/app.py` → FastAPI + React frontend
-
-### Core agent loop
-1. **KimiCLI.create** (`app.py`): Load config, select provider, build Runtime
-2. **KimiSoul.run** (`soul/kimisoul.py`): Main event loop
-   - Parse slash commands (`soul/slash.py`)
-   - Manage conversation Context (`soul/context.py`)
-   - Call LLM via kosong
-   - Execute tools via KimiToolset (`soul/toolset.py`)
-   - Handle compaction (`soul/compaction.py`)
-3. **Wire protocol** (`wire/`): Event streaming between soul and UI
-
-### Key modules
-
-#### Agent configuration (`agents/`)
-- YAML specs define agent behavior
-- `default/agent.yaml`: Default agent with standard tools
-- `okabe/`: Alternative agent persona
-- Tools specified by import path (e.g., `kimi_cli.tools.shell:Shell`)
-
-#### Tools (`tools/`)
-Built-in tools:
-- `shell`: Command execution via PyKAOS
-- `file`: Read, write, glob, grep, replace
-- `web`: Search (DuckDuckGo) and fetch
-- `multiagent`: Task spawner for subagents
-- `todo`: Task list management
-- `memory_tools`: Memory search and storage
-- `image_generation`: Text-to-image via Ark API
-- `think`: Reasoning tool
-
-MCP tools are loaded dynamically via `fastmcp`.
-
-#### Feishu integration (`feishu/`)
-- `sdk_client.py`: Feishu OpenAPI client
-- `sdk_server.py`: Webhook server for bot events
-- `card_builder.py`: Interactive message cards
-- `context.py`: Session management for cross-device continuity
-- `message_renderer.py`: Rich content rendering
-- `post_message.py`: Message posting utilities
-
-#### Scheduler (`scheduler/`)
-- Natural language cron expression parsing
-- Task persistence with SQLite
-- Integration with agent session for execution
-- File-based task outputs
-
-#### Memory system (`memory/`)
-- Embedding-based retrieval (GLM/Kimi embedders)
-- Observation storage with timestamps
-- Timeline and semantic search
-
-#### Wire protocol (`wire/`)
-Event types for UI communication:
-- `TurnBegin`/`TurnEnd`: Conversation boundaries
-- `StepBegin`/`StepInterrupted`: Execution steps
-- `TextDelta`/`ToolCallBegin`: Streaming content
-- `ApprovalRequest`/`ApprovalComplete`: User approval flow
-
-#### UI frontends (`ui/`)
-- `shell/`: Interactive TUI (default)
-- `print/`: Non-interactive output
-- `acp/`: Agent Communication Protocol server
-
-#### Skills (`skill/`, `.agents/skills/`)
-- Standard skills: Load `SKILL.md` as user prompt (`/skill:name`)
-- Flow skills: Execute parsed flow diagrams (`/flow:name`)
-- Flow formats: Mermaid, D2
-
-## Configuration
-
-### User config
-Location: `~/.kimi/config.toml`
-
-Key sections:
-- `model`: Default model and provider settings
-- `approval`: Auto-approval settings (yolo mode)
-- `feishu`: Feishu app credentials (for OKbot)
-- `mcp`: MCP server configurations
-- `memory`: Embedding provider settings
-
-### Feishu config
-Location: `~/.kimi/feishu.toml`
-
-```toml
-[app]
-app_id = "cli_xxxxxxxxxxxxxxxx"
-app_secret = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-encrypt_key = "your-encrypt-key"
-
-[server]
-port = 8080
-webhook_path = "/webhook"
-```
-
-## Development workflow
-
-### Setup
+### Setup (First Time)
 ```bash
-# Install deps and git hooks
-make prepare
+# One-time installation script
+./install.sh
 
-# Or manually:
+# Or manual setup
+conda create -n okbot python=3.12 -y
+conda activate okbot
+pip install -e ".[dev]"
+pip install lark-oapi
+```
+
+### Development
+```bash
+# Sync dependencies
+make prepare              # Full setup with git hooks
 uv sync --frozen --all-extras --all-packages
-uv tool install prek && uv tool run prek install
+
+# Web development
+make web-back             # Start FastAPI backend (port 5494)
+make web-front            # Start Vite dev server
 ```
 
-### Development servers
+### Code Quality
 ```bash
-# Web backend (FastAPI)
-make web-back
+# Format all code
+make format               # Format all workspace packages
+make format-kimi-cli      # Format only main CLI
 
-# Web frontend (Vite)
-make web-front
-
-# Feishu bot
-python -m kimi_cli.feishu
-```
-
-### Code quality
-```bash
-# Format all
-make format
-
-# Check all
-make check
-
-# Individual packages
-make format-kimi-cli / make check-kimi-cli
-make format-kosong / make check-kosong
-make format-web / make check-web
+# Run checks
+make check                # Lint and type check all
+make check-kimi-cli       # Check only main CLI
 ```
 
 ### Testing
 ```bash
-# All tests
-make test
+# Run all tests
+make test                 # All tests across workspace
+pytest tests -vv          # Unit tests only
+pytest tests_e2e -vv      # E2E tests only
 
-# Individual packages
-make test-kimi-cli
-make test-kosong
-make test-pykaos
-make test-kimi-sdk
-
-# AI tests (requires API keys)
-make ai-test
+# Specific modules
+make test-kimi-cli        # Main CLI tests
+make test-kosong          # Kosong package tests
 ```
 
 ### Building
 ```bash
-# Python packages
-make build
-
-# Standalone binary (one-file)
-make build-bin
-
-# Standalone binary (one-dir)
-make build-bin-onedir
-
-# Web UI only
-make build-web
+# Build packages
+make build                # Build all Python packages
+make build-web            # Build web UI
+make build-bin            # PyInstaller binary (one-file)
+make build-bin-onedir     # PyInstaller binary (one-dir)
 ```
 
-## Repo map
+## Running the Application
 
-```
-src/kimi_cli/
-├── agents/              # Agent YAML specs and prompts
-│   ├── default/         # Default agent
-│   └── okabe/           # Alternative persona
-├── cli/                 # CLI commands (Typer)
-├── feishu/              # Feishu/Lark integration
-├── memory/              # Long-term memory system
-├── prompts/             # Shared prompt templates
-├── scheduler/           # Cron task scheduler
-├── skill/               # Skill framework + flows
-├── soul/                # Core agent runtime
-│   ├── agent.py         # Runtime, Agent, LaborMarket
-│   ├── kimisoul.py      # Main agent loop
-│   ├── context.py       # Conversation history
-│   ├── toolset.py       # Tool loading/execution
-│   ├── slash.py         # Slash commands
-│   ├── approval.py      # User approval flow
-│   └── compaction.py    # Context compression
-├── tools/               # Built-in tools
-├── ui/                  # UI frontends
-├── utils/               # Utilities
-├── web/                 # Web API (FastAPI)
-└── wire/                # Event protocol
+### Start Feishu Integration
+```bash
+# Method 1: Direct module
+python -m kimi_cli.feishu
 
-packages/
-├── kosong/              # LLM abstraction
-├── kaos/                # OS abstraction
-└── kimi-code/           # Distribution wrapper
-
-sdks/
-└── kimi-sdk/            # Public SDK
-
-web/                     # React web UI
-.agents/skills/          # Built-in skills
-tests/                   # Unit tests
-tests_ai/                # AI-powered tests
-tests_e2e/               # End-to-end tests
-klips/                   # Improvement proposals (KLIP)
+# Method 2: Via CLI
+kimi feishu
 ```
 
-## Conventions and quality
+### Configuration Required
+Create `~/.kimi/feishu.toml` based on `feishu.example.toml`:
+
+```toml
+host = "127.0.0.1"
+port = 18789
+default_account = "bot"
+
+[accounts.bot]
+app_id = "cli_xxxxx"
+app_secret = "xxxxxxxx"
+auto_approve = true
+```
+
+Also ensure `~/.kimi/config.toml` has proper LLM provider configuration.
+
+## Code Style Guidelines
 
 ### Python
-- **Version**: >=3.12 (strict typing for 3.14)
-- **Line length**: 100
-- **Import style**: `from __future__ import annotations`
-- **Type hints**: Required, strict mode with pyright
+- **Line Length**: 100 characters (ruff config)
+- **Formatter**: ruff
+- **Type Checker**: pyright (strict mode for src/kimi_cli/)
+- **Import Style**: isort-compatible
 
-### Ruff rules
-- `E` - pycodestyle
-- `F` - Pyflakes
-- `UP` - pyupgrade
-- `B` - flake8-bugbear
-- `SIM` - flake8-simplify
-- `I` - isort
+### Ruff Rules Enabled
+- `E`, `F`: pycodestyle, Pyflakes
+- `UP`: pyupgrade
+- `B`: flake8-bugbear
+- `SIM`: flake8-simplify
+- `I`: isort
 
-Per-file ignores:
-- `tests/**/*.py`: `E501` (line too long in tests)
-- `src/kimi_cli/web/api/**/*.py`: `B008` (FastAPI Depends)
+### Type Checking
+- Python 3.14 target for type checking
+- Strict mode enabled for `src/kimi_cli/**/*.py`
+- Standard mode for tests
 
-### Testing
-- Test files: `tests/test_*.py`
-- Fixtures in `conftest.py`
-- Async tests use `pytest-asyncio`
-- Snapshots via `inline-snapshot`
+### Frontend (Web)
+- **Formatter**: Biome
+- **Type Checker**: TypeScript
+- Located in `web/` directory
 
-### Git hooks
-Pre-commit runs:
-1. `make format-kimi-cli` - Auto-fix formatting
-2. `make check-kimi-cli` - Lint and type check
+## Testing Strategy
 
-## Git commit messages
+### Test Organization
+- `tests/`: Unit tests organized by module
+  - `okbot/`: Feishu integration tests
+  - `scheduler/`: Scheduled task tests
+  - `core/`: Core agent logic tests
+  - `tools/`: Tool implementation tests
+- `tests_e2e/`: End-to-end integration tests
+- `tests_ai/`: AI-powered test suite
 
-Conventional Commits format:
+### Test Configuration
+- Pytest with `asyncio_mode = auto`
+- Fixtures in `tests/conftest.py`
+- Use `pytest-asyncio` for async tests
 
+### Writing Tests
+```python
+# Example async test
+async def test_feishu_integration():
+    client = FeishuSDKClient(...)
+    result = await client.send_message(...)
+    assert result.code == 0
 ```
-<type>(<scope>): <subject>
+
+## Key Architectural Patterns
+
+### Feishu Integration
+- Uses **WebSocket long connection** via Feishu SDK
+- No webhook URL or tunneling required
+- Event-driven architecture with `sdk_server.py`
+- Interactive cards for approvals (`card_builder.py`)
+
+### Session Management
+- Sessions stored in `.kimi/sessions/{session_id}.json`
+- Shared between CLI and Feishu (same directory structure)
+- Cross-device continuation via `/continue <session_id>`
+
+### Scheduler
+- Cron-based scheduling with `croniter`
+- Silent execution in independent sessions
+- Queue-based notification delivery
+- File auto-upload to Feishu
+
+### Wire Protocol
+- JSON-RPC based protocol for ACP (Agent Communication Protocol)
+- Supports approvals, tool execution, file transfers
+- Used for CLI and web UI communication
+
+## Security Considerations
+
+### Configuration Security
+- API keys stored in `~/.kimi/config.toml` (user home)
+- Feishu credentials in `~/.kimi/feishu.toml`
+- Environment variables preferred for secrets (e.g., `ZHIPU_API_KEY`)
+
+### Authorization Modes
+1. **YOLO Mode** (default): Auto-approve all tool calls
+2. **Interactive Mode**: Card-based approval for each tool
+
+### Plan Mode
+- Read-only mode for safe analysis
+- Blocks all write operations and MCP tools
+- Dedicated planning file: `~/.kimi/plans/{session_id}.md`
+
+## MCP (Model Context Protocol)
+
+### Configuration
+MCP servers configured in `~/.kimi/config.toml`:
+
+```toml
+[[mcp.servers]]
+name = "midscene-web"
+type = "stdio"
+command = "npx"
+args = ["@midscene/web"]
 ```
 
-Allowed types:
-`feat`, `fix`, `test`, `refactor`, `chore`, `style`, `docs`, `perf`, `build`, `ci`, `revert`.
+### Hot Reload
+- Use `/update-mcp` command to reload without restart
+- Tools prefixed with `{server}__` to avoid conflicts
 
-## Versioning
+## Development Tips
 
-**Minor-bump-only** scheme (`MAJOR.MINOR.PATCH`):
+### Adding New Feishu Commands
+1. Add handler in `src/kimi_cli/feishu/sdk_server.py`
+2. Update help text in card builders
+3. Add tests in `tests/okbot/`
 
-- **Patch**: Always `0`, never bump
-- **Minor**: Bump for any change (features, fixes, improvements)
-- **Major**: Manual decision only
+### Adding Scheduler Features
+1. Update models in `scheduler/models.py`
+2. Modify engine in `scheduler/cron_engine.py`
+3. Update dispatcher in `scheduler/dispatcher.py`
 
-Examples: `0.68.0` → `0.69.0` → `0.70.0` (never `0.68.1`)
+### Adding Tools
+1. Implement in `src/kimi_cli/tools/<category>/`
+2. Register in `src/kimi_cli/tools/__init__.py`
+3. Add tests in `tests/tools/`
 
-Applies to: root, `packages/*`, `sdks/*`
-
-Current versions:
-- `kimi-cli`: 1.9.0
-- `kimi-code`: 1.12.0
-- `kosong`: 0.42.0
-- `pykaos`: 0.7.0
-- `kimi-sdk`: 0.2.1
-
-## Release workflow
-
-1. Ensure `main` is up to date: `git pull origin main`
-2. Create release branch: `git checkout -b bump-X.Y`
-3. Update `CHANGELOG.md`: Rename `[Unreleased]` to `[X.Y] - YYYY-MM-DD`
-4. Update `pyproject.toml` version
-5. Run `uv sync` to align `uv.lock`
-6. Commit and push: `git commit -m "chore: bump version to X.Y" && git push`
-7. Open PR, get review, merge
-8. Switch to `main` and pull: `git checkout main && git pull`
-9. Tag and push:
-   ```bash
-   git tag X.Y.0          # or pykaos-X.Y.0 for packages
-   git push --tags
-   ```
-10. GitHub Actions handles the release
-
-## CI/CD
-
-GitHub Actions workflows (`.github/workflows/`):
-
-- `ci-kimi-cli.yml` - Test and check on PR/push
-- `ci-kosong.yml`, `ci-pykaos.yml`, `ci-kimi-sdk.yml` - Package CI
-- `release-kimi-cli.yml` - Release builds and PyPI upload
-- `release-*.yml` - Package releases
-- `typos.yml` - Spell checking
-- `pr-title-checker.yml` - Conventional Commits validation
-
-## Nix support
-
-For Nix users, a `flake.nix` provides:
-- `nix build` - Build kimi-cli package
-- `nix develop` - Enter dev shell with all dependencies
-- Uses uv2nix for Python package management
-
-## Security considerations
-
-- OAuth tokens stored in system keyring via `keyring` library
-- Feishu encrypt_key for webhook verification
-- MCP server configs in user config (not repo)
-- Shell tool has approval requirements (configurable)
-- File operations respect `.gitignore` patterns
-
-## Common slash commands
+## Common Commands Reference
 
 | Command | Description |
 |---------|-------------|
 | `/help` | Show help |
 | `/plan` | Enter Plan Mode (read-only analysis) |
 | `/stop` | Interrupt current operation |
-| `/clear` | Clear conversation context |
+| `/clear` | Clear context |
 | `/new` | Create new session |
-| `/model` | Switch model and Thinking mode |
-| `/yolo` | Toggle auto-approval |
+| `/model` | Switch model and thinking mode |
+| `/yolo` | Toggle auto-approval mode |
 | `/cron` | Manage scheduled tasks |
 | `/sessions` | List CLI sessions |
-| `/continue <id>` | Resume session |
+| `/continue <id>` | Continue CLI session |
 | `/mcp` | View MCP status |
-| `/skill:<name>` | Load skill |
-| `/flow:<name>` | Execute flow |
+| `/update-mcp` | Hot reload MCP config |
+| `/update-skill` | Reload skills |
+
+## Documentation
+
+- `README.md`: Main project overview (Chinese)
+- `docs/detailed-readme.md`: Detailed documentation
+- `docs/memory.md`: Memory system documentation
+- `docs/scheduler_file_handling.md`: Scheduler documentation
+- `docs/voice-messages.md`: Voice feature documentation
+- `klips/`: OKbot Enhancement Proposals
+
+## License
+
+Apache License 2.0 - Original [kimi-cli](https://github.com/MoonshotAI/kimi-cli) copyright belongs to Moonshot AI.

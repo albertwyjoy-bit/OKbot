@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Log Viewer - OKbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .message-content { white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; }
+        .json-syntax { font-family: 'JetBrains Mono', monospace; }
+        .json-key { color: #d946ef; }
+        .json-string { color: #22c55e; }
+        .json-number { color: #f97316; }
+        .json-boolean { color: #3b82f6; }
+        .json-null { color: #6b7280; }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        
+        .entry-card { transition: all 0.2s ease; }
+        .entry-card:hover { background-color: rgba(55, 65, 81, 0.5); }
+        
+        .loading-spinner {
+            border: 3px solid #374151;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .page-btn {
+            @apply px-3 py-1 text-sm rounded border border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors;
+        }
+        .page-btn.active {
+            @apply bg-blue-600 text-white border-blue-500;
+        }
+        .page-btn:disabled {
+            @apply opacity-50 cursor-not-allowed;
+        }
+        
+        .agent-tab {
+            @apply px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200 cursor-pointer transition-colors;
+        }
+        .agent-tab.active {
+            @apply border-blue-500 text-blue-400;
+        }
+        .agent-tab.has-subagent::after {
+            content: "•";
+            @apply ml-1 text-green-400;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-gray-900 border-b border-gray-800 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="bg-gradient-to-br from-blue-500 to-purple-600 p-2 rounded-lg">
+                        <i data-lucide="brain-circuit" class="w-6 h-6 text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                            LLM Log Viewer
+                        </h1>
+                        <p class="text-xs text-gray-500">OKbot Conversation Analyzer</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="loadExample()" class="px-3 py-1.5 text-sm text-gray-400 hover:text-white transition-colors">
+                        加载示例
+                    </button>
+                    <label class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all">
+                        <i data-lucide="upload" class="w-4 h-4"></i>
+                        <span class="text-sm font-medium">选择主日志</span>
+                        <input type="file" id="fileInput" accept=".log,.json,.jsonl" class="hidden" onchange="handleFileSelect(event)">
+                    </label>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Loading State -->
+        <div id="loadingState" class="hidden text-center py-20">
+            <div class="loading-spinner mx-auto mb-4"></div>
+            <p class="text-gray-400">正在解析日志文件...</p>
+            <p class="text-xs text-gray-600 mt-2" id="loadingProgress"></p>
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="text-center py-20">
+            <div class="bg-gray-900/50 rounded-2xl p-12 max-w-2xl mx-auto border border-dashed border-gray-700">
+                <div class="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <i data-lucide="file-text" class="w-10 h-10 text-gray-600"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-300 mb-2">暂无日志文件</h3>
+                <p class="text-gray-500 mb-6">拖放主 llm.log 文件到这里，或点击上方按钮选择文件</p>
+                <div class="text-xs text-gray-600 mono bg-gray-900 rounded p-3 inline-block text-left">
+                    <p>支持功能:</p>
+                    <p>• 主 Agent LLM 调用记录</p>
+                    <p>• 子 Agent 日志自动检测与切换</p>
+                    <p>• 分页显示，每页50条</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard -->
+        <div id="dashboard" class="hidden">
+            <!-- Agent Selector Tabs -->
+            <div class="bg-gray-900 rounded-t-xl border border-gray-800 border-b-0 px-4 pt-2">
+                <div class="flex items-center gap-1 overflow-x-auto" id="agentTabs">
+                    <button class="agent-tab active" onclick="switchToMainLog()">
+                        <i data-lucide="bot" class="w-4 h-4 inline mr-1"></i>
+                        主 Agent
+                    </button>
+                    <!-- Subagent tabs will be inserted here -->
+                </div>
+            </div>
+
+            <!-- Current Log Info -->
+            <div class="bg-gray-900 border-x border-b border-gray-800 px-4 py-3 mb-6">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm text-gray-400">当前查看:</span>
+                        <span class="text-sm font-medium text-blue-400" id="currentLogName">主 Agent</span>
+                        <span class="text-xs text-gray-500 mono" id="currentLogPath"></span>
+                    </div>
+                    <button onclick="loadSubagentLogFile()" class="text-sm text-green-400 hover:text-green-300 flex items-center gap-1">
+                        <i data-lucide="file-plus" class="w-4 h-4"></i>
+                        手动加载子 Agent 日志
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="p-2 bg-blue-500/10 rounded-lg"><i data-lucide="message-square" class="w-5 h-5 text-blue-400"></i></div>
+                        <span class="text-sm text-gray-400">总请求数</span>
+                    </div>
+                    <div class="text-2xl font-bold" id="statTotalRequests">0</div>
+                </div>
+                <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="p-2 bg-green-500/10 rounded-lg"><i data-lucide="messages-square" class="w-5 h-5 text-green-400"></i></div>
+                        <span class="text-sm text-gray-400">总消息数</span>
+                    </div>
+                    <div class="text-2xl font-bold" id="statTotalMessages">0</div>
+                </div>
+                <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="p-2 bg-purple-500/10 rounded-lg"><i data-lucide="clock" class="w-5 h-5 text-purple-400"></i></div>
+                        <span class="text-sm text-gray-400">时间跨度</span>
+                    </div>
+                    <div class="text-sm font-medium" id="statTimeRange">-</div>
+                </div>
+                <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="p-2 bg-orange-500/10 rounded-lg"><i data-lucide="file-code" class="w-5 h-5 text-orange-400"></i></div>
+                        <span class="text-sm text-gray-400">子 Agent</span>
+                    </div>
+                    <div class="text-2xl font-bold" id="statSubagentCount">0</div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="bg-gray-900 rounded-xl p-4 border border-gray-800 mb-6">
+                <div class="flex flex-wrap gap-4 items-center">
+                    <div class="flex-1 min-w-[200px]">
+                        <div class="relative">
+                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"></i>
+                            <input type="text" id="searchInput" placeholder="搜索消息内容..." 
+                                class="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-blue-500"
+                                oninput="handleSearch()">
+                        </div>
+                    </div>
+                    <select id="roleFilter" onchange="handleFilter()" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                        <option value="">所有角色</option>
+                        <option value="user">User</option>
+                        <option value="assistant">Assistant</option>
+                        <option value="system">System</option>
+                        <option value="tool">Tool</option>
+                    </select>
+                    <button onclick="expandAll(true)" class="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                        <i data-lucide="expand-all" class="w-4 h-4"></i> 展开
+                    </button>
+                    <button onclick="expandAll(false)" class="text-sm text-gray-400 hover:text-gray-300 flex items-center gap-1">
+                        <i data-lucide="collapse-all" class="w-4 h-4"></i> 收起
+                    </button>
+                    <button onclick="exportData()" class="text-sm text-green-400 hover:text-green-300 flex items-center gap-1">
+                        <i data-lucide="download" class="w-4 h-4"></i> 导出
+                    </button>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            <div class="flex items-center justify-between mb-4 bg-gray-900 rounded-xl p-3 border border-gray-800">
+                <div class="text-sm text-gray-400">
+                    共 <span id="totalCount" class="text-white font-medium">0</span> 条记录
+                    <span class="mx-2">|</span>
+                    每页 <span class="text-white">50</span> 条
+                </div>
+                <div class="flex items-center gap-2" id="pagination"></div>
+            </div>
+
+            <!-- Timeline -->
+            <div class="space-y-3" id="timeline"></div>
+
+            <!-- Bottom Pagination -->
+            <div class="flex items-center justify-center mt-6" id="bottomPagination"></div>
+        </div>
+    </main>
+
+    <!-- Detail Modal -->
+    <div id="detailModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-gray-900 rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden border border-gray-700 shadow-2xl">
+            <div class="flex items-center justify-between p-4 border-b border-gray-800">
+                <h3 class="text-lg font-semibold flex items-center gap-2">
+                    <i data-lucide="code" class="w-5 h-5 text-blue-400"></i>
+                    原始 JSON 数据
+                </h3>
+                <button onclick="closeModal()" class="p-2 hover:bg-gray-800 rounded-lg transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-4 overflow-auto max-h-[calc(90vh-80px)]">
+                <pre id="modalContent" class="json-syntax text-sm leading-relaxed"></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for subagent logs -->
+    <input type="file" id="subagentFileInput" accept=".log,.json,.jsonl" class="hidden" onchange="handleSubagentFileSelect(event)">
+
+    <script>
+        lucide.createIcons();
+
+        // Data storage
+        let mainLogData = [];
+        let currentLogData = [];
+        let filteredData = [];
+        let subagentLogs = new Map(); // Map<name, {data, path, source}>
+        let currentPage = 1;
+        const ITEMS_PER_PAGE = 50;
+        let expandedEntries = new Set();
+        let currentLogName = 'main';
+        let currentLogPath = '';
+
+        // File handling
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                currentLogPath = file.name;
+                readFile(file, true);
+            }
+        }
+
+        function handleSubagentFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                readFile(file, false, file.name);
+            }
+        }
+
+        function loadSubagentLogFile() {
+            document.getElementById('subagentFileInput').click();
+        }
+
+        // Drag and drop
+        document.addEventListener('dragover', (e) => { e.preventDefault(); document.body.style.background = '#111827'; });
+        document.addEventListener('dragleave', () => { document.body.style.background = ''; });
+        document.addEventListener('drop', (e) => {
+            e.preventDefault();
+            document.body.style.background = '';
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                currentLogPath = file.name;
+                readFile(file, true);
+            }
+        });
+
+        async function readFile(file, isMain = false, customName = null) {
+            showLoading();
+            
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                try {
+                    // Detect if this is a subagent log by checking first valid line
+                    const isSubagent = detectIfSubagentLog(e.target.result);
+                    const data = parseLogData(e.target.result, isSubagent);
+                    
+                    if (isMain) {
+                        mainLogData = data;
+                        currentLogData = data;
+                        subagentLogs.clear();
+                        detectSubagentLogs(data);
+                        currentLogName = 'main';
+                        updateAgentTabs();
+                        switchToMainLog();
+                    } else {
+                        const name = customName || `subagent-${subagentLogs.size + 1}`;
+                        subagentLogs.set(name, {
+                            data: data,
+                            path: file.name,
+                            source: 'manual',
+                            isSubagent: true
+                        });
+                        updateAgentTabs();
+                        switchToSubagentLog(name);
+                    }
+                    
+                    hideLoading();
+                    showDashboard();
+                    lucide.createIcons();
+                } catch (err) {
+                    hideLoading();
+                    alert('解析文件失败: ' + err.message);
+                }
+            };
+            
+            reader.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    document.getElementById('loadingProgress').textContent = 
+                        `已加载 ${(e.loaded / 1024 / 1024).toFixed(2)} MB (${percent}%)`;
+                }
+            };
+            
+            reader.readAsText(file);
+        }
+
+        function detectIfSubagentLog(content) {
+            // Check first few non-empty lines to determine format
+            const lines = content.split('\n');
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                
+                try {
+                    const obj = JSON.parse(trimmed);
+                    // If it has 'role' field but not 'timestamp' or 'messages', it's subagent format
+                    if (obj.role && !obj.timestamp && !obj.messages) {
+                        return true;
+                    }
+                    return false;
+                } catch (e) {
+                    continue;
+                }
+            }
+            return false;
+        }
+
+        function detectSubagentLogs(data) {
+            // Scan main log for subagent references in tool messages
+            let count = 0;
+            data.forEach((entry, idx) => {
+                if (entry.messages) {
+                    entry.messages.forEach(msg => {
+                        if (msg.role === 'tool' && msg.content) {
+                            // Extract text content from various formats
+                            let contentText = '';
+                            if (typeof msg.content === 'string') {
+                                contentText = msg.content;
+                            } else if (Array.isArray(msg.content)) {
+                                contentText = msg.content.map(part => {
+                                    if (typeof part === 'string') return part;
+                                    if (part && part.text) return part.text;
+                                    return '';
+                                }).join(' ');
+                            }
+                            
+                            // Look for Task tool output patterns
+                            // Pattern 1: "日志保存到: /path/to/task-xxx.log"
+                            const saveToMatch = contentText.match(/日志保存到[:：]\s*(.+\.log)/i);
+                            if (saveToMatch) {
+                                const logFile = saveToMatch[1].trim();
+                                // Extract task ID from the content
+                                const taskIdMatch = contentText.match(/任务ID[:：]\s*(task-[a-f0-9]+)/i);
+                                const taskId = taskIdMatch ? taskIdMatch[1] : `subagent-${count + 1}`;
+                                // Extract subagent name
+                                const nameMatch = contentText.match(/子 Agent[:：]\s*(\w+)/i);
+                                const agentName = nameMatch ? nameMatch[1] : 'coder';
+                                
+                                const fullName = `${agentName}-${taskId}`;
+                                if (!subagentLogs.has(fullName)) {
+                                    subagentLogs.set(fullName, {
+                                        data: null,
+                                        path: logFile,
+                                        source: 'detected',
+                                        referencedAt: idx,
+                                        taskId: taskId
+                                    });
+                                    count++;
+                                }
+                            }
+                            
+                            // Pattern 2: "子 Agent 日志: /path/to/subagent_xxx.log"
+                            const subagentLogMatch = contentText.match(/子\s*Agent\s*日志[:：]\s*(.+\.log)/i);
+                            if (subagentLogMatch) {
+                                const logFile = subagentLogMatch[1].trim();
+                                const name = `subagent-${count + 1}`;
+                                if (!subagentLogs.has(name)) {
+                                    subagentLogs.set(name, {
+                                        data: null,
+                                        path: logFile,
+                                        source: 'detected',
+                                        referencedAt: idx
+                                    });
+                                    count++;
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+            
+            document.getElementById('statSubagentCount').textContent = subagentLogs.size;
+        }
+
+        function parseLogData(content, isSubagent = false) {
+            const data = [];
+            const lines = content.split('\n');
+            
+            if (isSubagent) {
+                // Subagent log format: individual messages with role field
+                // Group messages into pseudo-entries
+                let currentMessages = [];
+                let entryIndex = 0;
+                
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+                    
+                    try {
+                        const msg = JSON.parse(line);
+                        
+                        // Skip internal markers
+                        if (msg.role === '_usage' || msg.role === '_checkpoint') {
+                            continue;
+                        }
+                        
+                        // Add index to message
+                        msg._msgIndex = currentMessages.length;
+                        currentMessages.push(msg);
+                    } catch (e) {
+                        // Skip invalid lines
+                    }
+                }
+                
+                // For subagent logs, create a single pseudo-entry with all messages
+                if (currentMessages.length > 0) {
+                    data.push({
+                        _index: 0,
+                        _isSubagent: true,
+                        timestamp: new Date().toISOString(), // Subagent logs don't have timestamp
+                        messages: currentMessages,
+                        system_prompt: 'Subagent Session'
+                    });
+                }
+            } else {
+                // Main log format: entries with timestamp and messages array
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+                    
+                    try {
+                        const entry = JSON.parse(line);
+                        entry._index = data.length;
+                        entry._isMainLog = true;
+                        data.push(entry);
+                    } catch (e) {
+                        // Skip invalid lines
+                    }
+                }
+            }
+            
+            return data;
+        }
+
+        function showLoading() {
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('loadingState').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingState').classList.add('hidden');
+        }
+
+        function showDashboard() {
+            document.getElementById('dashboard').classList.remove('hidden');
+        }
+
+        function updateAgentTabs() {
+            const tabsContainer = document.getElementById('agentTabs');
+            
+            // Keep main tab, remove others
+            tabsContainer.innerHTML = `
+                <button class="agent-tab ${currentLogName === 'main' ? 'active' : ''}" onclick="switchToMainLog()">
+                    <i data-lucide="bot" class="w-4 h-4 inline mr-1"></i>
+                    主 Agent
+                </button>
+            `;
+            
+            // Add subagent tabs
+            subagentLogs.forEach((info, name) => {
+                const isLoaded = info.data !== null;
+                const isActive = currentLogName === name;
+                tabsContainer.innerHTML += `
+                    <button class="agent-tab ${isActive ? 'active' : ''} ${isLoaded ? '' : 'has-subagent'}" 
+                            onclick="switchToSubagentLog('${name}')"
+                            title="${info.path}${isLoaded ? '' : ' (点击加载)'}">
+                        <i data-lucide="${isLoaded ? 'cpu' : 'download'}" class="w-4 h-4 inline mr-1"></i>
+                        ${name}
+                        ${!isLoaded ? '<span class="text-xs text-gray-500">(未加载)</span>' : ''}
+                    </button>
+                `;
+            });
+            
+            lucide.createIcons();
+        }
+
+        function switchToMainLog() {
+            currentLogData = mainLogData;
+            filteredData = [...currentLogData];
+            currentLogName = 'main';
+            currentPage = 1;
+            expandedEntries.clear();
+            
+            document.getElementById('currentLogName').textContent = '主 Agent';
+            document.getElementById('currentLogPath').textContent = currentLogPath || '';
+            
+            updateStats();
+            renderTimeline();
+            renderPagination();
+            updateAgentTabs();
+        }
+
+        async function switchToSubagentLog(name) {
+            const info = subagentLogs.get(name);
+            if (!info) return;
+            
+            // If not loaded yet, show prompt to load
+            if (info.data === null) {
+                if (info.source === 'detected') {
+                    const shouldLoad = confirm(`子 Agent "${name}" 的日志文件已检测到:\n${info.path}\n\n是否现在加载？`);
+                    if (shouldLoad) {
+                        // Try to load via file picker
+                        document.getElementById('subagentFileInput').click();
+                        return;
+                    }
+                }
+                return;
+            }
+            
+            currentLogData = info.data;
+            filteredData = [...currentLogData];
+            currentLogName = name;
+            currentPage = 1;
+            expandedEntries.clear();
+            
+            document.getElementById('currentLogName').textContent = name;
+            document.getElementById('currentLogPath').textContent = info.path || '';
+            
+            updateStats();
+            renderTimeline();
+            renderPagination();
+            updateAgentTabs();
+        }
+
+        function updateStats() {
+            // Check if current log is subagent format
+            const isSubagentLog = currentLogData.length > 0 && currentLogData[0]._isSubagent;
+            
+            let totalRequests = currentLogData.length;
+            let totalMessages = 0;
+            let timestamps = [];
+            
+            for (const entry of currentLogData) {
+                if (entry.messages) {
+                    totalMessages += entry.messages.length;
+                }
+                if (entry.timestamp && entry.timestamp !== new Date().toISOString().split('T')[0]) {
+                    timestamps.push(new Date(entry.timestamp));
+                }
+            }
+            
+            // For subagent logs, show message count as request count
+            if (isSubagentLog && totalMessages > 0) {
+                document.getElementById('statTotalRequests').textContent = '1 (Session)';
+                document.getElementById('statTimeRange').textContent = `${totalMessages} 条消息`;
+            } else {
+                document.getElementById('statTotalRequests').textContent = totalRequests.toLocaleString();
+                
+                if (timestamps.length > 0) {
+                    const min = new Date(Math.min(...timestamps));
+                    const max = new Date(Math.max(...timestamps));
+                    const diff = max - min;
+                    const hours = Math.floor(diff / (1000 * 60 * 60));
+                    const days = Math.floor(hours / 24);
+                    
+                    let timeStr;
+                    if (days > 0) timeStr = `${days}天 ${hours % 24}小时`;
+                    else if (hours > 0) timeStr = `${hours}小时`;
+                    else timeStr = `${Math.floor(diff / (1000 * 60))}分钟`;
+                    
+                    document.getElementById('statTimeRange').textContent = timeStr;
+                } else {
+                    document.getElementById('statTimeRange').textContent = '-';
+                }
+            }
+            
+            document.getElementById('statTotalMessages').textContent = totalMessages.toLocaleString();
+        }
+
+        function renderTimeline() {
+            const container = document.getElementById('timeline');
+            container.innerHTML = '';
+            
+            const start = (currentPage - 1) * ITEMS_PER_PAGE;
+            const end = Math.min(start + ITEMS_PER_PAGE, filteredData.length);
+            const pageData = filteredData.slice(start, end);
+            
+            const fragment = document.createDocumentFragment();
+            
+            pageData.forEach((entry) => {
+                const card = createEntryCard(entry);
+                fragment.appendChild(card);
+            });
+            
+            container.appendChild(fragment);
+            lucide.createIcons();
+            
+            pageData.forEach(entry => {
+                if (expandedEntries.has(entry._index)) {
+                    toggleEntry(entry._index, true);
+                }
+            });
+        }
+
+        function createEntryCard(entry) {
+            const div = document.createElement('div');
+            div.className = 'entry-card bg-gray-900 rounded-xl border border-gray-800 overflow-hidden';
+            div.id = `entry-${entry._index}`;
+            
+            const isSubagent = entry._isSubagent;
+            const timestamp = entry.timestamp ? formatTimestamp(entry.timestamp) : 'Unknown time';
+            const messageCount = entry.messages ? entry.messages.length : 0;
+            const isExpanded = expandedEntries.has(entry._index);
+            
+            // For subagent logs, show different header
+            if (isSubagent) {
+                div.innerHTML = `
+                    <div class="p-4 cursor-pointer hover:bg-gray-800/50" onclick="toggleEntry(${entry._index})">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs font-mono text-gray-500">子 Agent Session</span>
+                                <span class="text-xs bg-purple-900/30 text-purple-400 px-2 py-1 rounded">${messageCount} 条消息</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="event.stopPropagation(); showRawData(${entry._index})" 
+                                    class="p-1.5 hover:bg-gray-700 rounded text-gray-500 hover:text-blue-400 transition-colors">
+                                    <i data-lucide="code" class="w-4 h-4"></i>
+                                </button>
+                                <i data-lucide="chevron-down" id="chevron-${entry._index}" 
+                                    class="w-5 h-5 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="content-${entry._index}" class="${isExpanded ? '' : 'hidden'} border-t border-gray-800">
+                        <div class="p-4 space-y-3" id="messages-${entry._index}">
+                            ${isExpanded ? renderMessages(entry.messages, entry._index) : ''}
+                        </div>
+                    </div>
+                `;
+                return div;
+            }
+            
+            // Check if this entry has subagent reference by scanning tool messages
+            let hasSubagent = false;
+            let subagentLogFile = null;
+            if (entry.messages) {
+                for (const msg of entry.messages) {
+                    if (msg.role === 'tool' && msg.content) {
+                        let contentText = '';
+                        if (typeof msg.content === 'string') {
+                            contentText = msg.content;
+                        } else if (Array.isArray(msg.content)) {
+                            contentText = msg.content.map(part => {
+                                if (typeof part === 'string') return part;
+                                if (part && part.text) return part.text;
+                                return '';
+                            }).join(' ');
+                        }
+                        if (contentText.includes('日志保存到') && contentText.includes('.log')) {
+                            hasSubagent = true;
+                            const match = contentText.match(/日志保存到[:：]\s*(.+\.log)/i);
+                            if (match) subagentLogFile = match[1].trim();
+                            break;
+                        }
+                    }
+                }
+            }
+            const subagentBadge = hasSubagent ? 
+                `<span class="text-xs bg-green-900/30 text-green-400 px-2 py-1 rounded ml-2">子 Agent</span>` : '';
+            
+            div.innerHTML = `
+                <div class="p-4 cursor-pointer hover:bg-gray-800/50" onclick="toggleEntry(${entry._index})">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3 flex-wrap">
+                            <span class="text-xs font-mono text-gray-500">#${entry._index + 1}</span>
+                            <span class="text-sm font-medium text-blue-400">${timestamp}</span>
+                            <span class="text-xs bg-gray-800 px-2 py-1 rounded text-gray-400">${messageCount} 条消息</span>
+                            ${entry.model ? `<span class="text-xs bg-purple-900/30 text-purple-400 px-2 py-1 rounded">${truncateText(entry.model, 20)}</span>` : ''}
+                            ${subagentBadge}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            ${hasSubagent ? `
+                                <button onclick="event.stopPropagation(); promptLoadSubagent(${entry._index})" 
+                                    class="p-1.5 hover:bg-green-900/30 rounded text-green-400 hover:text-green-300 transition-colors"
+                                    title="加载子 Agent 日志">
+                                    <i data-lucide="download" class="w-4 h-4"></i>
+                                </button>
+                            ` : ''}
+                            <button onclick="event.stopPropagation(); showRawData(${entry._index})" 
+                                class="p-1.5 hover:bg-gray-700 rounded text-gray-500 hover:text-blue-400 transition-colors"
+                                title="查看原始数据">
+                                <i data-lucide="code" class="w-4 h-4"></i>
+                            </button>
+                            <i data-lucide="chevron-down" id="chevron-${entry._index}" 
+                                class="w-5 h-5 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}"></i>
+                        </div>
+                    </div>
+                    ${entry.system_prompt ? `
+                        <div class="mt-2 text-xs text-gray-500 truncate">
+                            <span class="text-amber-500">System:</span> ${escapeHtml(truncateText(entry.system_prompt, 120))}
+                        </div>
+                    ` : ''}
+                </div>
+                <div id="content-${entry._index}" class="${isExpanded ? '' : 'hidden'} border-t border-gray-800">
+                    <div class="p-4 space-y-3" id="messages-${entry._index}">
+                        ${isExpanded ? renderMessages(entry.messages, entry._index) : ''}
+                    </div>
+                </div>
+            `;
+            
+            return div;
+        }
+
+        function promptLoadSubagent(index) {
+            const entry = filteredData.find(e => e._index === index);
+            if (!entry) return;
+            
+            // Parse log file path from tool messages
+            let logFile = null;
+            if (entry.messages) {
+                for (const msg of entry.messages) {
+                    if (msg.role === 'tool' && msg.content) {
+                        let contentText = '';
+                        if (typeof msg.content === 'string') {
+                            contentText = msg.content;
+                        } else if (Array.isArray(msg.content)) {
+                            contentText = msg.content.map(part => {
+                                if (typeof part === 'string') return part;
+                                if (part && part.text) return part.text;
+                                return '';
+                            }).join(' ');
+                        }
+                        const match = contentText.match(/日志保存到[:：]\s*(.+\.log)/i);
+                        if (match) {
+                            logFile = match[1].trim();
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (logFile) {
+                alert(`请手动选择子 Agent 日志文件:\n${logFile}`);
+                document.getElementById('subagentFileInput').click();
+            }
+        }
+
+        function toggleEntry(index, forceExpand = null) {
+            const content = document.getElementById(`content-${index}`);
+            const chevron = document.getElementById(`chevron-${index}`);
+            const messagesContainer = document.getElementById(`messages-${index}`);
+            const entry = filteredData.find(e => e._index === index);
+            
+            if (!content || !chevron) return;
+            
+            const shouldExpand = forceExpand !== null ? forceExpand : content.classList.contains('hidden');
+            
+            if (shouldExpand) {
+                content.classList.remove('hidden');
+                chevron.classList.add('rotate-180');
+                expandedEntries.add(index);
+                if (messagesContainer && entry && messagesContainer.innerHTML.trim() === '') {
+                    messagesContainer.innerHTML = renderMessages(entry.messages, index);
+                }
+            } else {
+                content.classList.add('hidden');
+                chevron.classList.remove('rotate-180');
+                expandedEntries.delete(index);
+            }
+        }
+
+        function expandAll(expand) {
+            const start = (currentPage - 1) * ITEMS_PER_PAGE;
+            const end = Math.min(start + ITEMS_PER_PAGE, filteredData.length);
+            
+            for (let i = start; i < end; i++) {
+                const entry = filteredData[i];
+                if (entry) toggleEntry(entry._index, expand);
+            }
+        }
+
+        function renderMessages(messages, entryIndex) {
+            if (!messages || !Array.isArray(messages) || messages.length === 0) {
+                return '<div class="text-gray-500 text-sm">No messages</div>';
+            }
+            
+            return messages.map((msg, idx) => {
+                const role = msg.role || 'unknown';
+                const roleColors = {
+                    user: 'bg-blue-500/10 text-blue-400 border-blue-500',
+                    assistant: 'bg-green-500/10 text-green-400 border-green-500',
+                    system: 'bg-amber-500/10 text-amber-400 border-amber-500',
+                    tool: 'bg-purple-500/10 text-purple-400 border-purple-500'
+                };
+                const roleColor = roleColors[role] || 'bg-gray-500/10 text-gray-400 border-gray-500';
+                
+                let content = extractContent(msg.content);
+                const searchTerm = document.getElementById('searchInput')?.value;
+                if (searchTerm) content = highlightText(content, searchTerm);
+                
+                const toolCalls = msg.tool_calls ? renderToolCalls(msg.tool_calls) : '';
+                const toolCallId = msg.tool_call_id ? `<div class="text-xs text-purple-400 mt-1">Tool Call ID: ${escapeHtml(msg.tool_call_id)}</div>` : '';
+                
+                return `
+                    <div class="border-l-4 ${roleColor} rounded-r-lg p-3 bg-gray-800/30 message-item" data-role="${role}">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-xs font-bold uppercase tracking-wider">${role}</span>
+                            ${msg.name ? `<span class="text-xs text-gray-500">(${escapeHtml(msg.name)})</span>` : ''}
+                        </div>
+                        <div class="message-content text-sm text-gray-300 mono leading-relaxed">${content}</div>
+                        ${toolCallId}
+                        ${toolCalls}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function extractContent(content) {
+            if (typeof content === 'string') return escapeHtml(content);
+            if (Array.isArray(content)) {
+                return content.map(part => {
+                    if (typeof part === 'string') return escapeHtml(part);
+                    if (part && typeof part === 'object') {
+                        if (part.text) return escapeHtml(part.text);
+                        if (part.type === 'image_url') return '[Image]';
+                        if (part.type === 'audio_url') return '[Audio]';
+                        return `[${part.type || 'unknown'}]`;
+                    }
+                    return '';
+                }).join('\n');
+            }
+            return escapeHtml(String(content));
+        }
+
+        function renderToolCalls(toolCalls) {
+            if (!toolCalls || !Array.isArray(toolCalls)) return '';
+            
+            return toolCalls.map(tc => `
+                <div class="mt-2 p-2 bg-gray-800 rounded border border-gray-700">
+                    <div class="text-xs text-cyan-400 font-medium">🔧 ${escapeHtml(tc.function?.name || 'unknown')}</div>
+                    <div class="text-xs text-gray-500 mono mt-1 break-all">${escapeHtml(truncateText(tc.function?.arguments || '{}', 200))}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderPagination() {
+            const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
+            const paginationEl = document.getElementById('pagination');
+            const bottomEl = document.getElementById('bottomPagination');
+            
+            if (totalPages <= 1) {
+                paginationEl.innerHTML = '';
+                bottomEl.innerHTML = '';
+                return;
+            }
+            
+            let html = '';
+            
+            html += `<button class="page-btn" onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>`;
+            
+            const maxButtons = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+            let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+            
+            if (endPage - startPage < maxButtons - 1) {
+                startPage = Math.max(1, endPage - maxButtons + 1);
+            }
+            
+            if (startPage > 1) {
+                html += `<button class="page-btn" onclick="goToPage(1)">1</button>`;
+                if (startPage > 2) html += `<span class="text-gray-500 px-2">...</span>`;
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+            
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) html += `<span class="text-gray-500 px-2">...</span>`;
+                html += `<button class="page-btn" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+            }
+            
+            html += `<button class="page-btn" onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+            
+            paginationEl.innerHTML = html;
+            bottomEl.innerHTML = html;
+        }
+
+        function goToPage(page) {
+            const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
+            if (page < 1 || page > totalPages) return;
+            
+            currentPage = page;
+            renderTimeline();
+            renderPagination();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function handleSearch() {
+            const term = document.getElementById('searchInput').value.toLowerCase();
+            applyFilters(term, document.getElementById('roleFilter').value);
+        }
+
+        function handleFilter() {
+            const role = document.getElementById('roleFilter').value;
+            applyFilters(document.getElementById('searchInput').value.toLowerCase(), role);
+        }
+
+        function applyFilters(searchTerm, roleFilter) {
+            if (!searchTerm && !roleFilter) {
+                filteredData = [...currentLogData];
+            } else {
+                filteredData = currentLogData.filter(entry => {
+                    if (!entry.messages) return false;
+                    
+                    const matchesRole = !roleFilter || entry.messages.some(m => m.role === roleFilter);
+                    const matchesSearch = !searchTerm || entry.messages.some(m => {
+                        const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+                        return content.toLowerCase().includes(searchTerm);
+                    });
+                    
+                    return matchesRole && matchesSearch;
+                });
+            }
+            
+            currentPage = 1;
+            expandedEntries.clear();
+            renderTimeline();
+            renderPagination();
+        }
+
+        function highlightText(text, term) {
+            if (!term) return text;
+            const regex = new RegExp(`(${escapeRegex(term)})`, 'gi');
+            return text.replace(regex, '<span class="bg-yellow-500/30 rounded px-0.5">$1</span>');
+        }
+
+        function showRawData(index) {
+            const entry = currentLogData.find(e => e._index === index);
+            if (!entry) return;
+            
+            const modal = document.getElementById('detailModal');
+            const content = document.getElementById('modalContent');
+            
+            content.innerHTML = syntaxHighlight(JSON.stringify(entry, null, 2));
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('detailModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function exportData() {
+            const dataStr = JSON.stringify(filteredData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `llm-log-export-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Utility functions
+        function formatTimestamp(ts) {
+            try {
+                const date = new Date(ts);
+                return date.toLocaleString('zh-CN', {
+                    month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                });
+            } catch { return ts; }
+        }
+
+        function truncateText(text, maxLength) {
+            if (!text) return '';
+            if (text.length <= maxLength) return text;
+            return text.substring(0, maxLength) + '...';
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function escapeRegex(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function syntaxHighlight(json) {
+            return json
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/(".*?"):/g, '<span class="json-key">$1</span>:')
+                .replace(/: "(.*?)"/g, ': <span class="json-string">"$1"</span>')
+                .replace(/: (\d+)/g, ': <span class="json-number">$1</span>')
+                .replace(/: (true|false)/g, ': <span class="json-boolean">$1</span>')
+                .replace(/: (null)/g, ': <span class="json-null">$1</span>');
+        }
+
+        function loadExample() {
+            // Create example with subagent reference
+            const exampleData = [
+                {
+                    timestamp: new Date(Date.now() - 120000).toISOString(),
+                    system_prompt: "You are a helpful assistant.",
+                    model: "kimi-k2-0711",
+                    messages: [
+                        {role: "user", content: "分析这个项目"},
+                        {role: "assistant", content: "我来帮你分析这个项目", 
+                         tool_calls: [{id: "call_1", function: {name: "Task", arguments: "{\"subagent_name\": \"coder\", \"prompt\": \"分析项目结构\"}"}}]},
+                        {role: "tool", content: "任务已完成", 
+                         extras: {subagent_log_file: "/path/to/subagent_1.log", subagent_name: "coder"}}
+                    ]
+                },
+                {
+                    timestamp: new Date(Date.now() - 60000).toISOString(),
+                    system_prompt: "You are a helpful assistant.",
+                    model: "kimi-k2-0711",
+                    messages: [
+                        {role: "user", content: "继续分析"},
+                        {role: "assistant", content: "分析完成，发现了以下内容..."}
+                    ],
+                    extras: {
+                        subagent_log_file: "~/.kimi/sessions/abc123/context_sub_1.log",
+                        subagent_name: "coder"
+                    }
+                }
+            ].map((e, i) => { e._index = i; return JSON.stringify(e); }).join('\n');
+            
+            currentLogPath = 'example.log';
+            readFile({name: 'example.log'}, true);
+            
+            // Manually set the data for example
+            setTimeout(() => {
+                mainLogData = JSON.parse('[' + exampleData.replace(/\n/g, ',') + ']');
+                mainLogData.forEach((e, i) => e._index = i);
+                currentLogData = mainLogData;
+                subagentLogs.clear();
+                detectSubagentLogs(mainLogData);
+                updateStats();
+                renderTimeline();
+                renderPagination();
+                updateAgentTabs();
+            }, 100);
+        }
+
+        // Event listeners
+        document.getElementById('detailModal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeModal();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+            if (e.key === 'ArrowLeft' && e.ctrlKey && currentPage > 1) goToPage(currentPage - 1);
+            if (e.key === 'ArrowRight' && e.ctrlKey) goToPage(currentPage + 1);
+        });
+    </script>
+</body>
+</html>

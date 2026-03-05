@@ -68,6 +68,33 @@ python -m kimi_cli.feishu
 
 首次运行会引导完成 Kimi OAuth 授权。
 
+### LLM Log 可视化查看器
+
+OKbot 内置了 LLM Log 可视化工具，可以直观地查看和分析每次 LLM 调用的消息记录。
+
+**启动方式：**
+
+```bash
+# 方式1: Python 简易服务器（推荐）
+cd /path/to/OKbot
+python -m http.server 8080
+
+# 方式2: 使用项目内置脚本
+./scripts/start-log-viewer.sh
+```
+
+**访问：**
+浏览器打开 `http://localhost:8080/llm-log-viewer.html`
+
+**功能特性：**
+- 📊 分页显示，支持大文件（每页50条）
+- 🔍 实时搜索消息内容
+- 🎭 按角色筛选（User/Assistant/System/Tool）
+- 📥 导出筛选后的数据
+- 🎨 不同角色用颜色区分
+- 💬 支持查看 Tool Calls 和原始 JSON
+
+
 ---
 
 ## 功能演示
