@@ -204,12 +204,21 @@ class Runtime:
 
     def copy_for_fixed_subagent(self) -> Runtime:
         """Clone runtime for fixed subagent."""
+        # Subagent should not have access to parent agent's memory context
+        subagent_builtin_args = BuiltinSystemPromptArgs(
+            KIMI_NOW=datetime.now().astimezone().isoformat(),
+            KIMI_WORK_DIR=self.builtin_args.KIMI_WORK_DIR,
+            KIMI_WORK_DIR_LS=self.builtin_args.KIMI_WORK_DIR_LS,
+            KIMI_AGENTS_MD=self.builtin_args.KIMI_AGENTS_MD,
+            KIMI_SKILLS=self.builtin_args.KIMI_SKILLS,
+            KIMI_MEMORY_CONTEXT="",  # subagent does not have memory context
+        )
         return Runtime(
             config=self.config,
             oauth=self.oauth,
             llm=self.llm,
             session=self.session,
-            builtin_args=self.builtin_args,
+            builtin_args=subagent_builtin_args,
             denwa_renji=DenwaRenji(),  # subagent must have its own DenwaRenji
             approval=self.approval.share(),
             labor_market=LaborMarket(),  # fixed subagent has its own LaborMarket
@@ -221,12 +230,21 @@ class Runtime:
 
     def copy_for_dynamic_subagent(self) -> Runtime:
         """Clone runtime for dynamic subagent."""
+        # Subagent should not have access to parent agent's memory context
+        subagent_builtin_args = BuiltinSystemPromptArgs(
+            KIMI_NOW=datetime.now().astimezone().isoformat(),
+            KIMI_WORK_DIR=self.builtin_args.KIMI_WORK_DIR,
+            KIMI_WORK_DIR_LS=self.builtin_args.KIMI_WORK_DIR_LS,
+            KIMI_AGENTS_MD=self.builtin_args.KIMI_AGENTS_MD,
+            KIMI_SKILLS=self.builtin_args.KIMI_SKILLS,
+            KIMI_MEMORY_CONTEXT="",  # subagent does not have memory context
+        )
         return Runtime(
             config=self.config,
             oauth=self.oauth,
             llm=self.llm,
             session=self.session,
-            builtin_args=self.builtin_args,
+            builtin_args=subagent_builtin_args,
             denwa_renji=DenwaRenji(),  # subagent must have its own DenwaRenji
             approval=self.approval.share(),
             labor_market=self.labor_market,  # dynamic subagent shares LaborMarket with main agent
