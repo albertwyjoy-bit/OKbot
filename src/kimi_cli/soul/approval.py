@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal
 
@@ -24,6 +25,11 @@ class Request:
 
 type Response = Literal["approve", "approve_for_session", "reject"]
 
+
+# ContextVar for background task YOLO mode override.
+# asyncio.create_task() copies the current context, so setting this inside a background
+# task function only affects that task's local context copy — the main agent is unaffected.
+_background_yolo_mode: ContextVar[bool] = ContextVar("background_yolo_mode", default=False)
 
 # Allowed tools in plan mode (read-only tools + WriteFile for plan editing + PlanExit)
 PLAN_MODE_ALLOWED_TOOLS = frozenset({
@@ -175,7 +181,7 @@ class Approval:
             description=description,
         )
 
-        if self._state.yolo:
+        if self._state.yolo or _background_yolo_mode.get():
             return True
 
         if action in self._state.auto_approve_actions:
@@ -227,6 +233,8 @@ class Approval:
         )
 
         # Always request approval, bypassing YOLO and auto-approve settings
+        if _background_yolo_mode.get():
+            return True
         return await self._request_approval(
             tool_call_id=tool_call.id,
             sender=sender,
