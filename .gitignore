@@ -43,3 +43,6 @@ static/
 
 # Midscene run logs and reports
 midscene_run/
+
+# Local debug logs
+llm.log

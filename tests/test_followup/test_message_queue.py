@@ -70,49 +70,27 @@ class TestMessageQueue:
         """Test putting a user message into the queue."""
         await queue.put_user_message("Hello, world!", source="feishu")
 
-        assert queue.qsize() == 1
+        assert not queue.followup_queue_empty()
 
-        item = queue.get_nowait()
-        assert item is not None
-        assert item.type == "user"
-        assert item.content == "Hello, world!"
-        assert item.metadata["source"] == "feishu"
+        items = queue.get_followup_messages()
+        assert len(items) == 1
+        assert items[0].type == "user"
+        assert items[0].content == "Hello, world!"
+        assert items[0].metadata["source"] == "feishu"
 
     @pytest.mark.asyncio
     async def test_put_task_result(self, queue, sample_task_result):
         """Test putting a task result into the queue."""
         await queue.put_task_result(sample_task_result)
 
-        assert queue.qsize() == 1
+        assert not queue.steering_queue_empty()
 
-        item = queue.get_nowait()
-        assert item is not None
-        assert item.type == "system_notification"
-        assert "task-12345678" in item.content
-        assert "Test task" in item.content
-        assert "completed" in item.content
-
-    @pytest.mark.asyncio
-    async def test_get_next_blocking(self, queue):
-        """Test that get_next blocks when queue is empty."""
-        # Start a task that will put a message after a short delay
-        async def put_message_after_delay():
-            await asyncio.sleep(0.1)
-            await queue.put_user_message("Delayed message")
-
-        asyncio.create_task(put_message_after_delay())
-
-        # This should block until the message is put
-        item = await queue.get_next()
-
-        assert item is not None
-        assert item.content == "Delayed message"
-
-    @pytest.mark.asyncio
-    async def test_get_nowait_empty(self, queue):
-        """Test get_nowait returns None when queue is empty."""
-        item = queue.get_nowait()
-        assert item is None
+        items = queue.get_steering_messages()
+        assert len(items) == 1
+        assert items[0].type == "system_notification"
+        assert "task-12345678" in items[0].content
+        assert "Test task" in items[0].content
+        assert "completed" in items[0].content
 
     @pytest.mark.asyncio
     async def test_empty_property(self, queue):
@@ -122,7 +100,7 @@ class TestMessageQueue:
         await queue.put_user_message("Test")
         assert not queue.empty()
 
-        queue.get_nowait()
+        queue.get_followup_messages()
         assert queue.empty()
 
     @pytest.mark.asyncio
@@ -134,7 +112,7 @@ class TestMessageQueue:
 
         # Should not accept new messages after close
         await queue.put_user_message("After close")
-        assert queue.qsize() == 1  # Only the first message
+        assert queue.followup_queue_size() == 1  # Only the first message
 
     @pytest.mark.asyncio
     async def test_multiple_messages_order(self, queue):
@@ -143,13 +121,12 @@ class TestMessageQueue:
         await queue.put_user_message("Second")
         await queue.put_user_message("Third")
 
-        item1 = queue.get_nowait()
-        item2 = queue.get_nowait()
-        item3 = queue.get_nowait()
+        items = queue.get_followup_messages()
+        assert len(items) == 3
 
-        assert item1.content == "First"
-        assert item2.content == "Second"
-        assert item3.content == "Third"
+        assert items[0].content == "First"
+        assert items[1].content == "Second"
+        assert items[2].content == "Third"
 
     @pytest.mark.asyncio
     async def test_format_task_result_truncation(self, queue):
@@ -164,11 +141,12 @@ class TestMessageQueue:
         )
 
         await queue.put_task_result(result)
-        item = queue.get_nowait()
+        items = queue.get_steering_messages()
+        assert len(items) == 1
 
         # Should be truncated (max 10000 chars + truncation message)
-        assert len(item.content) < len(long_output)
-        assert "...truncated" in item.content
+        assert len(items[0].content) < len(long_output)
+        assert "...truncated" in items[0].content
 
     @pytest.mark.asyncio
     async def test_format_task_result_with_error(self, queue):
@@ -182,11 +160,12 @@ class TestMessageQueue:
         )
 
         await queue.put_task_result(result)
-        item = queue.get_nowait()
+        items = queue.get_steering_messages()
+        assert len(items) == 1
 
-        assert "task-error" in item.content
-        assert "failed" in item.content
-        assert "Something went wrong" in item.content
+        assert "task-error" in items[0].content
+        assert "failed" in items[0].content
+        assert "Something went wrong" in items[0].content
 
     @pytest.mark.asyncio
     async def test_inject_user_message_to_context(self, queue):
@@ -195,9 +174,10 @@ class TestMessageQueue:
         mock_context.append_message = AsyncMock()
 
         await queue.put_user_message("Hello")
-        item = queue.get_nowait()
+        items = queue.get_followup_messages()
+        assert len(items) == 1
 
-        await queue.inject_to_context(item, mock_context)
+        await queue.inject_to_context(items[0], mock_context)
 
         # Verify context.append_message was called with correct arguments
         mock_context.append_message.assert_called_once()
@@ -211,9 +191,10 @@ class TestMessageQueue:
         mock_context.append_message = AsyncMock()
 
         await queue.put_task_result(sample_task_result)
-        item = queue.get_nowait()
+        items = queue.get_steering_messages()
+        assert len(items) == 1
 
-        await queue.inject_to_context(item, mock_context)
+        await queue.inject_to_context(items[0], mock_context)
 
         # Verify context.append_message was called
         mock_context.append_message.assert_called_once()

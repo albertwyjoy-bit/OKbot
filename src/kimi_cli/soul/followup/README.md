@@ -53,10 +53,14 @@ await queue.put_user_message("Hello", source="feishu")
 # 添加任务结果
 await queue.put_task_result(task_result_message)
 
-# 处理队列中的消息
-while not queue.empty():
-    item = queue.get_nowait()
+# 处理 follow-up 消息
+for item in queue.get_followup_messages():
     await queue.inject_to_context(item, context)
+
+# 处理 steering 消息
+for item in queue.get_steering_messages():
+    steering_msg = queue.create_steering_message(item)
+    await context.append_message(steering_msg)
 ```
 
 **特点**:
@@ -137,19 +141,22 @@ class KimiSoul:
     async def run(self, user_input):
         self._state = AgentState.RUNNING
         try:
-            # 处理队列中的消息
-            await self._process_queued_messages()
+            if user_input is not None:
+                await self._run_single_turn(user_input)
+            elif self.has_pending_messages():
+                await self._agent_loop()
 
-            # 执行当前 turn
-            await self._run_single_turn(user_input)
-
-            # 处理后续排队的消息
-            while not self._message_queue.empty():
-                await self._process_queued_messages()
-                await self._turn(...)
+            # 检查是否有新到达的 steering 消息
+            if not self._message_queue.steering_queue_empty():
+                await self._agent_loop()
         finally:
             self._state = AgentState.IDLE
 ```
+
+实际实现中，队列消费主要发生在 `_agent_loop()` 内：
+- turn 结束后批量读取 `Follow-up Queue` 并注入 context
+- step / turn 边界读取 `Steering Queue` 并继续 agent loop
+- `run()` 只负责入口分流和收尾竞态处理
 
 ## Session 生命周期
 

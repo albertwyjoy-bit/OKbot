@@ -175,24 +175,6 @@ class MessageQueue:
 
     # ==================== Follow-up Queue 操作 ====================
 
-    async def get_next_followup(self) -> Optional[QueueItem]:
-        """获取下一条 Follow-up 消息，阻塞等待.
-
-        Returns:
-            Follow-up 队列中的消息项，队列为空时阻塞等待
-        """
-        while not self._closed:
-            try:
-                # 尝试非阻塞获取
-                item = self._followup_queue.get_nowait()
-                return item
-            except asyncio.QueueEmpty:
-                # 队列为空，等待事件
-                self._event.clear()
-                await self._event.wait()
-
-        return None
-
     def get_followup_messages(self) -> list[QueueItem]:
         """非阻塞获取 Follow-up Queue 中的所有消息.
 
@@ -236,53 +218,6 @@ class MessageQueue:
             当 Steering Queue 和 Follow-up Queue 都为空时返回 True
         """
         return self._steering_queue.empty() and self._followup_queue.empty()
-
-    def get_nowait(self) -> Optional[QueueItem]:
-        """非阻塞获取一条消息（按时间顺序）.
-        
-        从两个队列中取出最早的消息，按时间戳排序返回。
-        
-        Returns:
-            QueueItem 或 None（如果两个队列都为空）
-        """
-        # 尝试从两个队列各取一条消息（不实际移除，只是查看）
-        followup_item = None
-        steering_item = None
-        
-        try:
-            followup_item = self._followup_queue.get_nowait()
-        except asyncio.QueueEmpty:
-            pass
-        
-        try:
-            steering_item = self._steering_queue.get_nowait()
-        except asyncio.QueueEmpty:
-            pass
-        
-        # 根据时间戳决定返回哪个，将另一个放回
-        if followup_item and steering_item:
-            if followup_item.timestamp <= steering_item.timestamp:
-                # followup 更早，放回 steering
-                self._steering_queue.put_nowait(steering_item)
-                return followup_item
-            else:
-                # steering 更早，放回 followup
-                self._followup_queue.put_nowait(followup_item)
-                return steering_item
-        elif followup_item:
-            return followup_item
-        elif steering_item:
-            return steering_item
-        else:
-            return None
-
-    async def get_next(self) -> Optional[QueueItem]:
-        """阻塞获取下一条消息（优先从 Follow-up Queue）.
-        
-        Returns:
-            QueueItem 或 None（如果队列已关闭）
-        """
-        return await self.get_next_followup()
 
     def close(self) -> None:
         """关闭队列，不再接受新消息."""

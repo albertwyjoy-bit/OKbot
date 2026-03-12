@@ -53,6 +53,7 @@ from kimi_cli.soul.slash import registry as soul_slash_registry
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError
+from kimi_cli.utils.envvar import get_env_bool
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.slashcmd import SlashCommand, parse_slash_command_call
 from kimi_cli.wire.file import WireFile
@@ -78,6 +79,7 @@ if TYPE_CHECKING:
 
 
 SKILL_COMMAND_PREFIX = "skill:"
+LLM_MESSAGE_LOG_ENV = "KIMI_CLI_LOG_LLM_MESSAGES"
 FLOW_COMMAND_PREFIX = "flow:"
 DEFAULT_MAX_FLOW_MOVES = 1000
 
@@ -286,26 +288,6 @@ class KimiSoul:
         target = getattr(self, '_message_bus_target', MAIN_AGENT_TARGET)
         message_bus.unsubscribe(session_id, target=target)
         logger.debug(f"Message bus callback unregistered for session: {session_id}, target: {target}")
-
-    async def _process_queued_messages(self) -> bool:
-        """处理 Follow-up Queue 中的消息.
-
-        在 turn 开始或结束时调用，处理用户的后续指令。
-
-        Returns:
-            是否处理了任何消息
-        """
-        processed = False
-
-        # 获取所有 follow-up 消息
-        followup_items = self._message_queue.get_followup_messages()
-
-        for item in followup_items:
-            await self._message_queue.inject_to_context(item, self._context)
-            processed = True
-            logger.debug(f"Follow-up message injected to context: {item.type}")
-
-        return processed
 
     async def _checkpoint(self):
         await self._context.checkpoint(self._checkpoint_with_user_message)
@@ -749,6 +731,10 @@ class KimiSoul:
             logger.debug("Failed to get llm.log path: {e}", e=e)
             return None
 
+    def _should_log_llm_messages(self) -> bool:
+        """Whether debug LLM message logging is enabled."""
+        return get_env_bool(LLM_MESSAGE_LOG_ENV, default=False)
+
     async def _log_llm_messages(self, system_prompt: str | None, messages: Sequence[Message]) -> None:
         """将发送给LLM的message增量保存到 llm.log 文件.
         
@@ -756,6 +742,9 @@ class KimiSoul:
             system_prompt: 系统提示词
             messages: 发送给LLM的消息列表
         """
+        if not self._should_log_llm_messages():
+            return
+
         log_path = self._get_llm_log_path()
         if log_path is None:
             logger.debug("llm.log path is None, skipping log")

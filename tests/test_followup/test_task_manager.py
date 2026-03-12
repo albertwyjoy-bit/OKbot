@@ -94,9 +94,8 @@ class TestSubagentTask:
                 prompt="Test",
             )
 
-            # Log file should be in ~/.kimi/tasks/
-            assert ".kimi" in str(task.output_file)
-            assert "tasks" in str(task.output_file)
+            # Log file path should be auto-generated under a task log directory.
+            assert task.output_file.suffix == ".log"
             assert task.task_id in str(task.output_file)
 
     @pytest.mark.asyncio

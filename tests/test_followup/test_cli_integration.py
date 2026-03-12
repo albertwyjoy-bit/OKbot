@@ -140,13 +140,13 @@ async def test_cli_message_queue_integration():
     
     # Test putting messages
     await queue.put_user_message("用户消息", source="cli")
-    assert queue.qsize() == 1
-    
+    assert not queue.followup_queue_empty()
+
     # Test getting messages
-    item = queue.get_nowait()
-    assert item is not None
-    assert item.type == "user"
-    assert item.content == "用户消息"
+    items = queue.get_followup_messages()
+    assert len(items) == 1
+    assert items[0].type == "user"
+    assert items[0].content == "用户消息"
 
 
 # Test 6: Complete workflow simulation

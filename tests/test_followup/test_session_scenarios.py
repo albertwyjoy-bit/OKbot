@@ -61,11 +61,12 @@ class TestHumanAgentInteraction:
         await queue.put_user_message("帮我分析一下这个代码", source="feishu")
 
         # Then: 消息应该进入队列
-        assert queue.qsize() == 1
-        item = queue.get_nowait()
-        assert item.type == "user"
-        assert item.content == "帮我分析一下这个代码"
-        assert item.metadata["source"] == "feishu"
+        assert not queue.followup_queue_empty()
+        items = queue.get_followup_messages()
+        assert len(items) == 1
+        assert items[0].type == "user"
+        assert items[0].content == "帮我分析一下这个代码"
+        assert items[0].metadata["source"] == "feishu"
 
     @pytest.mark.asyncio
     async def test_slash_stop_command_interrupts_immediately(self):
@@ -101,14 +102,13 @@ class TestHumanAgentInteraction:
         await queue.put_user_message("第三条消息", source="feishu")
 
         # Then: 消息按FIFO顺序
-        item1 = queue.get_nowait()
-        item2 = queue.get_nowait()
-        item3 = queue.get_nowait()
+        items = queue.get_followup_messages()
+        assert len(items) == 3
 
-        assert item1.content == "第一条消息"
-        assert item2.content == "第二条消息"
-        assert item3.content == "第三条消息"
-        assert item1.timestamp <= item2.timestamp <= item3.timestamp
+        assert items[0].content == "第一条消息"
+        assert items[1].content == "第二条消息"
+        assert items[2].content == "第三条消息"
+        assert items[0].timestamp <= items[1].timestamp <= items[2].timestamp
 
     @pytest.mark.asyncio
     async def test_user_message_injected_to_context(self, queue):
@@ -120,7 +120,8 @@ class TestHumanAgentInteraction:
 
         # Given: 队列中有用户消息
         await queue.put_user_message("请帮我分析代码", source="feishu")
-        item = queue.get_nowait()
+        items = queue.get_followup_messages()
+        item = items[0]
 
         # And: Mock context
         mock_context = MagicMock()
@@ -179,10 +180,11 @@ class TestAgentCommunication:
         await queue.put_task_result(sample_task_result)
 
         # Then: 消息应该在队列中
-        assert queue.qsize() == 1
-        item = queue.get_nowait()
-        assert item.type == "system_notification"
-        assert sample_task_result.task_id in item.content
+        assert not queue.steering_queue_empty()
+        items = queue.get_steering_messages()
+        assert len(items) == 1
+        assert items[0].type == "system_notification"
+        assert sample_task_result.task_id in items[0].content
 
     @pytest.mark.asyncio
     async def test_task_result_queued_when_agent_running(self, queue, sample_task_result):
@@ -197,11 +199,12 @@ class TestAgentCommunication:
         await queue.put_task_result(sample_task_result)
 
         # Then: 消息应该在队列中等待
-        assert queue.qsize() == 1
-        item = queue.get_nowait()
-        assert item.type == "system_notification"
-        assert "task-abc12345" in item.content
-        assert "代码分析任务" in item.content
+        assert not queue.steering_queue_empty()
+        items = queue.get_steering_messages()
+        assert len(items) == 1
+        assert items[0].type == "system_notification"
+        assert "task-abc12345" in items[0].content
+        assert "代码分析任务" in items[0].content
 
     @pytest.mark.asyncio
     async def test_task_result_formatted_as_system_notification(self, queue, sample_task_result):
@@ -211,14 +214,15 @@ class TestAgentCommunication:
         """
         # When: 放入队列
         await queue.put_task_result(sample_task_result)
-        item = queue.get_nowait()
+        items = queue.get_steering_messages()
+        assert len(items) == 1
 
         # Then: 内容应包含所有关键信息
-        assert "Background task completed:" in item.content
-        assert "task-abc12345" in item.content
-        assert "代码分析任务" in item.content
-        assert "completed" in item.content
-        assert "分析完成：发现3个问题" in item.content
+        assert "Background task completed:" in items[0].content
+        assert "task-abc12345" in items[0].content
+        assert "代码分析任务" in items[0].content
+        assert "completed" in items[0].content
+        assert "分析完成：发现3个问题" in items[0].content
 
     @pytest.mark.asyncio
     async def test_task_result_injected_with_system_wrapper(self, queue, sample_task_result):
@@ -231,7 +235,8 @@ class TestAgentCommunication:
 
         # Given: 队列中有任务结果
         await queue.put_task_result(sample_task_result)
-        item = queue.get_nowait()
+        items = queue.get_steering_messages()
+        item = items[0]
 
         # And: Mock context
         mock_context = MagicMock()
@@ -299,10 +304,11 @@ class TestAgentCommunication:
 
         # When: 放入队列
         await queue.put_task_result(result)
-        item = queue.get_nowait()
+        items = queue.get_steering_messages()
+        assert len(items) == 1
 
         # Then: 内容应被截断
-        assert len(item.content) < len(long_output) + 200  # 保留一些元数据空间
+        assert len(items[0].content) < len(long_output) + 200  # 保留一些元数据空间
 
 
 class TestTaskManagement:
@@ -644,12 +650,13 @@ class TestIntegrationScenarios:
 
         # Then: 结果应被接收并放入队列
         assert len(received_messages) == 1
-        assert queue.qsize() == 1
+        assert not queue.steering_queue_empty()
 
         # And: 可以注入到上下文
-        item = queue.get_nowait()
-        assert item.type == "system_notification"
-        assert "task-12345678" in item.content
+        items = queue.get_steering_messages()
+        assert len(items) == 1
+        assert items[0].type == "system_notification"
+        assert "task-12345678" in items[0].content
 
     @pytest.mark.asyncio
     async def test_mixed_user_and_task_messages(self):
@@ -672,19 +679,19 @@ class TestIntegrationScenarios:
         
         await queue.put_user_message("用户消息2", source="feishu")
 
-        # Then: 按时间顺序
-        item1 = queue.get_nowait()
-        item2 = queue.get_nowait()
-        item3 = queue.get_nowait()
+        # Then: followup 队列有用户消息，steering 队列有任务结果
+        followup_items = queue.get_followup_messages()
+        steering_items = queue.get_steering_messages()
 
-        assert item1.type == "user"
-        assert item1.content == "用户消息1"
-        
-        assert item2.type == "system_notification"
-        assert "task-1" in item2.content
-        
-        assert item3.type == "user"
-        assert item3.content == "用户消息2"
+        assert len(followup_items) == 2
+        assert followup_items[0].type == "user"
+        assert followup_items[0].content == "用户消息1"
+        assert followup_items[1].type == "user"
+        assert followup_items[1].content == "用户消息2"
+
+        assert len(steering_items) == 1
+        assert steering_items[0].type == "system_notification"
+        assert "task-1" in steering_items[0].content
 
 
 if __name__ == "__main__":

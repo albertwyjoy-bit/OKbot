@@ -566,6 +566,29 @@ class TestRealTaskOutputParsing:
         assert "FINAL: all complete" in result.output
         assert "phase 1 done" in result.output
 
+    async def test_task_output_reads_archived_completed_task(self, tmp_path: Path):
+        """任务完成后从活动列表移除，TaskOutput 仍应能读取真实日志路径."""
+        from kimi_cli.tools.multiagent.task_management import TaskOutput, TaskOutputParams
+
+        session_id = "sess-output-archived"
+        task = _make_task(tmp_path, session_id=session_id, name="archived")
+        task.status = TaskStatus.COMPLETED
+        self._write_jsonl_log(
+            task.output_file,
+            [{"role": "assistant", "content": [{"type": "text", "text": "FINAL: archived output"}]}],
+        )
+        TaskManager().add_task(session_id, task)
+        TaskManager().remove_task(session_id, task.task_id)
+
+        mock_runtime = MagicMock()
+        mock_runtime.session.id = session_id
+
+        tool = TaskOutput(mock_runtime)
+        result = await tool(TaskOutputParams(task_id=task.task_id))
+
+        assert result.is_error is False
+        assert "FINAL: archived output" in result.output
+
     async def test_task_output_tail_limits_returned_messages(self, tmp_path: Path):
         """tail=2 时只返回最后 2 条消息。"""
         from kimi_cli.tools.multiagent.task_management import TaskOutput, TaskOutputParams

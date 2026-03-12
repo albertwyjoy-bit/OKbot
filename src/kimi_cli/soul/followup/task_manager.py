@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +23,35 @@ from kimi_cli.utils.logging import logger
 if TYPE_CHECKING:
     from kimi_cli.soul.agent import Agent
     from kimi_cli.soul.kimisoul import KimiSoul
+
+
+def _choose_output_dir() -> Path:
+    """Pick a writable directory for background task logs."""
+    candidates: list[Path] = []
+
+    env_dir = os.environ.get("KIMI_TASKS_DIR")
+    if env_dir:
+        candidates.append(Path(env_dir).expanduser())
+
+    candidates.append(Path.home() / ".kimi" / "tasks")
+    candidates.append(Path(tempfile.gettempdir()) / "kimi-cli" / "tasks")
+
+    last_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            probe = candidate / ".write-test"
+            probe.touch(exist_ok=True)
+            probe.unlink(missing_ok=True)
+            return candidate
+        except Exception as exc:
+            last_error = exc
+            logger.warning(f"Task log directory unavailable: {candidate} ({exc})")
+
+    message = "No writable directory available for background task logs"
+    if last_error is not None:
+        raise RuntimeError(message) from last_error
+    raise RuntimeError(message)
 
 
 class TaskStatus(str, enum.Enum):
@@ -69,7 +100,7 @@ class SubagentTask:
         """初始化日志文件路径."""
         # FIX: 只有在用户没有提供 output_file 时才生成默认路径
         if self.output_file is None:
-            self.output_file = Path.home() / ".kimi" / "tasks" / f"{self.task_id}.log"
+            self.output_file = _choose_output_dir() / f"{self.task_id}.log"
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
 
     async def run_in_background(
@@ -381,7 +412,6 @@ class TaskManager:
     """
 
     _instance: Optional["TaskManager"] = None
-    _lock: asyncio.Lock = asyncio.Lock()
 
     def __new__(cls) -> "TaskManager":
         if cls._instance is None:
@@ -394,6 +424,7 @@ class TaskManager:
             return
 
         self._tasks_by_session: Dict[str, List[SubagentTask]] = {}
+        self._completed_tasks_by_session: Dict[str, Dict[str, SubagentTask]] = {}
         self._initialized = True
 
     def register_session(self, session_id: str) -> None:
@@ -404,7 +435,9 @@ class TaskManager:
         """
         if session_id not in self._tasks_by_session:
             self._tasks_by_session[session_id] = []
-            logger.debug(f"Session registered in TaskManager: {session_id}")
+        if session_id not in self._completed_tasks_by_session:
+            self._completed_tasks_by_session[session_id] = {}
+        logger.debug(f"Session registered in TaskManager: {session_id}")
 
     def add_task(self, session_id: str, task: SubagentTask) -> None:
         """添加后台任务到指定 session.
@@ -433,6 +466,10 @@ class TaskManager:
                 return task
         return None
 
+    def get_completed_task(self, session_id: str, task_id: str) -> Optional[SubagentTask]:
+        """获取已完成并已从活动列表移除的任务."""
+        return self._completed_tasks_by_session.get(session_id, {}).get(task_id)
+
     def remove_task(self, session_id: str, task_id: str) -> bool:
         """从管理器中移除任务.
 
@@ -446,6 +483,7 @@ class TaskManager:
         tasks = self._tasks_by_session.get(session_id, [])
         for i, task in enumerate(tasks):
             if task.task_id == task_id:
+                self._completed_tasks_by_session.setdefault(session_id, {})[task_id] = task
                 tasks.pop(i)
                 logger.debug(f"Task {task_id} removed from session {session_id}")
                 return True
@@ -504,6 +542,7 @@ class TaskManager:
             清理的任务数量
         """
         tasks = self._tasks_by_session.pop(session_id, [])
+        self._completed_tasks_by_session.pop(session_id, None)
         if not tasks:
             logger.debug(f"No tasks to shutdown for session: {session_id}")
             return 0
@@ -551,5 +590,6 @@ class TaskManager:
         """
         total = sum(len(tasks) for tasks in self._tasks_by_session.values())
         self._tasks_by_session.clear()
+        self._completed_tasks_by_session.clear()
         logger.debug(f"All tasks cleared: {total}")
         return total

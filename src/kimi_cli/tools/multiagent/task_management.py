@@ -135,7 +135,10 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
         task = TaskManager().get_task(self._session.id, params.task_id)
 
         if not task:
-            # 尝试从已完成的任务中查找（任务完成后会从 TaskManager 移除）
+            task = TaskManager().get_completed_task(self._session.id, params.task_id)
+
+        if not task:
+            # 向后兼容：尝试从默认日志目录读取
             return await self._read_output_file(params.task_id, params.tail, params.max_tool_output_tokens)
 
         # 构建响应
@@ -264,7 +267,10 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
         """
         from pathlib import Path
 
-        output_file = Path.home() / ".kimi" / "tasks" / f"{task_id}.log"
+        completed_task = TaskManager().get_completed_task(self._session.id, task_id)
+        output_file = completed_task.output_file if completed_task else (
+            Path.home() / ".kimi" / "tasks" / f"{task_id}.log"
+        )
 
         if not output_file.exists():
             return ToolOk(output=f"任务 {task_id} 不存在或已过期")
@@ -394,4 +400,3 @@ class TaskStop(CallableTool2[TaskStopParams]):
 
         task_ids = ", ".join([t.task_id for t in running_tasks])
         return ToolOk(output=f"已停止 {stopped_count} 个后台任务: {task_ids}")
-
